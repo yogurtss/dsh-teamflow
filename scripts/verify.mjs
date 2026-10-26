@@ -328,10 +328,10 @@ check(
     || image.colorType !== 6))}`,
 )
 check(
-  'client mapping and host allowlist reference every V2 artwork asset',
+  'legacy artwork remains reachable and equal roles share portraits',
   expectedArtwork.every(name => artworkSource.includes(name) || hostSource.includes(name))
-    && artworkSource.includes('member-data-v2.png')
-    && artworkSource.includes('member-operator-v2.png'),
+    && memberArtUrl('one', 'Data Analyst') === memberArtUrl('two', 'Data Analyst')
+    && memberArtUrl('QA', 'Backend Engineer') === memberArtUrl('Docs', 'Backend Engineer'),
   'a packaged image is unreachable or one of the eighth-member mappings is missing',
 )
 const eightRoleArtwork = [
@@ -350,7 +350,7 @@ check(
   `resolved artwork = ${JSON.stringify(eightRoleArtwork)}`,
 )
 check(
-  'whale portraits use transparent cutouts instead of dark circular plates',
+  'role portraits preserve compact geometry and unread indicators',
   !/#0b1d33/iu.test(`${activityPanelCss}\n${agentTeamsCardCss}`)
     && activityPanelCss.includes('object-fit: contain')
     && activityPanelCss.includes('agentTeamsUnreadPulse')

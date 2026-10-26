@@ -121,6 +121,14 @@ export interface TaskEvidence {
 }
 /** One task of a team's task list. */
 export interface TeamTask {
+    workflowPaused?: boolean;
+    stoppedAttempts?: {
+        attemptId?: string;
+        output?: string;
+        at: number;
+    }[];
+    /** Human-only gate. Never dispatched to an execution member. */
+    checkpoint?: import('./workflow-types.ts').Checkpoint;
     /** Stable task id from the profile template; absent for ad-hoc tasks. */
     profileSeedId?: string;
     /** Stable task id within the team (`t1`, `t2`, …). */
@@ -218,6 +226,10 @@ export interface TeamTask {
 export type MemberStatus = 'idle' | 'working' | 'removed';
 /** One team member: a continuable subagent plus its team-side record. */
 export interface TeamMember {
+    /** Short user-facing responsibility summary, independent of execution instructions. */
+    summary?: string;
+    /** Execution transcripts retained when a role change starts a fresh session. */
+    previousSessionIds?: string[];
     /** Durable continuable subagent session id (empty until spawned). */
     id: string;
     /** Unique display name inside the team. */
@@ -311,6 +323,7 @@ export interface TeamProfileSnapshot {
 }
 /** The full durable team record. */
 export interface TeamState {
+    workflow?: import('./workflow-types.ts').WorkflowState;
     /** Original team name. */
     name: string;
     /** Sanitized directory id; the team's stable identity. */

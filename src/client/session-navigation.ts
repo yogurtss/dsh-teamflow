@@ -50,6 +50,13 @@ export async function openAgentTeamMember(
   layout?: AgentTeamsLayoutNavigator,
   workspace?: AgentTeamsWorkspaceNavigator,
 ): Promise<'subagent' | 'session' | 'cancelled'> {
+  if (parentSessionId === childSessionId) {
+    if (workspace) workspace.openSession(childSessionId)
+    else if (sessions.open) sessions.open(childSessionId)
+    else throw new Error('Harness does not expose session navigation')
+    layout?.selectPanel?.(null)
+    return 'session'
+  }
   if (sessions.open === undefined && workspace !== undefined) {
     workspace.openSession({ parentSessionId, childSessionId, mode: 'continuable' })
     return 'subagent'

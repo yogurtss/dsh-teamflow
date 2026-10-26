@@ -94,6 +94,7 @@ export function apply(ctx: ClientContext): void {
     native.slots.inject('conversation.session.header.actions', () => native.slots.register({
       name: 'conversation.session.header.actions', id: 'agent-teams-entry', order: 50,
       locale: AGENT_TEAMS_LOCALE_NAMESPACE,
+      inject: () => ({ openMember, openContext: () => native.sidebarRight.openTab(TEAM_TAB_KIND) }),
     }, TeamChatEntry))
     native.slots.inject('conversation.chat.turnTail', () => native.slots.register({
       name: 'conversation.chat.turnTail', id: 'agent-teams-summary', order: 50,
@@ -104,7 +105,7 @@ export function apply(ctx: ClientContext): void {
       const dispose = native.slots.register({
         name: 'sidebar.right.pane.tab', key: TEAM_TAB_ID,
         locale: AGENT_TEAMS_LOCALE_NAMESPACE,
-        inject: () => ({ state, modelDirectories: native.modelDirectories, openMember }),
+        inject: () => ({ state, modelDirectories: native.modelDirectories, openMember, openContext: () => native.sidebarRight.openTab(TEAM_TAB_KIND) }),
       }, WorkspaceActivity)
       bridge.set(native.sidebarRight)
       return () => { bridge.set(undefined); dispose() }

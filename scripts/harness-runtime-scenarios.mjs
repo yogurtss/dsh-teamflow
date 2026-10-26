@@ -84,6 +84,7 @@ for (const scenario of selectedScenarios) {
 `);
     }
     if (scenario === 'web-approval') {
+        copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/harness-workflow-case.mjs'), join(profile, 'harness-workflow-case.mjs'));
         copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/harness-runtime-web-approval.mjs'), join(profile, 'fixture-web-approval.mjs'));
         writeFileSync(join(profile, 'cordis.patch.yml'), readFileSync(join(profile, 'cordis.patch.yml'), 'utf8') + `- id: runtime-lab-fixture
   disabled: true
@@ -190,6 +191,11 @@ for (const scenario of selectedScenarios) {
         const stable = trace.find(x => x.event === 'web-headers-stable');
         const assertions = { claimedProjection: trace.some(x => x.event === 'web-claimed-projection' && x.taskStatus === 'claimed' && x.visualState === 'claimed' && x.memberActivity === 'working'), exit0: result.code === 0 && !result.timedOut, productMarker: result.stdout.includes('WEB_APPROVAL_OK'), driverCompleted: Boolean(evidence), stagedBeforeApproval: Boolean(staged?.status === 'idle' && approved?.status === 200 && staged.order < approved.order), independentApprovalWake: Boolean(approvalWake && yielded?.status === 'idle' && released && approvalWake.order < yielded.order && yielded.order < released.order), reportWakeAfterYield: Boolean(released && reportWake && released.order < reportWake.order && reportWake.sessionId === staged?.sessionId), noPollingOrDuplicateApproval: !trace.some(x => x.event === 'web-model-tool-call' && ['agent_teams_approve', 'agent_teams_status'].includes(x.name)), oneUserMessageAndHttpApproval: trace.filter(x => x.event === 'web-driver-user-message').length === 1 && trace.filter(x => x.event === 'web-http-approval-start').length === 1, invalidTeamRejected: Boolean(invalid?.status === 404 && approved && invalid.order < approved.order), repeatApprovalRejected: Boolean(repeated?.status === 409 && yielded && released && yielded.order < repeated.order && repeated.order < released.order), stableCaptainHeaders: Boolean(stable?.systemSha256 && stable?.toolsSha256), memberFourTools: stable?.memberTeamToolCount === 4 && stable.memberRequests > 0, taskCompleted: evidence?.taskStatus === 'completed' };
         runs.push({ scenario, passed: Object.values(assertions).every(Boolean), assertions, evidence, exit: { code: result.code, signal: result.signal, timedOut: result.timedOut } });
+        if (result.code === 0 && result.stdout.includes('WORKFLOW_WORKBENCH_OK')) {
+            const cold = await command([process.execPath, join(runtime, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), '--profile', 'headless'], workspace, environment({ DSH_HOME: home, DSH_PERMISSION_MODE: 'danger-full-access', DSH_TELEMETRY_DISABLED: '1', LAB_TRACE: join(report, scenario, 'workflow-cold-trace.jsonl'), LAB_WORKFLOW_COLD: '1' }), 'workflow-native-cold', 90000);
+            const coldAssertions = { exit0: cold.code === 0 && !cold.timedOut, nativeHistoryAndIsolation: cold.stdout.includes('WORKFLOW_COLD_OK') };
+            runs.push({ scenario: 'workflow-native-cold', passed: Object.values(coldAssertions).every(Boolean), assertions: coldAssertions });
+        }
         continue;
     }
     const statePath = join(workspace, '.agent-teams/runtime-lab/team.json'), state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : undefined;

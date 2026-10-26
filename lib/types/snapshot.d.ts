@@ -13,6 +13,7 @@ import type { MemberStatus, TeamState } from './types.ts';
 export type VisualTaskState = 'blocked' | 'open' | 'claimed' | 'running' | 'completed' | 'failed' | 'cancelled';
 /** One member row of the activity snapshot. */
 export interface TeamActivityMember {
+    readonly summary?: string;
     readonly id: string;
     readonly name: string;
     readonly role: string;
@@ -30,6 +31,8 @@ export interface TeamActivityMember {
 }
 /** One task row of the activity snapshot. */
 export interface TeamActivityTask {
+    readonly checkpoint?: import('./workflow-types.ts').Checkpoint;
+    readonly workflowPaused?: boolean;
     readonly id: string;
     readonly subject: string;
     readonly description: string;
@@ -63,6 +66,7 @@ export interface TeamActivitySnapshot {
     readonly description?: string;
     readonly captainSessionId: string;
     readonly phase: 'staged' | 'running';
+    readonly workflowEnabled?: boolean;
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;
     readonly members: readonly TeamActivityMember[];

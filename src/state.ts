@@ -21,6 +21,7 @@ import type { MemberToolFilter } from './tool-policies.ts'
 import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES, type ReviewFinding, type TaskStatus, type TeamMember, type TeamMessage, type TeamProfileSnapshot, type TeamState, type TeamTask } from './types.ts'
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
+import { isCheckpoint, isStoppedAttempts, isWorkflowState } from './workflow-validation.ts'
 
 export {
   amendTaskContract,
@@ -769,6 +770,8 @@ function isTeamMember(value: unknown): value is TeamMember {
     && typeof value['name'] === 'string'
     && value['name'].trim() !== ''
     && isOptionalString(value['role'])
+    && isOptionalString(value['summary'])
+    && (value['previousSessionIds'] === undefined || (Array.isArray(value['previousSessionIds']) && value['previousSessionIds'].every(id => typeof id === 'string')))
     && (value['stopping'] === undefined || typeof value['stopping'] === 'boolean')
     && isOptionalString(value['provider'])
     && isOptionalString(value['model'])
@@ -852,7 +855,17 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
     }
     return cleaned
   })
-  const coerced = { ...value, tasks }
+  // Early canvas builds saved explicit tN IDs without advancing taskSeq.
+  // Recover the high-water mark before the original tools allocate another ID.
+  let taskSeq = value['taskSeq']
+  if (typeof taskSeq === 'number' && Number.isSafeInteger(taskSeq) && taskSeq >= 0) {
+    for (const task of tasks) {
+      if (!isRecord(task) || typeof task['id'] !== 'string' || !/^t[1-9]\d*$/u.test(task['id'])) continue
+      const sequence = Number(task['id'].slice(1))
+      if (Number.isSafeInteger(sequence) && sequence < Number.MAX_SAFE_INTEGER) taskSeq = Math.max(taskSeq as number, sequence)
+    }
+  }
+  const coerced = { ...value, tasks, taskSeq }
   return isTeamState(coerced, expectedId) ? coerced : undefined
 }
 
@@ -869,6 +882,7 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
  */
 export function describeTeamStateDefect(raw: unknown, expectedId: string): string {
   if (!isRecord(raw)) return 'record must be a JSON object'
+  if (raw['workflow'] !== undefined && !isWorkflowState(raw['workflow'])) return 'workflow is not a valid saved workflow'
   if (!Array.isArray(raw['tasks'])) {
     return raw['tasks'] === undefined ? 'tasks is missing' : `tasks must be an array (got ${typeof raw['tasks']})`
   }
@@ -926,6 +940,8 @@ export function describeTeamStateDefect(raw: unknown, expectedId: string): strin
 
 /** The first task-contract violation, or `undefined` when the task is valid. */
 function describeTaskDefect(task: Record<string, unknown>): string | undefined {
+  if (task['checkpoint'] !== undefined && !isCheckpoint(task['checkpoint'])) return 'checkpoint is invalid'
+  if (task['stoppedAttempts'] !== undefined && !isStoppedAttempts(task['stoppedAttempts'])) return 'stoppedAttempts is invalid'
   if (typeof task['id'] !== 'string') return 'id must be a string'
   if (!isOptionalString(task['profileSeedId'])) return 'profileSeedId must be a string'
   if (typeof task['profileSeedId'] === 'string' && task['profileSeedId'].trim() === '') return 'profileSeedId must not be blank'
@@ -1026,6 +1042,9 @@ function describeFindingDefect(finding: unknown): string | undefined {
 export function isTeamTask(value: unknown): value is TeamTask {
   if (!isRecord(value)) return false
   return typeof value['id'] === 'string'
+    && (value['workflowPaused'] === undefined || typeof value['workflowPaused'] === 'boolean')
+    && (value['checkpoint'] === undefined || isCheckpoint(value['checkpoint']))
+    && (value['stoppedAttempts'] === undefined || isStoppedAttempts(value['stoppedAttempts']))
     && isOptionalString(value['profileSeedId'])
     && (value['profileSeedId'] === undefined || value['profileSeedId'].trim() !== '')
     && typeof value['subject'] === 'string'
@@ -1055,6 +1074,7 @@ export function isTeamTask(value: unknown): value is TeamTask {
 function isTeamState(value: unknown, expectedId: string): value is TeamState {
   if (!isRecord(value)) return false
   const validShape = value['id'] === expectedId
+    && (value['workflow'] === undefined || isWorkflowState(value['workflow']))
     && typeof value['name'] === 'string'
     && value['name'].trim() !== ''
     && isOptionalString(value['description'])

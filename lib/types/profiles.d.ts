@@ -20,6 +20,7 @@ export interface TeamModelFallbackConfig {
     model: string;
 }
 export interface TeamProfileMemberConfig {
+    summary?: string;
     name: string;
     role?: string;
     provider?: string;
@@ -59,6 +60,7 @@ export interface TeamProfileConfig {
 }
 /** A profile member after trim / pairing / reserved-name checks. */
 export interface NormalizedProfileMember {
+    summary?: string;
     name: string;
     role?: string;
     provider?: string;

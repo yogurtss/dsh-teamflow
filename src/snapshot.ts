@@ -25,6 +25,7 @@ export type VisualTaskState = 'blocked' | 'open' | 'claimed' | 'running' | 'comp
 
 /** One member row of the activity snapshot. */
 export interface TeamActivityMember {
+  readonly summary?: string
   readonly id: string
   readonly name: string
   readonly role: string
@@ -43,6 +44,8 @@ export interface TeamActivityMember {
 
 /** One task row of the activity snapshot. */
 export interface TeamActivityTask {
+  readonly checkpoint?: import('./workflow-types.ts').Checkpoint
+  readonly workflowPaused?: boolean
   readonly id: string
   readonly subject: string
   readonly description: string
@@ -78,6 +81,7 @@ export interface TeamActivitySnapshot {
   readonly description?: string
   readonly captainSessionId: string
   readonly phase: 'staged' | 'running'
+  readonly workflowEnabled?: boolean
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
   readonly members: readonly TeamActivityMember[]
@@ -160,6 +164,7 @@ export async function assembleTeamSnapshot(
       id: member.id,
       name: member.name,
       role: member.role ?? '',
+      summary: member.summary ?? member.role ?? '',
       provider: member.provider?.trim() ?? '',
       model: member.model?.trim() ?? '',
       reasoningEffort: member.reasoningEffort?.trim() ?? '',
@@ -200,6 +205,7 @@ export async function assembleTeamSnapshot(
     ...state.description !== undefined ? { description: state.description } : {},
     captainSessionId: state.captainSessionId,
     phase: state.phase ?? 'running',
+    ...state.workflow === undefined ? {} : { workflowEnabled: true },
     ...state.phase === 'staged'
       ? { planReviewState: state.planReviewState ?? 'awaiting_review' as const }
       : {},
@@ -212,6 +218,8 @@ export async function assembleTeamSnapshot(
     members,
     tasks: tasks.map((task) => ({
       id: task.id,
+      ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },
+      ...task.workflowPaused ? { workflowPaused: true } : {},
       subject: task.subject,
       description: task.description ?? '',
       status: task.status,

@@ -18,5 +18,6 @@ export type WorkspaceActivityProps = PropsRuntime<'sidebar.right.pane.tab'> & Pr
     state: WorkspaceActivityState;
     modelDirectories: ActivityPanelProps['modelDirectories'];
     openMember: ActivityPanelProps['openMember'];
+    openContext?: () => void;
 };
-export declare function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirectories, openMember }: WorkspaceActivityProps): import("react").JSX.Element;
+export declare function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirectories, openMember, openContext }: WorkspaceActivityProps): import("react").JSX.Element;

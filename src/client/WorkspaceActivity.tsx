@@ -10,6 +10,7 @@ import { getActivityMonitorTargetsSnapshot, getActivitySnapshotsSnapshot, startA
 import { createTeamDiscovery, type WorkspaceActivityState } from './workspace-state.ts'
 import { LEAD_ART } from './artwork.ts'
 import css from './WorkspaceActivity.module.css'
+import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 
 export const TEAM_TAB_KIND = 'agent-teams'
 export const TEAM_TAB_ID = '@nanmicoder/dsh-agent-teams/activity'
@@ -81,13 +82,15 @@ export type WorkspaceActivityProps = PropsRuntime<'sidebar.right.pane.tab'> & Pr
   state: WorkspaceActivityState
   modelDirectories: ActivityPanelProps['modelDirectories']
   openMember: ActivityPanelProps['openMember']
+  openContext?: () => void
 }
 
-export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirectories, openMember }: WorkspaceActivityProps) {
+export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirectories, openMember, openContext }: WorkspaceActivityProps) {
   const { tab } = useTabInfo()
   const snapshots = useSyncExternalStore(subscribeActivitySnapshots, getActivitySnapshotsSnapshot)
   const local = useSyncExternalStore(state.subscribe, state.getSnapshot)
   const [retry, setRetry] = useState(0)
+  const [isNativeContext, setIsNativeContext] = useState(false)
   const live = snapshots.teams.filter(team => team.captainSessionId === sessionId)
   const archived = snapshots.archivedTeams.filter(team => team.captainSessionId === sessionId && !live.some(item => item.teamId === team.teamId))
   const historic = [...local.history.values()].filter(team => team.captainSessionId === sessionId
@@ -117,11 +120,15 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
           <h2>AgentTeams</h2>
           <span>{t('workspace.title')}</span>
         </header>
-        {status === 'error' && <div className={css.error} role="alert"><span>{t('workspace.error')}</span><button onClick={() => setRetry(value => value + 1)}>{t('workspace.retry')}</button></div>}
+        {!history && <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={selected?.teamId} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext}
+          waitingCount={selected?.phase !== 'staged' && !selected?.halted ? selected?.tasks.filter(task => task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && task.dependencies.every(id => selected.tasks.some(t => t.id === id && t.status === 'completed'))).length : 0}
+          openConversation={id => openMember(id as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)}
+          openExecution={(id, parentId) => openMember((parentId ?? sessionId) as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)} />}
+        {!isNativeContext && status === 'error' && <div className={css.error} role="alert"><span>{t('workspace.error')}</span><button onClick={() => setRetry(value => value + 1)}>{t('workspace.retry')}</button></div>}
         {records.length > 1 && <nav className={css.selector} aria-label={t('workspace.title')}>
           {records.map(team => <button key={team.teamId} aria-pressed={selected?.teamId === team.teamId} onClick={() => state.select(sessionId, team.teamId)}>{team.name}<span>{t(live.includes(team) ? 'workspace.current' : 'workspace.history')}</span></button>)}
         </nav>}
-        {selected === undefined ? status === 'loading' ? <div className={css.skeleton} role="status" aria-label={t('workspace.loading')}><i /><i /><i /></div> : <section className={css.empty}>
+        {selected === undefined ? isNativeContext ? null : status === 'loading' ? <div className={css.skeleton} role="status" aria-label={t('workspace.loading')}><i /><i /><i /></div> : <section className={css.empty}>
           <span className={css.emptyMark} aria-hidden>↳</span>
           <h3>{t('workspace.emptyTitle')}</h3><p>{t('workspace.emptyBody')}</p>
           <button onClick={backToChat}>{t('workspace.back')}</button>

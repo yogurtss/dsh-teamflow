@@ -9,6 +9,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm';
+import { exerciseWorkflow } from './harness-workflow-case.mjs';
 
 const events = [];
 const handledControlMessages = new Set();
@@ -38,7 +39,7 @@ async function waitFor(predicate, description) {
     }
 }
 class WebApprovalAdapter extends LlmAdapter {
-    async listModels() { return [model]; }
+    async listModels() { return [model, { ...model, id: 'manual-fixture', name: 'Manual workflow fixture' }]; }
     async resolveModel(provider, id) { return { ...model, provider, id }; }
     async *stream(options) {
         const system = options.system ?? options.messages.filter(message => message.role === 'system').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');
@@ -50,7 +51,28 @@ class WebApprovalAdapter extends LlmAdapter {
         const toolText = blocks.filter(block => block.type === 'tool-result').flatMap(block => block.content?.filter(content => content.type === 'text').map(content => content.text) ?? []).join('\n');
         const failed = blocks.find(block => block.type === 'tool-result' && block.isError);
         assert.equal(failed, undefined, 'Real workflow tool failed: ' + JSON.stringify(failed));
+        if (system.includes('你是 AgentTeams 的独立配置顾问或验收 Agent')) {
+            assert.ok(options.sessionId, 'Discussion must use a durable native session');
+            assert.deepEqual((options.tools ?? []).map(t => t.name).sort(), ['agent_teams_workflow_context', 'agent_teams_workflow_propose']);
+            const lastUser = options.messages.findLastIndex(m => m.role === 'user');
+            const turn = options.messages.slice(lastUser + 1);
+            const turnCalls = turn.flatMap(m => m.content ?? []).filter(b => b.type === 'tool-call');
+            record({ event: 'workflow-native-request', sessionId: options.sessionId, tools: options.tools, messages: options.messages });
+            if (!turnCalls.some(c => c.name === 'agent_teams_workflow_context')) { yield* call('agent_teams_workflow_context', {}); return; }
+            const context = blocks.filter(b => b.type === 'tool-result').flatMap(b => b.content ?? []).filter(b => b.type === 'text').map(b => { try { return JSON.parse(b.text); } catch { return {}; } }).findLast(v => v.discussion && v.base);
+            assert.ok(context, 'Native context tool must provide current state');
+            const operations = context.discussion === 'member:worker' ? [{ action: 'update_member', name: 'worker', summary: '负责实现与自测，交付验证证据' }]
+                : context.discussion === 'graph' && context.team.members.length === 0 ? [
+                    { action: 'add_member', name: 'worker', summary: '讨论规划的执行成员', role: 'WEB_APPROVAL_MEMBER' },
+                    { action: 'add_task', id: 't1', subject: '讨论规划任务', assignee: 'worker', dependencies: [] },
+                  ] : [];
+            if (operations.length && !turnCalls.some(c => c.name === 'agent_teams_workflow_propose')) { yield* call('agent_teams_workflow_propose', { base: context.base, title: '原生讨论配置方案', operations: JSON.stringify(operations) }); return; }
+            yield* textChunks('已整理方案与材料，请在编排画布中查看并确认。');
+            record({ event: 'workflow-native-finished', sessionId: options.sessionId });
+            return;
+        }
         const isMember = system?.includes('WEB_APPROVAL_MEMBER') === true;
+        if (!isMember && options.model === 'manual-fixture') { yield* textChunks('MANUAL_CAPTAIN_ACK'); return; }
         record({ event: 'web-request', sessionId: options.sessionId, isMember, model: options.model, reasoningEffort: options.reasoningEffort, system: system, tools: options.tools, messages: options.messages });
         // Supported pre-v3 hosts use the producer-owned legacy wrapper. Keep
         // checking the plugin identity so unrelated plugin messages cannot
@@ -123,6 +145,35 @@ export function apply(ctx) {
     } }));
     void (async () => {
         await ctx.get('loader').await();
+        if (process.env.LAB_WORKFLOW_COLD === '1') {
+            const saved = JSON.parse(readFileSync('workflow-resume.json', 'utf8'));
+            const restored = await ctx.agents.resume({ resumeSessionId: saved.nativeId, agentOptions: { provider: 'runtime-lab', model: 'manual-fixture' } });
+            ctx.effect(() => () => restored.dispose()); await restored.agent.whenIdle();
+            const history = restored.agent.session.ownEvents();
+            assert.ok(saved.nativeId.startsWith('session-at-discussion-'));
+            assert.ok(!history.some(event => event.type === 'agent-teams/workflow-discussion'), 'Only native host records belong in the session log');
+            assert.ok(history.length > 5, 'Native history must survive process restart');
+            assert.equal(restored.agent.session.header.parentSession, undefined);
+            assert.equal(ctx.agents.get(saved.captainId), undefined);
+            const origin = `http://127.0.0.1:${ctx.webServer.port}`;
+            const auth = await fetch(ctx.connection.authenticatedUrl(origin), { redirect: 'manual' });
+            const cookie = auth.headers.get('set-cookie').split(';', 1)[0];
+            const response = await fetch(origin + '/plugins/dsh-agent-teams/workflow', { method: 'POST', headers: { 'content-type': 'application/json', origin, cookie }, body: JSON.stringify({ action: 'state', sessionId: saved.nativeId }) });
+            const restoredState = await response.json();
+            assert.equal(response.status, 200, JSON.stringify(restoredState));
+            assert.equal(restoredState.currentDiscussion, 'graph');
+            assert.ok(ctx.agents.get(saved.captainId), 'Opening the canvas must restore its captain view');
+            const path = join(process.cwd(), '.agent-teams', saved.teamId, 'team.json');
+            const before = JSON.parse(readFileSync(path, 'utf8'));
+            restored.agent.followup(createUserMessage({ content: [{ type: 'text', text: '重新核对已确认方案，不执行任务。' }], source: { kind: 'user' } }));
+            await restored.agent.whenIdle();
+            assert.ok(events.some(event => event.event === 'workflow-native-finished' && event.sessionId === saved.nativeId));
+            assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).tasks, before.tasks);
+            assert.equal(events.filter(event => event.event === 'web-request').length, 0, 'Restored discussion must not wake an execution agent');
+            await ctx.sessions.flush(restored.agent.session);
+            record({ event: 'workflow-cold-passed', nativeId: saved.nativeId, historyRetained: true, toolIsolation: true });
+            process.stdout.write('WORKFLOW_COLD_OK\n'); ctx.get('appExit')(0); return;
+        }
         await ctx.workspaceRegistry.create(process.cwd(), 'Web approval regression');
         const handle = await ctx.agents.create({ sessionId: 'session-' + randomUUID(), meta: { cwd: process.cwd() }, agentOptions: { provider: 'runtime-lab', model: 'fixture-model' } });
         ctx.effect(() => () => handle.dispose());
@@ -230,6 +281,7 @@ export function apply(ctx) {
         for (const request of memberRequests) assert.deepEqual(request.tools.filter(tool => tool.name.startsWith('agent_teams_')).map(tool => tool.name).sort(), memberTools, 'Every real member request must expose exactly the four member tools');
         record({ event: 'web-headers-stable', sessionId: captain.id, systemSha256, toolsSha256, captainRequests: captainRequests.length, memberRequests: memberRequests.length, memberTeamToolCount: memberTools.length });
         record({ event: 'web-approval-passed', sessionId: captain.id, teamId: completed.id, memberId: completed.members[0].id, taskStatus: completed.tasks[0].status, captainRequests: captainRequests.length });
+        await exerciseWorkflow({ baseUrl, cookie, captain, readTeam, record, ctx, events });
         process.stdout.write('WEB_APPROVAL_OK\n');
         ctx.get('appExit')(0);
     })().catch(error => {

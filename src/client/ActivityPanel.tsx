@@ -625,7 +625,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
           )}
         </header>
 
-        {team.phase === 'staged' && !historic && modelDirectory !== undefined && onContinuePlanning !== undefined && onDiscarded !== undefined && (
+        {team.phase === 'staged' && !team.workflowEnabled && !historic && modelDirectory !== undefined && onContinuePlanning !== undefined && onDiscarded !== undefined && (
           <StagingPlanEditor
             team={team}
             modelDirectory={modelDirectory}

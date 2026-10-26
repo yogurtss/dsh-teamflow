@@ -1,6 +1,7 @@
 /** Shared, demand-driven state for the AgentTeams browser monitor. */
 /** One member row of a host snapshot. */
 export interface ActivityMember {
+    readonly summary?: string;
     readonly id: string;
     readonly name: string;
     readonly role: string;
@@ -18,6 +19,8 @@ export interface ActivityMember {
 }
 /** One task row of a host snapshot. */
 export interface ActivityTask {
+    readonly checkpoint?: import('../workflow-types.ts').Checkpoint;
+    readonly workflowPaused?: boolean;
     readonly id: string;
     readonly subject: string;
     readonly description?: string;
@@ -52,6 +55,7 @@ export interface ActivityTeam {
     readonly description?: string;
     readonly captainSessionId: string;
     readonly phase: 'staged' | 'running';
+    readonly workflowEnabled?: boolean;
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;
     readonly members: readonly ActivityMember[];

@@ -1,0 +1,46 @@
+/** Persistent human-controlled workflow and isolated discussion contracts. */
+export type WorkflowOperation =
+  | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; provider?: string; model?: string }
+  | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string }
+  | { action: 'remove_member'; name: string }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean }
+  | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[] }
+  | { action: 'remove_task'; id: string }
+  | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
+
+export interface Checkpoint {
+  decision?: 'approve' | 'reject'
+  decidedAt?: number
+  note?: string
+  evidence?: string
+  round: number
+  history: { round: number; decision: string; at: number; note: string; evidence: string }[]
+}
+export interface WorkflowProposal {
+  id: string
+  base: string
+  title: string
+  operations: WorkflowOperation[]
+  status: 'pending' | 'applied' | 'dismissed'
+  createdAt: number
+}
+export interface DiscussionMessage { role: 'user' | 'assistant'; text: string; at: number }
+export interface WorkflowDiscussion {
+  key: string
+  native?: { sessionId: string; label: string; reviewEvidence?: string }
+  contextBase?: string
+  messages: DiscussionMessage[]
+  proposal?: WorkflowProposal
+  /** Exact inputs and response retained separately from the human-readable reply. */
+  calls: { system: string; input: string; provider: string; model: string; output?: string; error?: string; at: number }[]
+  materials?: string
+  evidence?: string
+  materialsRound?: number
+}
+export interface WorkflowState {
+  /** Accepted for old saved teams; no longer controls behavior. */
+  mode?: 'manual' | 'assisted'
+  positions: Record<string, { x: number; y: number }>
+  discussions: Record<string, WorkflowDiscussion>
+  history: WorkflowProposal[]
+}

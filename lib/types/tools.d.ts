@@ -70,6 +70,7 @@ export type StagedPlanMutation = {
 };
 /** Runtime bridge shared by model-facing tools and the Web staging surface. */
 export interface AgentTeamsRuntime {
+    kickTeam(workspace: string, teamId: string, captain: Agent): Promise<void>;
     isPendingMember(agent: Agent): boolean;
     updateStagedPlan(captain: Agent, teamId: string, mutation: StagedPlanMutation, signal?: AbortSignal): Promise<TeamState>;
     updateStagedPlanBatch(captain: Agent, teamId: string, mutations: readonly StagedPlanMutation[], signal?: AbortSignal): Promise<TeamState>;

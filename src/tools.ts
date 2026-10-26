@@ -150,6 +150,7 @@ export type StagedPlanMutation =
 
 /** Runtime bridge shared by model-facing tools and the Web staging surface. */
 export interface AgentTeamsRuntime {
+  kickTeam(workspace: string, teamId: string, captain: Agent): Promise<void>
   isPendingMember(agent: Agent): boolean
   updateStagedPlan(captain: Agent, teamId: string, mutation: StagedPlanMutation, signal?: AbortSignal): Promise<TeamState>
   updateStagedPlanBatch(captain: Agent, teamId: string, mutations: readonly StagedPlanMutation[], signal?: AbortSignal): Promise<TeamState>
@@ -296,6 +297,8 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
   if (task === undefined) {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
+  if (task.checkpoint) throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
+  if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
   return task
 }
 
@@ -726,6 +729,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     return withTeamLock(teamLockKey(stateRoot, teamId), async () => {
       const fresh = await requireFreshCaptainTeam(ctx, stateRoot, teamId, captain.id)
       const staged = fresh.phase === 'staged'
+      if (fresh.workflow) throw new Error('Use the isolated workflow discussion to propose plan edits; a human must apply them.')
       if (!staged && !allowPendingEdits) requireStagedTeam(fresh)
       if (fresh.halted === true) throw new Error('team is halted; resume before editing tasks')
       if (!staged && mutations.some(mutation => mutation.action !== 'update_task')) {
@@ -951,6 +955,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         properties: {
           members: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
             name: { type: 'string', required: true }, role: { type: 'string' },
+            summary: { type: 'string', description: 'Concise responsibility and deliverables shown to the user.' },
             provider: { type: 'string' }, model: { type: 'string' }, reasoning_effort: { type: 'string' },
             tool_policy: { type: 'string', description: 'Optional owner-declared tool-policy id for this member.' },
           } } },
@@ -1312,6 +1317,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     parameters: {
       name: { type: 'string', required: true, description: 'Unique member name inside the team.' },
       role: { type: 'string', description: 'Role of the member (e.g. researcher, engineer, reviewer).' },
+      summary: { type: 'string', description: 'One or two sentences explaining this member responsibility and expected deliverables, shown to the user.' },
       provider: { type: 'string', description: 'Optional LLM provider route. Use only when the user explicitly requests a different provider; requires model. Omit to use the configured member route (memberLlmProvider/memberModel) or the captain\'s current route.' },
       model: { type: 'string', description: 'Optional model override (used verbatim, including any "/" in the id). Omit for the configured memberModel default (paired with memberLlmProvider when set) or the captain\'s current model.' },
       reasoning_effort: { type: 'string', description: 'Optional reasoning effort override: one of the target model\'s supported effort ids, or "default" to force its default. When omitted, the captain\'s effort is inherited only for the same provider/model; a changed route uses the target default.' },
@@ -1372,6 +1378,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         const member: TeamMember = {
           id: '',
           name: memberName,
+          summary: trimmedOptional(args.summary) ?? trimmedOptional(args.role),
           role: args.role,
           provider: selection.provider,
           model: selection.model,
@@ -2563,6 +2570,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
   ))
 
   const runtime: AgentTeamsRuntime = {
+    kickTeam: (workspace, teamId, captain) => scheduler.kickTeam(workspace, teamId, captain),
     isPendingMember: memberSelections.isPendingMember,
     updateStagedPlan,
     updateStagedPlanBatch,
@@ -2596,6 +2604,7 @@ async function initializeProfileTeam(input: {
     members: input.inlinePlan.members.map(member => ({
       ...member,
       role: trimmedOptional(member.role),
+      summary: trimmedOptional(member.summary),
       provider: trimmedOptional(member.provider),
       model: trimmedOptional(member.model),
       reasoning_effort: trimmedOptional(member.reasoning_effort),
@@ -2642,6 +2651,7 @@ async function initializeProfileTeam(input: {
       return {
         id: '',
         name: template.name,
+        summary: template.summary ?? template.role,
         role: template.role,
         provider: selection.provider,
         model: selection.model,

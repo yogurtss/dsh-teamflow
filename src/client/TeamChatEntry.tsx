@@ -6,11 +6,14 @@ import { getActivitySnapshotsSnapshot, subscribeActivitySnapshots } from './acti
 import { teamCardsForTurn } from './agent-teams-card-definition.ts'
 import { LEAD_ART } from './artwork.ts'
 import css from './AgentTeamsCard.module.css'
+import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 
-export function TeamChatEntry({ sessionId, t }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'agentTeams'>) {
+export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'agentTeams'> & Pick<AgentTeamsCardInjected, 'openMember'> & { openContext?: () => void }) {
   const { teams, archivedTeams } = useSyncExternalStore(subscribeActivitySnapshots, getActivitySnapshotsSnapshot)
   const team = [...teams, ...archivedTeams].find(team => team.captainSessionId === sessionId)
-  if (!team) return null
+  if (!team) return <WorkflowWorkbench key={sessionId} sessionId={sessionId} nativeOnly openContext={openContext}
+    openConversation={id => openMember?.(id as typeof sessionId, id as typeof sessionId)}
+    openExecution={(id, parentId) => openMember?.((parentId ?? sessionId) as typeof sessionId, id as typeof sessionId)} />
   return <button className={css.chatEntry} data-team-chat-entry type="button" title={t('workspace.focus')}
     onClick={() => openActivityPanel({ teamId: team.teamId, captainSessionId: sessionId, teamName: team.name, members: team.members })}>
     <img src={LEAD_ART} alt="" aria-hidden />{t('workspace.focus')}

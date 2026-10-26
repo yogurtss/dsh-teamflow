@@ -20,7 +20,7 @@ export const PROFILE_PROTOCOL_PROMPT_LIMIT = 240
 
 const PROFILE_KEYS = ['description', 'protocol', 'executionPrompt', 'fallback', 'members', 'tasks', 'taskPlanning', 'reviewPolicy'] as const
 const REVIEW_POLICY_KEYS = ['requirementsMinRounds', 'requirementsMaxRounds', 'codeMaxRounds', 'maxRepairAttempts', 'requiredReviewers'] as const
-const MEMBER_KEYS = ['name', 'role', 'provider', 'model', 'reasoning_effort', 'executionPrompt', 'fallback', 'tool_policy'] as const
+const MEMBER_KEYS = ['name', 'summary', 'role', 'provider', 'model', 'reasoning_effort', 'executionPrompt', 'fallback', 'tool_policy'] as const
 const FALLBACK_KEYS = ['provider', 'model'] as const
 const TASK_KEYS = ['id', 'subject', 'description', 'assignee', 'dependencies'] as const
 
@@ -31,6 +31,7 @@ export interface TeamModelFallbackConfig {
 }
 
 export interface TeamProfileMemberConfig {
+  summary?: string
   name: string
   role?: string
   provider?: string
@@ -73,6 +74,7 @@ export interface TeamProfileConfig {
 
 /** A profile member after trim / pairing / reserved-name checks. */
 export interface NormalizedProfileMember {
+  summary?: string
   name: string
   role?: string
   provider?: string
@@ -470,7 +472,7 @@ function normalizeMember(
   if (provider !== undefined && model === undefined) {
     throw new Error(`profile member "${name}" sets provider without model`)
   }
-  return omitUndefined({ name, role, provider, model, reasoningEffort, executionPrompt, fallback, toolPolicy })
+  return omitUndefined({ name, summary: optionalNonEmptyString(raw['summary'], `${path}.summary`), role, provider, model, reasoningEffort, executionPrompt, fallback, toolPolicy })
 }
 
 function normalizeFallback(value: unknown, path: string): TeamModelFallbackConfig | undefined {

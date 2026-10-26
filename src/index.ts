@@ -45,6 +45,8 @@ import { parseToolPolicies, type MemberToolPolicy } from './tool-policies.ts'
 import { installTeamCapabilities } from './capabilities.ts'
 import { agentTeamsSource, observedSessionFormatVersion } from './harness-compat.ts'
 import { TEAM_TOOL_NAMES } from './tool-names.ts'
+import { installWorkflowWorkbench, workflowMaterials } from './workflow-runtime.ts'
+import { installWorkflowConversations } from './workflow-native.ts'
 
 import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, type BrowserRequestGate, type WebRouteHost } from './web-routes.ts'
 
@@ -54,7 +56,7 @@ const WEB_SERVER_KEYS = ['webServer', 'httpServer'] as const
 const WORKSPACE_KEYS = ['workspaceRegistry', 'workspace'] as const
 
 export const name = 'agent-teams'
-export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents']
+export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents', 'sessions']
 
 /** Plugin configuration. */
 export interface Config {
@@ -143,6 +145,7 @@ export const Config: z<Config> = z.object({
     fallback: fallbackRouteConfig,
     members: z.array(z.object({
       name: z.string().required(),
+      summary: z.string(),
       role: z.string(),
       provider: z.string(),
       model: z.string(),
@@ -188,6 +191,7 @@ export function usageSectionText(toolNames: string, profilesText = ''): string {
 8. When full quality mode is requested: requirements → implementation → verification → review → integration. Plan the entire DAG while staged, including implementation before requirements finishes and integration depending on review round 1. Failed review automatically adds repair + next review and rewires pending downstream gates. Do not recreate this loop, omit integration or depend on a failed task. Review acceptance judges the latest implementation. Do not put smoke-test scripts into task instructions.
 9. Halted means the user stopped work (including the captain turn). Resume only on a later explicit user request with a reason, via agent_teams_resume or create_task({resume:true,resumeReason}); creating tasks alone never resumes. Escalated means the review loop hit its limit, not a halt. Deployment requires explicit user confirmation.
 10. Wait for all required tasks to be terminal and members idle/ready, present results, then delete/archive unless the user wants to continue. Never discard unfinished work without authorization.
+For every new member include a concise summary explaining its responsibility and deliverables. The human workflow workbench provides isolated configuration discussions and human-only checkpoints; never claim or complete a human checkpoint or bypass it by changing dependencies.
 Tools: ${toolNames}${profilesText === '' ? '' : `\n\n${profilesText}`}`
 }
 
@@ -214,6 +218,7 @@ export function apply(ctx: Context, config: Config): void {
   // settled, rather than here.
 
   const agentTeamsRuntime = registerAgentTeamsTools(ctx, resolved)
+  const workflowConversations = installWorkflowConversations(ctx, resolved, workflowMaterials)
   installTeamCapabilities(ctx, {
     stateDir: resolved.stateDir,
     isPendingMember: agentTeamsRuntime.isPendingMember,
@@ -252,6 +257,7 @@ export function apply(ctx: Context, config: Config): void {
     const workspaceRegistry = (ctx.get(WORKSPACE_KEYS[0]) ?? ctx.get(WORKSPACE_KEYS[1])) as WorkspaceRegistry | undefined
     if (rawWebServer === undefined || workspaceRegistry === undefined) return
     const webServer = authenticatedWebRoutes(rawWebServer, () => ctx.get('connection') as BrowserRequestGate | undefined)
+    installWorkflowWorkbench(ctx, resolved, agentTeamsRuntime, webServer, workflowConversations)
     webRegistered = true
 
     // Activity panel data route: the browser floater polls this for team

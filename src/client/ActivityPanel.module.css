@@ -484,7 +484,7 @@
   border-radius: 0;
   object-fit: contain;
   background: transparent;
-  filter: drop-shadow(0 1px 1px rgb(18 45 72 / 20%));
+  filter: none;
 }
 
 .leadAvatar {
