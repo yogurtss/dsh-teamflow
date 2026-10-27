@@ -5,9 +5,8 @@ import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { agentTeamsSource, observedSessionFormatVersion } from './harness-compat.ts'
 import { parseProfileInvocation, resolveProfileTaskPlanning, type TeamProfileConfig, type AgentTeamsInvocation } from './profiles.ts'
 
-export const AGENT_TEAMS_COMMAND = 'agent-teams'
 export const TEAMFLOW_COMMAND = 'teamflow'
-const PROFILE_COMMAND_PREFIX = `${AGENT_TEAMS_COMMAND}-`
+const PROFILE_COMMAND_PREFIX = `${TEAMFLOW_COMMAND}-`
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -15,7 +14,7 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
-const GESTURE = /^\/agent-teams(?=$|[\t\n\r ])/u
+const GESTURE = /^\/teamflow(?=$|[\t\n\r ])/u
 
 /**
  * Convert a configured profile key into a stable, closed-namespace command
@@ -37,8 +36,8 @@ function profileForCommand(commandName: string, profiles: Record<string, TeamPro
 
 /** Parse either the generic command or one generated profile alias. */
 function parseCommandText(text: string, profiles: Record<string, TeamProfileConfig>): AgentTeamsInvocation | undefined {
-  const trimmed = text.trimStart().replace(/^\/teamflow(?=$|[-\t\n\r ])/u, '/agent-teams')
-  if (GESTURE.test(trimmed)) return parseProfileInvocation(trimmed.slice(AGENT_TEAMS_COMMAND.length + 1).trim())
+  const trimmed = text.trimStart()
+  if (GESTURE.test(trimmed)) return parseProfileInvocation(trimmed.slice(TEAMFLOW_COMMAND.length + 1).trim())
   if (!trimmed.startsWith(`/${PROFILE_COMMAND_PREFIX}`)) return undefined
   const tokenEnd = trimmed.search(/[\t\n\r ]/u)
   const commandName = trimmed.slice(1, tokenEnd === -1 ? undefined : tokenEnd)
@@ -88,7 +87,8 @@ export function buildActivationDirective(goal: string, profile?: string, taskPla
 export function registerAgentTeamsCommand(ctx: Context, getProfiles: () => Record<string, TeamProfileConfig> = () => ({})): void {
   ctx.effect(() => {
     const dispose: Array<() => void> = []
-    for (const name of [TEAMFLOW_COMMAND, AGENT_TEAMS_COMMAND]) dispose.push(ctx.commands.register({
+    const name = TEAMFLOW_COMMAND
+    dispose.push(ctx.commands.register({
       name,
       description: 'TeamFlow: plan a team workflow with human review (you become the captain)',
       input: { hint: '[--profile <name>] <goal>' },
@@ -104,14 +104,14 @@ export function registerAgentTeamsCommand(ctx: Context, getProfiles: () => Recor
     for (const profileName of Object.keys(getProfiles())) {
       const commandName = profileCommandName(profileName)
       if (commandName === undefined) continue
-      for (const name of [commandName.replace(/^agent-teams/, TEAMFLOW_COMMAND), commandName]) dispose.push(ctx.commands.register({
-        name,
+      dispose.push(ctx.commands.register({
+        name: commandName,
         description: `run a goal with the TeamFlow ${profileName} profile`,
         input: { hint: '<goal>' },
         handler(invocation: CommandInvocation): CommandResult {
           const profile = profileForCommand(commandName, getProfiles())
           if (profile === undefined) return { kind: 'error', text: `TeamFlow profile command "/${commandName}" is unavailable` }
-          invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${name}${invocation.rawInput}` }], source: { kind: 'user' } }))
+          invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${commandName}${invocation.rawInput}` }], source: { kind: 'user' } }))
           return { kind: 'success', text: `TeamFlow activated with profile ${profile} — the captain will assemble the team.` }
         },
       }))

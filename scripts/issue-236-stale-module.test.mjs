@@ -44,7 +44,7 @@ await test('live format 4 survives a resolved module reporting format 0', () => 
       installAgentTeamsGestureBoundary({on(event, callback) {
         assert.equal(event, 'agent/pre-step'); listener = callback;
       }});
-      const messages = [createUserMessage({content:[{type:'text',text:'/agent-teams inspect this task'}],source:{kind:'user'}})];
+      const messages = [createUserMessage({content:[{type:'text',text:'/teamflow inspect this task'}],source:{kind:'user'}})];
       const result = await listener({agent,messages,signal:new AbortController().signal}, async()=>({kind:'enter',messages}));
       assert.equal(result.kind, 'enter');
       assert.equal(result.messages.at(-1).source.kind, 'agent-teams-command', 'gesture must pass the live observation');

@@ -106,7 +106,7 @@ export interface Config {
   /** Prompt-section order for the usage policy (default `117`, after delegation policy). */
   promptSectionOrder?: number
   /**
-   * Register the deterministic `/agent-teams` activation surfaces (the
+   * Register the deterministic `/teamflow` activation surfaces (the
    * closed-namespace slash command and the plain-text gesture boundary).
    * Disable to keep the natural-language trigger as the only entry point.
    */
@@ -228,7 +228,7 @@ export function apply(ctx: Context, config: Config): void {
     captainPrompt: () => usageSectionText(TEAM_TOOL_NAMES.join(', '), formatProfilesForPrompt(config.profiles)),
   })
 
-  // Deterministic activation surfaces: the closed-namespace `/agent-teams`
+  // Deterministic activation surfaces: the closed-namespace `/teamflow`
   // host command (surfaces in the Web GUI slash menu via the Harness
   // ui-commands client) and the plain-text gesture boundary for surfaces
   // without command adjudication (headless CLI). Both default on; a profile

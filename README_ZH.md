@@ -6,7 +6,7 @@
 
 **安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，版本暂保留 `0.1.27`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
 
-使用 `/teamflow` 开始讨论，旧 `/agent-teams` 及其 profile 命令继续兼容。为读取原团队记录，`.agent-teams/` 数据目录、内部 `agent_teams_*` 工具和会话事件协议保持不变。历史报告中的旧名称及截图是当时的实测记录。
+统一使用 `/teamflow` 开始讨论；仅注册 `/teamflow` 和 `/teamflow-<profile>`，旧 `/agent-teams` 及其 profile 命令已移除。选择模板也可使用 `/teamflow --profile <名称> <目标>`。为读取原团队记录，`.agent-teams/` 数据目录、内部 `agent_teams_*` 工具和会话事件协议保持不变。历史报告中的旧名称及截图是当时的实测记录。
 
 ## 本分支新增功能
 

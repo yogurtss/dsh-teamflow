@@ -45,10 +45,10 @@ export function apply(ctx) {
         const cases = [
             ['natural', 'Use AgentTeams to plan this task.', false],
             ['natural-zh', '请使用 Agent Teams 团队协作来规划这个任务。', false],
-            ['raw-slash', '/agent-teams plan this task', false],
-            ['command', '/agent-teams plan this task', true],
-            ['profile-command', '/agent-teams-demo-profile plan this task', true],
-            ['profile-raw', '/agent-teams --profile demo-profile plan this task', false],
+            ['raw-slash', '/teamflow plan this task', false],
+            ['command', '/teamflow plan this task', true],
+            ['profile-command', '/teamflow-demo-profile plan this task', true],
+            ['profile-raw', '/teamflow --profile demo-profile plan this task', false],
         ];
         for (const [label, input, command] of cases) {
             const { agent, cwd } = await create(label);

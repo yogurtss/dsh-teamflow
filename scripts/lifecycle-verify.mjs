@@ -332,7 +332,7 @@ const task = async id => (await state())?.tasks.find(candidate => candidate.id =
 
 console.log('dsh-agent-teams lifecycle verification')
 
-// ── /agent-teams slash command and gesture boundary ───────────────────
+// ── /teamflow slash command and gesture boundary ───────────────────
 const commandDefinitions = new Map()
 ctx.commands = {
   register(definition) {
@@ -356,18 +356,18 @@ const liveProfiles = {
 registerAgentTeamsCommand(ctx, () => liveProfiles)
 installAgentTeamsGestureBoundary(ctx, () => liveProfiles)
 
-check('TeamFlow commands and legacy aliases both register',
-  commandDefinitions.has('teamflow') && commandDefinitions.has('teamflow-demo-delivery')
-    && commandDefinitions.has('agent-teams') && commandDefinitions.has('agent-teams-demo-delivery'))
+check('only TeamFlow commands register, without legacy aliases',
+  commandDefinitions.size === 2 && commandDefinitions.has('teamflow') && commandDefinitions.has('teamflow-demo-delivery')
+    && !commandDefinitions.has('agent-teams') && !commandDefinitions.has('agent-teams-demo-delivery'))
 
-const command = commandDefinitions.get('agent-teams')
-const profileCommand = commandDefinitions.get('agent-teams-demo-delivery')
-check('slash command registers as /agent-teams',
+const command = commandDefinitions.get('teamflow')
+const profileCommand = commandDefinitions.get('teamflow-demo-delivery')
+check('slash command registers as /teamflow',
   command !== undefined && typeof command.description === 'string' && command.description.length > 0)
 check('slash command advertises an input hint for the menu placeholder',
   typeof command?.input?.hint === 'string' && command.input.hint.length > 0)
 check('configured profile registers a concise dedicated slash command',
-  profileCommand !== undefined && profileCommandName('demo-delivery') === 'agent-teams-demo-delivery'
+  profileCommand !== undefined && profileCommandName('demo-delivery') === 'teamflow-demo-delivery'
     && typeof profileCommand.description === 'string' && profileCommand.description.includes('demo-delivery'))
 check('unsafe profile names do not generate ambiguous commands',
   profileCommandName('delivery team') === undefined && profileCommandName('delivery_team') === undefined)
@@ -375,21 +375,21 @@ check('unsafe profile names do not generate ambiguous commands',
 const bare = command.handler({
   agent: captain, rawInput: '   ', signal: new AbortController().signal, commandId: 'cmd-bare',
 })
-check('bare /agent-teams reports usage instead of activating',
-  bare.kind === 'error' && bare.text.includes('Usage: /agent-teams')
+check('bare /teamflow reports usage instead of activating',
+  bare.kind === 'error' && bare.text.includes('Usage: /teamflow')
     && captain.followups.length === 0)
 
 const goal = 'ship a tiny CLI'
 const activated = command.handler({
   agent: captain, rawInput: `  ${goal}  `, signal: new AbortController().signal, commandId: 'cmd-goal',
 })
-check('argued /agent-teams queues one visible user turn',
+check('argued /teamflow queues one visible user turn',
   activated.kind === 'success' && captain.followups.length === 1)
 const submittedCommand = captain.followups[0]
 check('slash command preserves the exact submitted line as user-authored chat',
   submittedCommand?.source?.kind === 'user'
     && submittedCommand.content.some(block => block.type === 'text'
-      && block.text === `/agent-teams  ${goal}  `))
+      && block.text === `/teamflow  ${goal}  `))
 check('preserved slash command still activates through the gesture boundary',
   invokedAgentTeamsGoal([submittedCommand]) === goal)
 check('activation directive names the protocol', buildActivationDirective(goal).includes('TeamFlow protocol'))
@@ -399,30 +399,33 @@ const profileActivated = profileCommand.handler({
 })
 check('profile command queues a visible profile-specific user turn',
   profileActivated.kind === 'success' && captain.followups.length === 2
-    && captain.followups[1]?.content.some(block => block.type === 'text' && block.text === `/agent-teams-demo-delivery ${profileGoal}`))
+    && captain.followups[1]?.content.some(block => block.type === 'text' && block.text === `/teamflow-demo-delivery ${profileGoal}`))
 
 const userMessage = text => ({ id: 'm', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+for (const oldCommand of ['/agent-teams', '/agent-teams plan a task', '/agent-teams --profile demo-delivery ship it', '/agent-teams --profile', '/agent-teams-demo-delivery ship it', '  /agent-teams-demo-delivery']) {
+  check(`removed command does not activate: ${oldCommand}`, invokedAgentTeamsInvocation([userMessage(oldCommand)], () => liveProfiles) === undefined)
+}
 check('TeamFlow text gestures preserve generic and profile invocation',
   invokedAgentTeamsInvocation([userMessage('/teamflow plan a migration')])?.goal === 'plan a migration'
     && invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery ship a CLI')], () => liveProfiles)?.profile === 'demo-delivery'
     && invokedAgentTeamsInvocation([userMessage('/teamflower unrelated')]) === undefined)
-check('gesture recognizes a leading /agent-teams token',
-  invokedAgentTeamsGoal([userMessage('/agent-teams ship a CLI')]) === 'ship a CLI')
+check('gesture recognizes a leading /teamflow token',
+  invokedAgentTeamsGoal([userMessage('/teamflow ship a CLI')]) === 'ship a CLI')
 check('profile command gesture selects its configured profile and goal',
-  invokedAgentTeamsInvocation([userMessage('/agent-teams-demo-delivery ship a CLI')], () => liveProfiles)?.profile === 'demo-delivery'
-    && invokedAgentTeamsInvocation([userMessage('/agent-teams-demo-delivery ship a CLI')], () => liveProfiles)?.goal === 'ship a CLI')
+  invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery ship a CLI')], () => liveProfiles)?.profile === 'demo-delivery'
+    && invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery ship a CLI')], () => liveProfiles)?.goal === 'ship a CLI')
 check('bare profile command gesture asks for the goal',
-  invokedAgentTeamsInvocation([userMessage('/agent-teams-demo-delivery')], () => liveProfiles)?.profile === 'demo-delivery'
-    && invokedAgentTeamsInvocation([userMessage('/agent-teams-demo-delivery')], () => liveProfiles)?.goal === '')
+  invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery')], () => liveProfiles)?.profile === 'demo-delivery'
+    && invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery')], () => liveProfiles)?.goal === '')
 check('unknown profile command stays ordinary prose',
-  invokedAgentTeamsInvocation([userMessage('/agent-teams-missing ship a CLI')], () => liveProfiles) === undefined)
-check('bare gesture yields an empty goal', invokedAgentTeamsGoal([userMessage('  /agent-teams')]) === '')
+  invokedAgentTeamsInvocation([userMessage('/teamflow-missing ship a CLI')], () => liveProfiles) === undefined)
+check('bare gesture yields an empty goal', invokedAgentTeamsGoal([userMessage('  /teamflow')]) === '')
 check('mid-sentence mention stays ordinary prose',
-  invokedAgentTeamsGoal([userMessage('how do I use /agent-teams here?')]) === undefined)
+  invokedAgentTeamsGoal([userMessage('how do I use /teamflow here?')]) === undefined)
 check('non-user sources cannot forge the gesture',
-  invokedAgentTeamsGoal([{ ...userMessage('/agent-teams x'), source: { kind: 'plugin', plugin: 'fake' } }]) === undefined)
+  invokedAgentTeamsGoal([{ ...userMessage('/teamflow x'), source: { kind: 'plugin', plugin: 'fake' } }]) === undefined)
 check('latest user gesture wins in a batch',
-  invokedAgentTeamsGoal([userMessage('/agent-teams first'), userMessage('/agent-teams second')]) === 'second')
+  invokedAgentTeamsGoal([userMessage('/teamflow first'), userMessage('/teamflow second')]) === 'second')
 const profileOnly = command.handler({
   agent: captain, rawInput: '--profile demo-delivery', signal: new AbortController().signal, commandId: 'cmd-profile-only',
 })
@@ -443,8 +446,8 @@ const unknownProfile = command.handler({
 check('unknown slash profile reports error and does not followup',
   unknownProfile.kind === 'error' && captain.followups.length === 3)
 check('leading ordinary token is never treated as a profile',
-  invokedAgentTeamsInvocation([userMessage('/agent-teams research this bug')])?.goal === 'research this bug'
-    && invokedAgentTeamsInvocation([userMessage('/agent-teams research this bug')])?.profile === undefined)
+  invokedAgentTeamsInvocation([userMessage('/teamflow research this bug')])?.goal === 'research this bug'
+    && invokedAgentTeamsInvocation([userMessage('/teamflow research this bug')])?.profile === undefined)
 liveProfiles['hot-reload'] = { members: [{ name: 'solo', model: 'fake' }] }
 check('command getter sees HMR profile names',
   command.handler({
