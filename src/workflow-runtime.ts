@@ -90,7 +90,15 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       const currentDiscussion = address ? boundDiscussion(await load(), caller)?.key : undefined
       const key = typeof body['discussion'] === 'string' ? body['discussion'] : currentDiscussion ?? 'graph'
       let openedSessionId: string | undefined
-      if (action === 'open_discussion') {
+      if (action === 'conversation_state' || action === 'conversation_send') {
+        if (!conversations) throw new Error('宿主未加载原生讨论服务')
+        const payload = await withTeamLock(lock, async () => {
+          const team = await load()
+          if (action === 'conversation_send') await conversations.sendEmbedded(team, key, string(body['message'], '讨论内容'))
+          return conversations.readEmbedded(team, key)
+        })
+        reply(200, payload); return
+      } else if (action === 'open_discussion') {
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
         openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
       } else if (action === 'materials') {

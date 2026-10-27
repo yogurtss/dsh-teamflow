@@ -152,13 +152,15 @@ test('fresh member discussion creates an independent session seeded with member 
   const source = team(); source.members[0].summary = 'Review requirements'; source.members[0].executionPrompt = 'Check acceptance criteria'
   workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [{ role: 'user', text: 'OLD HISTORY' }], calls: [], native: { sessionId: 'old-discussion', label: 'old' } }
   await createTeamDir(join(root, '.agent-teams'), source)
-  let spec; const prompts = [], filters = []
+  let spec; const prompts = [], filters = [], grouped = []
   const ctx = { tools: { register() {} }, subagents: { registerContinuableSetup() {} }, llm: { resolveCallConfig: async value => value }, effect() {}, sessions: { flush: async () => {} }, agents: {
     get: () => ({ status: 'idle' }), create: async value => { spec = value; value.setup({ effect: fn => fn(), tools: { restrict: filter => { filters.push(filter); return () => {} } } }); return { agent: { id: value.sessionId, session: {}, whenIdle: async () => {}, followup: message => prompts.push(message) }, dispose() {} } },
   } }
+  ctx.get = key => key === 'workspaceRegistry' ? { list: () => [{ sessionIds: ['captain-id'], attachSession: async id => grouped.push(id) }, { sessionIds: ['other-captain'], attachSession: () => { throw Error('wrong workspace') } }] } : undefined
   const runtime = installWorkflowConversations(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, workflowMaterials)
   const captain = { id: 'captain-id', options: { provider: 'fake', model: 'fake' }, session: { header: { cwd: root }, requestHeader: () => ({ config: {} }) } }
   const id = await runtime.open(captain, source, 'member:worker', join(root, '.agent-teams'), { fresh: true, message: 'Focus on requirement risks' })
+  assert.deepEqual(grouped, [id])
   assert.notEqual(id, captain.id); assert.notEqual(id, 'old-discussion')
   assert.equal(spec.resumeSessionId, undefined); assert.equal(spec.parentSessionId, undefined)
   assert.match(prompts[0].content[0].text, /Review requirements/)
@@ -172,6 +174,7 @@ test('fresh member discussion creates an independent session seeded with member 
   assert.ok(Object.entries(source.workflow.discussions).some(([key, value]) => key.startsWith('archive:') && value.native.sessionId === 'old-discussion'))
   const secondId = await runtime.open(captain, source, 'member:worker', join(root, '.agent-teams'), { fresh: true })
   assert.notEqual(secondId, id)
+  assert.deepEqual(grouped, [id, secondId])
   assert.match(prompts[1].content[0].text, /询问我希望如何调整/)
   assert.ok(Object.entries(source.workflow.discussions).some(([key, value]) => key.startsWith('archive:') && value.native.sessionId === id))
 })
@@ -391,4 +394,41 @@ test('member model and thinking changes validate and persist atomically in workf
   assert.equal(status, 409); saved = await readTeam(join(root, '.agent-teams'), source.id); assert.equal(saved.members[0].model, 'model-b'); assert.notEqual(saved.members[0].summary, 'should not save')
   await send({ action: 'update_member', name: 'worker', provider: 'fixture', model: 'model-b', reasoningEffort: 'default' }, workflowFingerprint(saved))
   assert.equal(status, 200); assert.equal(result.team.members[0].reasoningEffort, 'medium')
+})
+
+test('human confirms a proposal directly from the bound independent discussion', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-inline-confirm-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = team(), nativeId = `session-at-discussion-${createHash('sha256').update('demo').digest('hex').slice(0, 16)}-00000000-0000-0000-0000-000000000002`
+  const proposal = proposeWorkflow(source, 'Update member', [{ action: 'update_member', name: 'worker', summary: 'Updated after discussion' }])
+  workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [], calls: [], native: { sessionId: nativeId, label: 'native' }, proposal }
+  await createTeamDir(join(root, '.agent-teams'), source)
+  const captain = { id: 'captain-id', session: { header: { cwd: root }, ownEvents: () => [] }, status: 'idle' }
+  const native = { id: nativeId, session: { header: { cwd: root }, ownEvents: () => [] }, status: 'idle' }
+  let route, status, result
+  const ctx = { agents: { get: id => id === captain.id ? captain : id === native.id ? native : undefined }, effect: fn => fn(), logger: { warn() {} } }
+  installWorkflowWorkbench(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, { kickTeam: async () => {} }, { register: value => { route = value; return () => {} } })
+  const req = Readable.from([JSON.stringify({ action: 'apply', sessionId: nativeId, discussion: 'member:worker', teamId: source.id, proposalId: proposal.id })]); req.method = 'POST'; req.headers = {}
+  await route.handler(req, { writeHead: code => { status = code }, end: body => { result = JSON.parse(body) } })
+  assert.equal(status, 200, JSON.stringify(result)); assert.equal(result.currentDiscussion, 'member:worker')
+  assert.equal((await readTeam(join(root, '.agent-teams'), source.id)).members[0].summary, 'Updated after discussion')
+})
+
+test('embedded discussion reads and sends only the bound isolated session', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-embedded-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = team(), nativeId = `session-at-discussion-${createHash('sha256').update('demo').digest('hex').slice(0, 16)}-00000000-0000-0000-0000-000000000003`
+  workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [], calls: [], native: { sessionId: nativeId, label: 'native' } }
+  await createTeamDir(join(root, '.agent-teams'), source)
+  const events = [{ type:'user/message', seq:1, data:{ source:{kind:'user'}, content:[{type:'text',text:'Original discussion'}] } }, { type:'assistant/message', seq:2, data:{ message:{ source:{kind:'model'}, content:[{type:'text',text:'AI response'}] } } }], sent = []
+  const captain = { id:'captain-id', session:{header:{cwd:root},ownEvents:()=>[]},status:'idle' }
+  const agent = { id:nativeId, session:{header:{cwd:root},ownEvents:()=>events},status:'idle',followup:message=>sent.push(message) }
+  let route, status, result
+  const ctx = { tools:{register(){}},subagents:{registerContinuableSetup(){}},agents:{get:id=>id===captain.id?captain:id===agent.id?agent:undefined},effect:fn=>fn(),logger:{warn(){}} }
+  const conversations = installWorkflowConversations(ctx, {stateDir:'.agent-teams',maxMembers:8}, workflowMaterials)
+  installWorkflowWorkbench(ctx, {stateDir:'.agent-teams',maxMembers:8}, {kickTeam:async()=>{}}, {register:value=>{route=value;return()=>{}}}, conversations)
+  async function call(action, message, discussion = 'member:worker') { const req = Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',discussion,action,message})]); req.method='POST'; req.headers={}; await route.handler(req,{writeHead:code=>{status=code},end:body=>{result=JSON.parse(body)}}) }
+  await call('conversation_state'); assert.equal(status,200); assert.deepEqual(result.messages.map(m=>m.text), ['Original discussion','AI response'])
+  await call('conversation_send','Make the role more specific'); assert.equal(status,200); assert.equal(sent[0].content[0].text,'Make the role more specific')
+  assert.equal(captain.session.ownEvents().length,0)
+  agent.status='running'; await call('conversation_send','another'); assert.equal(status,409); assert.equal(sent.length,1)
+  await call('conversation_state',undefined,'graph'); assert.equal(status,409)
 })

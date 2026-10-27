@@ -10,6 +10,7 @@ import { LEAD_ART, REVIEW_ART, memberArtUrl } from './artwork.ts'
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { AgentTeamsTranslate } from './locales.ts'
 import { StagedModelPicker } from './StagingPlanEditor.tsx'
+import { EmbeddedDiscussion } from './EmbeddedDiscussion.tsx'
 
 interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
@@ -73,8 +74,10 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   const [discussion, setDiscussion] = useState('graph')
   const [selectedTask, setSelectedTask] = useState<string>()
   const [error, setError] = useState('')
+  const [feedback, setFeedback] = useState('')
   const [working, setWorking] = useState(false)
   const [note, setNote] = useState('')
+  const [embeddedDiscussion, setEmbeddedDiscussion] = useState<string>()
   const [pane, setPane] = useState<'members' | 'flow' | 'discussion'>('flow')
   const [name, setName] = useState('新团队')
   const [goal, setGoal] = useState('')
@@ -90,6 +93,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   const dialog = useRef<HTMLElement>(null)
   const mounted = useRef(true)
   const generation = useRef(0)
+  const initializedDiscussion = useRef(false)
   const team = data?.team
   const conversation = team?.workflow?.discussions[`discussion:${discussion}`]
   const proposal = conversation?.proposal?.status === 'pending' ? conversation.proposal : undefined
@@ -123,7 +127,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   useEffect(() => {
     if (editor && !editor.id) dialog.current?.querySelector<HTMLElement>('[data-workflow-editor] input:not(:disabled), [data-workflow-editor] textarea')?.focus()
   }, [editor])
-  useEffect(() => { if (teamId && teamId !== activeId) { setActiveId(teamId); setData(undefined); setDiscussion('graph'); setPositions({}); setSelectedTask(undefined); setEditor(undefined); generation.current++ } }, [sessionId, teamId])
+  useEffect(() => { if (teamId && teamId !== activeId) { setActiveId(teamId); setData(undefined); setDiscussion('graph'); setPositions({}); setSelectedTask(undefined); setEditor(undefined); initializedDiscussion.current = false; generation.current++ } }, [sessionId, teamId])
   const refresh = async (): Promise<void> => {
     const token = generation.current
     try {
@@ -131,7 +135,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       if (!result) return
       if (mounted.current && token === generation.current) {
         setData(result); setActiveId(result.team.id)
-        if (!data && result.currentDiscussion) { setDiscussion(result.currentDiscussion); setPane('discussion') }
+        if (!initializedDiscussion.current && result.currentDiscussion) { initializedDiscussion.current = true; setDiscussion(result.currentDiscussion); setPane('discussion') }
       }
     } catch (err) { if (mounted.current && token === generation.current && activeId) setError(String(err)) }
   }
@@ -146,7 +150,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   }, [activeId, working])
   async function perform(action: string, fields: Record<string, unknown> = {}): Promise<Response | undefined> {
     setWorking(true)
-    setError(''); const token = ++generation.current
+    setError(''); setFeedback(''); const token = ++generation.current
     try {
       const result = await request({ sessionId, teamId: activeId, discussion, action, ...fields })
       if (!result) return
@@ -167,12 +171,18 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   }
   async function createFlow(): Promise<void> {
     const created = await perform('create', { name, description: goal })
-    if (created) await openDiscussion('graph', created.team.id)
+    if (created) await startEmbedded('graph', created.team.id)
   }
   async function saveEdit(operations: WorkflowOperation[], title: string, finishEditing = false): Promise<void> {
     if (await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, pos(task.id)]) ?? []) })) { if (finishEditing) setEditor(undefined); setSelectedEdge(undefined) }
   }
-  function prepareDiscussion(name: string): void { void openDiscussion(`member:${name}`, activeId, true) }
+  async function startEmbedded(key: string, targetId = activeId, fresh = false): Promise<void> {
+    setEditor(undefined); setSelectedEdge(undefined); setSelectedTask(undefined); selectDiscussion(key)
+    const result = await perform('open_discussion', { discussion: key, teamId: targetId, fresh })
+    if (result?.openedSessionId && result.openedSessionId.startsWith('session-at-discussion-') && result.openedSessionId !== team?.captainSessionId) setEmbeddedDiscussion(key)
+    else if (result) setError('宿主未返回独立讨论会话')
+  }
+  function prepareDiscussion(name: string): void { void startEmbedded(`member:${name}`, activeId, true) }
   async function deleteEdge(): Promise<void> {
     const target = team?.tasks.find(task => task.id === selectedEdge?.to)
     if (!target || !selectedEdge || working) return
@@ -228,32 +238,44 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   }
   async function openReview(id: string): Promise<void> {
     selectDiscussion(`check:${id}`); setSelectedTask(id)
-    if (await perform('materials', { discussion: `check:${id}` })) await openDiscussion(`check:${id}`)
+    if (await perform('materials', { discussion: `check:${id}` })) {
+      setOpened(true); await startEmbedded(`check:${id}`)
+    }
   }
-  const pendingCount = Object.entries(team?.workflow?.discussions ?? {}).filter(([key, item]) => key.startsWith('discussion:') && item.proposal?.status === 'pending').length
+  const pendingProposals = Object.entries(team?.workflow?.discussions ?? {}).filter(([key, item]) => key.startsWith('discussion:') && item.proposal?.status === 'pending').map(([, item]) => item)
+  const pendingCount = pendingProposals.length
+  const pendingNotice = pendingCount > 0 && <div className={css.pendingNotice} role="status"><strong>有 {pendingCount} 项修改等待确认</strong>
+    {pendingProposals.map(item => <button type="button" key={item.key} disabled={working || !!editor} onClick={() => { setSelectedTask(undefined); setSelectedEdge(undefined); selectDiscussion(item.key); setOpened(true) }}>查看并决定 · {item.proposal!.title}</button>)}
+    {!!editor && <small>先保存或取消当前编辑，再查看待确认修改。</small>}
+  </div>
   const reviewCount = data?.ready.length ?? waitingCount
   const reviewNotice = !!data?.ready.length && <div className={css.reviewNotice} role="status" aria-label="等待你验收">
     <strong><span className={css.reviewDot} aria-hidden />等待你验收</strong>
     {data.ready.map(id => <button type="button" key={id} disabled={working} onClick={() => void openReview(id)}>验收 · {team?.tasks.find(t => t.id === id)?.subject} ↗</button>)}
     {!reviewEntryOnly && <small>上游已完成 · 打开独立对话查看材料与 AI 总结</small>}
   </div>
-  if (reviewEntryOnly) return <>{reviewNotice}{error && <span role="alert">{error}</span>}</>
+  if (reviewEntryOnly && !opened) return <>{reviewNotice}{error && <span role="alert">{error}</span>}</>
   if (nativeOnly && !data?.currentDiscussion) return null
   return <>
-    {data?.currentDiscussion && team && <div className={css.nativeBanner}><span>{data.currentDiscussion.startsWith('check:') ? '独立验收对话' : '独立配置对话'} · {team.name}</span><button className={css.entry} onClick={() => void openExecution?.(team.captainSessionId, team.captainSessionId)}>返回队长对话 ↗</button></div>}
-    <button type="button" className={`${css.entry} ${nativeOnly ? css.compact : css.launcher}`} aria-haspopup="dialog" onClick={() => setOpened(true)}>
+    {data?.currentDiscussion && team && <div className={css.nativeBanner}><span>{data.currentDiscussion.startsWith('check:') ? '独立验收对话' : '独立配置对话'} · {team.name}</span><button className={css.entry} onClick={() => void openExecution?.(team.captainSessionId, team.captainSessionId)}>返回团队对话 ↗</button></div>}
+    {!reviewEntryOnly && <button type="button" className={`${css.entry} ${nativeOnly ? css.compact : css.launcher}`} aria-haspopup="dialog" onClick={() => setOpened(true)}>
       <strong>团队与流程 <span aria-hidden>↗</span></strong>
       {!nativeOnly && <span>{team?.name ?? (activeId ? '查看成员、任务交接与人工检查' : '讨论目标，创建初步团队')}</span>}
       {pendingCount > 0 && <span>{pendingCount} 项修改待确认</span>}
       {reviewCount > 0 && <span>{reviewCount} 项等待人工验收</span>}
-    </button>
-    {!nativeOnly && team?.phase === 'staged' && <button type="button" className={`${css.entry} ${css.startEntry}`} disabled={working || !!editor || pendingCount > 0} title={editor ? '请在工作台保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动团队</button>}
+    </button>}
+    {!nativeOnly && !reviewEntryOnly && team?.phase === 'staged' && <button type="button" className={`${css.entry} ${css.startEntry}`} disabled={working || !!editor || pendingCount > 0} title={editor ? '请在工作台保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动团队</button>}
+    {!opened && !nativeOnly && !reviewEntryOnly && pendingNotice}
     {error && !opened && <div className={css.error} role="alert">{error}</div>}
     {!nativeOnly && reviewNotice}
-    {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>讨论资料 ↗</button>}
-    {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label><WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
+    {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>{proposal ? '查看待确认修改 ↗' : '团队与讨论资料 ↗'}</button>}
+    {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label>
+      {feedback && <p role="status">{feedback}</p>}
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
-      {proposal && <section className={css.contextProposal}><strong>待确认 · {proposal.title}</strong>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看并确认</button></section>}
+      {proposal && <section className={css.contextProposal} aria-label="待确认修改"><strong>待确认 · {proposal.title}</strong><p>请检查修改内容；确认后才会生效。</p>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}
+        {data.currentDiscussion === discussion && <div className={css.contextActions}><button className={css.confirmProposal} disabled={working} onClick={() => void perform('apply', { proposalId: proposal.id }).then(result => { if (result) setFeedback('修改已应用，可继续讨论或返回团队。') })}>确认应用</button><button disabled={working} onClick={() => void perform('dismiss').then(result => { if (result) setFeedback('提案已放弃，可以继续讨论。') })}>放弃提案</button></div>}
+        <button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
+      <WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
     </section>}
     {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
       if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
@@ -270,6 +292,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
         <div>{team?.phase === 'staged' && <button className={css.primary} disabled={working || !!editor || pendingCount > 0} title={editor ? '请先保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动</button>}
           <button onClick={() => setOpened(false)} aria-label="关闭编排工作台">关闭</button></div></header>
       {team && <nav className={css.paneTabs} aria-label="工作台视图">{(['members', 'flow', 'discussion'] as const).map(value => <button key={value} aria-pressed={pane === value} onClick={() => setPane(value)}>{value === 'members' ? `成员 ${team.members.filter(m => m.status !== 'removed').length}` : value === 'flow' ? '任务流程' : '修改与验收'}{value === 'discussion' && proposal && <i aria-label="有待确认的修改" />}</button>)}</nav>}
+      {pendingNotice}
       {error && <div className={css.error} role="alert">{error}</div>}
       {!activeId ? <form className={css.create} onSubmit={e => { e.preventDefault(); void createFlow() }}>
         <h2>描述目标，一起规划团队</h2><label>团队名称<input required value={name} onChange={e => setName(e.target.value)} /></label>
@@ -342,21 +365,21 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
         {!editor && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
           <small>{reviewTask ? '一起检查成果，由你决定是否通过' : '讨论不影响执行，修改确认后生效'}</small></div></header>
           <div className={css.messages}>
-            <p className={css.hint}>{reviewTask ? '在原生验收对话中共同检查成果，回到这里确认验收决定。' : member ? '与独立配置顾问讨论职责、Summary、执行指令和任务。' : '在 DSH 原生对话中讨论团队与流程，修改方案会显示在这里。'}</p>
-            <button className={css.primary} disabled={working} onClick={() => member ? prepareDiscussion(member.name) : void openDiscussion()}>在 DSH 中{conversation?.native ? '继续' : '开始'}讨论 ↗</button>
-            <WorkflowContext team={team} discussion={discussion} onSelect={key => { selectDiscussion(key); if (key.startsWith('member:')) edit('member', key.slice(7)) }} openExecution={openExecution} />
+            <p className={css.hint}>{reviewTask ? '在原生验收对话中共同检查成果，回到这里确认验收决定。' : member ? '在这里与独立配置顾问讨论；队长对话保持独立。' : '在 DSH 原生对话中讨论团队与流程，修改方案会显示在这里。'}</p>
+            {embeddedDiscussion === discussion && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : <button className={css.primary} disabled={working} onClick={() => member ? prepareDiscussion(member.name) : void startEmbedded(discussion)}>在此处{conversation?.native ? '继续' : '开始'}讨论</button>}
+            {embeddedDiscussion === discussion && conversation?.native && openConversation && <button disabled={working} onClick={() => void openDiscussion(discussion)}>打开完整 DSH 对话 ↗</button>}
+            <details><summary>查看当前资料</summary><WorkflowContext team={team} discussion={discussion} onSelect={key => { selectDiscussion(key); if (key.startsWith('member:')) edit('member', key.slice(7)) }} openExecution={openExecution} /></details>
             {conversation?.materials && <details open><summary>本轮验收材料与证据</summary><ReviewMaterials text={conversation.materials} /></details>}
             {data.busy.includes(discussion) && <p role="status">原生对话正在整理方案…</p>}
           </div>
-          {proposal && <section className={css.proposal}><strong>{proposal.title}</strong><details open><summary>修改预览（不会立即执行）</summary>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}</details>
-            <button className={css.primary} disabled={working} onClick={() => void perform('apply', { proposalId: proposal.id })}>确认应用</button><button disabled={working} onClick={() => void perform('dismiss')}>放弃提案</button></section>}
+          {proposal && <section className={css.proposal}><strong>{proposal.title}</strong><div><button className={css.primary} disabled={working} onClick={() => void perform('apply', { proposalId: proposal.id })}>确认应用</button><button disabled={working} onClick={() => void perform('dismiss')}>放弃修改</button></div><details open><summary>修改预览（不会立即执行）</summary>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}</details></section>}
           {reviewTask && conversation?.evidence && conversation.materialsRound === reviewTask.checkpoint?.round && data.ready.includes(reviewTask.id) && !reviewTask.checkpoint?.decision && <div className={css.decisions}>
             <button className={css.primary} disabled={working} onClick={() => void perform('review', { taskId: reviewTask.id, evidence: conversation.evidence, decision: 'approve', note }).then(ok => { if (ok) setNote('') })}>通过验收</button>
-            <button disabled={working} onClick={() => void perform('review', { taskId: reviewTask.id, evidence: conversation.evidence, decision: 'reject', note }).then(ok => { if (ok) { setNote(''); void openDiscussion() } })}>退回并讨论返工</button>
+            <button disabled={working} onClick={() => void perform('review', { taskId: reviewTask.id, evidence: conversation.evidence, decision: 'reject', note }).then(ok => { if (ok) { setNote(''); void startEmbedded(discussion) } })}>退回并讨论返工</button>
           </div>}
           {reviewTask?.checkpoint?.decision === 'reject' && <p className={css.notice}>已拒绝，下游保持等待。请讨论返工对象并确认新方案。</p>}
           {reviewTask && <div className={css.composer}><label>验收意见（随决定保存）<textarea aria-label="验收意见" value={note} onChange={e => setNote(e.target.value)} placeholder="记录通过或退回的原因…" /></label><button disabled={working || !data.ready.includes(reviewTask.id)} onClick={() => void perform('materials')}>刷新验收材料</button></div>}
-          {!member && !data.currentDiscussion && <button disabled={working || data.busy.includes(discussion)} onClick={() => void perform('new_discussion').then(ok => { if (ok) void openDiscussion() })}>新建独立讨论</button>}
+          {!member && !data.currentDiscussion && <button disabled={working || data.busy.includes(discussion)} onClick={() => void startEmbedded(discussion, activeId, true)}>新建独立讨论</button>}
         </aside>}
 
       {editor && <form key={`${editor.type}:${editor.id ?? 'new'}`} data-workflow-editor className={css.editor} onSubmit={event => {

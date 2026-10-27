@@ -32,13 +32,20 @@ let team = {
     { id: 't3', subject: '开发与自测', description: '仅在需求通过后执行', assignee: 'developer', dependencies: ['t2'], status: 'pending', attempt: 0, createdAt: 1, updatedAt: 1 },
   ],
 };
+if (process.env.TEAMFLOW_PREVIEW_DISCUSSION) {
+  const key = 'member:researcher'
+  workflowState(team).discussions[`discussion:${key}`] = { key, messages: [], calls: [], proposal: proposeWorkflow(team, '调整研究成员职责', [{ action: 'update_member', name: 'researcher', summary: '整理需求并明确每项验收标准。', role: '需求与验收分析师' }]) }
+}
 const send = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
+const messages = [{ id: '1', role: 'user', text: '## 独立讨论：researcher\n\n当前职责：需求分析师\n\n请讨论希望如何调整。' }, { id: '2', role: 'assistant', text: '我会根据当前职责和任务提出建议。你希望重点调整什么？' }];
 createServer(async (req, res) => {
   if (req.url === '/app.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(readFileSync(directory + '/app.js')); return; }
   if (req.method !== 'POST') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end('<!doctype html><html lang="zh" style="color-scheme:' + (req.url.includes('dark') ? 'dark' : 'light') + '"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentTeams 工作台交互验证</title></head><body style="font-family:system-ui;padding:30px;background:light-dark(#f6f7f9,#181a1e);color:light-dark(#26303d,#e3e6ec)"><h2>AgentTeams 工作台 · 开发预览</h2><p>本页使用实际界面代码，执行结果为模拟数据；原生讨论入口需要在 DSH 中使用。</p><div id="root"></div><script src="/app.js"></script></body></html>'); return; }
   try {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw), key = body.discussion || 'graph';
+    if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_state') { send(res, 200, { messages, busy: false }); return; }
+    if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_send') { messages.push({ id: String(messages.length + 1), role: 'user', text: body.message }, { id: String(messages.length + 2), role: 'assistant', text: '这是模拟回复，正式环境将由独立 DSH 会话生成。' }); send(res, 200, { messages, busy: false }); return; }
     if (body.action === 'create') team = { id: 'preview', name: body.name, description: body.description, captainSessionId: 'preview', phase: 'staged', members: [], tasks: [], taskSeq: 0, createdAt: 1 };
     const state = workflowState(team), slot = `discussion:${key}`;
     const discussion = state.discussions[slot] ??= { key, messages: [], calls: [] };
@@ -53,8 +60,11 @@ createServer(async (req, res) => {
       const task=team.tasks.find(t=>t.id===key.slice(6)), material=workflowMaterials(team,task.id,process.cwd());
       discussion.materials=material.text; discussion.evidence=material.evidence; discussion.materialsRound=task.checkpoint.round;
     }
-    if (body.action === 'open_discussion') throw new Error('此开发预览不包含 DSH 原生会话，请在真实宿主中使用此入口。');
+    if (body.action === 'open_discussion') {
+      if (!process.env.TEAMFLOW_PREVIEW_DISCUSSION) throw new Error('此开发预览不包含 DSH 原生会话，请在真实宿主中使用此入口。');
+      discussion.native = { sessionId: 'session-at-discussion-preview', label: 'preview' };
+    }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, base: workflowFingerprint(team), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [] });
+    send(res, 200, { team, base: workflowFingerprint(team), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
   } catch (error) { send(res, 409, { error: error.message }); }
 }).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));

@@ -18,6 +18,15 @@ export declare function installWorkflowConversations(ctx: Context, config: Tools
     text: string;
     evidence: string;
 }): {
+    readEmbedded(team: TeamState, key: string): Promise<{
+        messages: {
+            id: string;
+            role: string;
+            text: string;
+        }[];
+        busy: boolean;
+    }>;
+    sendEmbedded(team: TeamState, key: string, text: string): Promise<void>;
     open(captain: Agent, team: TeamState, key: string, root: string, options?: {
         fresh?: boolean;
         message?: string;

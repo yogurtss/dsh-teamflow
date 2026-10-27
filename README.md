@@ -17,7 +17,7 @@ Use `/teamflow` to start. Legacy `/agent-teams` and its profile commands remain 
 | Member summaries, roles and PE | Inspect responsibilities and execution instructions, edit directly or discuss changes in an isolated configuration conversation. |
 | One editable workflow | Discuss an initial team, then adjust the canvas. No separate automatic/manual modes. A member can own multiple tasks. |
 | Drag-to-connect handoffs | Drag node bodies to move them and center handles to connect. Click edges to inspect endpoints; Delete removes the selection. Click member cards or nodes to edit properties without hiding the roster or graph. |
-| Native DSH discussions | All model interaction uses the central native conversation. Configuration and review sessions stay isolated from execution. |
+| Native DSH discussions | Team, member, and review discussions run inside the TeamFlow workbench, backed by independent DSH sessions isolated from execution. |
 | Discussion context | Inspect saved prompts, requirements, submitted results and verification records beside the conversation. Missing information is labeled. |
 | Human approval and rework | Discuss evidence with a dedicated reviewer, then approve or reject yourself. Rework creates new rounds and preserves earlier results. |
 | Simple role portraits | Equal roles share an icon; controls follow the existing panel's theme. |
@@ -285,3 +285,5 @@ Human review gates have a distinct frame. When ready, the team panel and captain
 Select a member card in TeamFlow to edit its model and thinking level. For a staged team, the TeamFlow activity page includes a **Confirm and start team** button. See the [walkthrough](docs/model-start-2026-10-27/README.md).
 
 Select a member in the activity view to edit its model, thinking level and role inline. In the workbench, selecting a member highlights their tasks and brings model settings to the top. See the [walkthrough](docs/member-selection-2026-10-27/README.md).
+
+Discuss, review, and apply member proposals in the TeamFlow workbench alongside the canvas. When the host supports workspace membership, new discussions are grouped with the captain's existing project when it can be identified unambiguously.
