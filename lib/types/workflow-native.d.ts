@@ -17,5 +17,8 @@ export declare function installWorkflowConversations(ctx: Context, config: Tools
     text: string;
     evidence: string;
 }): {
-    open(captain: Agent, team: TeamState, key: string, root: string): Promise<string>;
+    open(captain: Agent, team: TeamState, key: string, root: string, options?: {
+        fresh?: boolean;
+        message?: string;
+    }): Promise<string>;
 };

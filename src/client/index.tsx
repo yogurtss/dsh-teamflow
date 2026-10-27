@@ -62,9 +62,10 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(AGENT_TEAMS_LOCALE_NAMESPACE, { zh, en }),
     'agent-teams: dictionaries',
   )
-  const openMember = (parentId: SessionId, childId: SessionId): void => {
-    void openAgentTeamMember(ctx.sessions, parentId, childId, ctx.layout as AgentTeamsLayoutNavigator, ctx.get('uiWorkspace') as AgentTeamsWorkspaceNavigator | undefined).catch((error: unknown) => {
+  const openMember = async (parentId: SessionId, childId: SessionId): Promise<void> => {
+    await openAgentTeamMember(ctx.sessions, parentId, childId, ctx.layout as AgentTeamsLayoutNavigator, ctx.get('uiWorkspace') as AgentTeamsWorkspaceNavigator | undefined).catch((error: unknown) => {
       console.warn(`agent-teams: failed to open member transcript ${childId}: ${String(error)}`)
+      throw error
     })
   }
   const Panel = ({ t, usePanelInfo }: PropsLocale<'agentTeams'> & PanelNavigationProps) => {

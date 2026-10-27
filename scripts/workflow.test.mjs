@@ -119,6 +119,8 @@ test('restored native discussion is restricted and cannot propose outside its ow
   const root = mkdtempSync(join(tmpdir(), 'workflow-native-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = team(), label = 'native-label', nativeId = `session-at-discussion-${createHash('sha256').update('demo').digest('hex').slice(0, 16)}-00000000-0000-0000-0000-000000000001`
   workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [], calls: [], native: { sessionId: nativeId, label } }
+  source.members.push({ ...source.members[0], name: 'unrelated' })
+  source.tasks.push({ ...task('unrelated-task'), assignee: 'unrelated', output: 'UNRELATED EXECUTION' })
   await createTeamDir(join(root, '.agent-teams'), source)
   const definitions = new Map(); let setup
   const ctx = { tools: { register: definition => definitions.set(definition.name, definition) }, subagents: { registerContinuableSetup: fn => { setup = fn } } }
@@ -130,6 +132,10 @@ test('restored native discussion is restricted and cannot propose outside its ow
   assert.deepEqual(restricted, [{ allow: ['agent_teams_workflow_context', 'agent_teams_workflow_propose'] }])
   const exec = { agent, signal: new AbortController().signal }
   const context = JSON.parse(await definitions.get('agent_teams_workflow_context').execute({}, exec))
+  assert.equal(context.team.members.length, 1)
+  assert.ok(context.team.tasks.every(task => task.assignee === 'worker'))
+  assert.doesNotMatch(JSON.stringify(context), /UNRELATED EXECUTION/)
+  assert.equal(context.team.members[0].runtimeSetup, undefined)
   const propose = args => definitions.get('agent_teams_workflow_propose').execute({ base: context.base, title: 'edit', operations: JSON.stringify(args) }, exec)
   await assert.rejects(propose([{ action: 'add_member', name: 'other', summary: 'other scope' }]), /只能调整/)
   await propose([{ action: 'update_member', name: 'worker', summary: 'new summary' }])
@@ -139,6 +145,55 @@ test('restored native discussion is restricted and cannot propose outside its ow
   const intruder = { ...agent, id: nativeId.replace(/1$/, '2') }
   await assert.rejects(definitions.get('agent_teams_workflow_context').execute({}, { ...exec, agent: intruder }), /失效|关联记录缺失/)
   dispose()
+})
+
+test('fresh member discussion creates an independent session seeded with member facts and user intent', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-fresh-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = team(); source.members[0].summary = 'Review requirements'; source.members[0].executionPrompt = 'Check acceptance criteria'
+  workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [{ role: 'user', text: 'OLD HISTORY' }], calls: [], native: { sessionId: 'old-discussion', label: 'old' } }
+  await createTeamDir(join(root, '.agent-teams'), source)
+  let spec; const prompts = [], filters = []
+  const ctx = { tools: { register() {} }, subagents: { registerContinuableSetup() {} }, llm: { resolveCallConfig: async value => value }, effect() {}, sessions: { flush: async () => {} }, agents: {
+    get: () => ({ status: 'idle' }), create: async value => { spec = value; value.setup({ effect: fn => fn(), tools: { restrict: filter => { filters.push(filter); return () => {} } } }); return { agent: { id: value.sessionId, session: {}, whenIdle: async () => {}, followup: message => prompts.push(message) }, dispose() {} } },
+  } }
+  const runtime = installWorkflowConversations(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, workflowMaterials)
+  const captain = { id: 'captain-id', options: { provider: 'fake', model: 'fake' }, session: { header: { cwd: root }, requestHeader: () => ({ config: {} }) } }
+  const id = await runtime.open(captain, source, 'member:worker', join(root, '.agent-teams'), { fresh: true, message: 'Focus on requirement risks' })
+  assert.notEqual(id, captain.id); assert.notEqual(id, 'old-discussion')
+  assert.equal(spec.resumeSessionId, undefined); assert.equal(spec.parentSessionId, undefined)
+  assert.match(prompts[0].content[0].text, /Review requirements/)
+  assert.match(prompts[0].content[0].text, /Check acceptance criteria/)
+  assert.match(prompts[0].content[0].text, /Focus on requirement risks/)
+  assert.doesNotMatch(prompts[0].content[0].text, /OLD HISTORY/)
+  assert.deepEqual(filters, [{ allow: ['agent_teams_workflow_context', 'agent_teams_workflow_propose'] }])
+  assert.ok(Object.entries(source.workflow.discussions).some(([key, value]) => key.startsWith('archive:') && value.native.sessionId === 'old-discussion'))
+})
+
+test('direct graph edits persist atomically, reject stale bases and cycles, and pause newly added running work', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-edit-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = team(); source.tasks.push({ ...task('t2'), dependencies: [] })
+  await createTeamDir(join(root, '.agent-teams'), source)
+  const captain = { id: 'captain-id', session: { header: { cwd: root }, ownEvents: () => [] }, status: 'idle' }
+  let route, status, result
+  const ctx = { agents: { get: () => captain }, effect: fn => fn(), logger: { warn() {} } }
+  installWorkflowWorkbench(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, { kickTeam: async () => {} }, { register: value => { route = value; return () => {} } })
+  async function send(operations, base, positions) {
+    const req = Readable.from([JSON.stringify({ sessionId: captain.id, teamId: 'demo', action: 'edit', title: 'Canvas edit', operations, base, positions })]); req.method = 'POST'; req.headers = {}
+    await route.handler(req, { writeHead: code => { status = code }, end: body => { result = JSON.parse(body) } })
+  }
+  const original = workflowFingerprint(source)
+  await send([{ action: 'update_task', id: 't2', dependencies: ['t1'] }], original, { t1: { x: 100, y: 180 }, t2: { x: 400, y: 280 } })
+  assert.equal(status, 200, JSON.stringify(result)); assert.deepEqual(result.team.tasks[1].dependencies, ['t1'])
+  assert.deepEqual(result.team.workflow.positions['task:t2'], { x: 400, y: 280 })
+  await send([{ action: 'update_task', id: 't2', dependencies: [] }], original)
+  assert.equal(status, 409); assert.match(result.error, /团队已变化/)
+  let current = await readTeam(join(root, '.agent-teams'), 'demo')
+  await send([{ action: 'update_task', id: 't1', dependencies: ['t2'] }], workflowFingerprint(current))
+  assert.equal(status, 409)
+  await send([{ action: 'update_task', id: 't2', dependencies: [] }], workflowFingerprint(current))
+  assert.equal(status, 200); assert.deepEqual(result.team.tasks[1].dependencies, [])
+  await send([{ action: 'add_task', subject: 'Wire before running', dependencies: [] }], result.base)
+  assert.equal(status, 200); assert.equal(result.team.tasks.at(-1).workflowPaused, true)
 })
 
 test('opening a new review round refreshes the native conversation once', async t => {

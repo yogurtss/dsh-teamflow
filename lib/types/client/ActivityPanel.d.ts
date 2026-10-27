@@ -45,6 +45,6 @@ export type ActivityPanelProps = {
     readonly conversationVisible?: boolean;
     readonly sessionsList: ObservableSnapshot<SessionListState>;
     readonly modelDirectories: ModelDirectoryResolver;
-    readonly openMember: (parentId: SessionId, childId: SessionId) => void;
+    readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>;
 } & PropsLocale<'agentTeams'>;
 export declare function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible }: ActivityPanelProps): import("react").JSX.Element | null;

@@ -16,13 +16,13 @@ Use `/teamflow` to start. Legacy `/agent-teams` and its profile commands remain 
 | --- | --- |
 | Member summaries, roles and PE | Inspect responsibilities and execution instructions, edit directly or discuss changes in an isolated configuration conversation. |
 | One editable workflow | Discuss an initial team, then adjust the canvas. No separate automatic/manual modes. A member can own multiple tasks. |
-| Drag-to-connect handoffs | Snap to target nodes. Keep the graph visible while adding tasks/checkpoints, select upstream/downstream nodes and preview dashed links before applying. |
+| Drag-to-connect handoffs | Drag node bodies to move them and center handles to connect. Click edges to inspect endpoints; Delete removes the selection. Click member cards or nodes to edit properties without hiding the roster or graph. |
 | Native DSH discussions | All model interaction uses the central native conversation. Configuration and review sessions stay isolated from execution. |
 | Discussion context | Inspect saved prompts, requirements, submitted results and verification records beside the conversation. Missing information is labeled. |
 | Human approval and rework | Discuss evidence with a dedicated reviewer, then approve or reject yourself. Rework creates new rounds and preserves earlier results. |
 | Simple role portraits | Equal roles share an icon; controls follow the existing panel's theme. |
 
-Edges mean execution order: B waits for A. Inserting a checkpoint replaces A → B with A → checkpoint → B, preserving B's other dependencies. Rejected checkpoints block their dependents while unrelated branches continue.
+Edges mean execution order: B waits for A. To insert a checkpoint manually, add it, delete A → B, then connect A → checkpoint → B; other dependencies stay unchanged. Rejected checkpoints block their dependents while unrelated branches continue.
 
 <img src="./assets/readme/workflow-editor.png" width="620" alt="Original graph stays visible while editing a checkpoint">
 
@@ -33,6 +33,8 @@ Edges mean execution order: B waits for A. Inserting a checkpoint replaces A →
 <img src="./assets/readme/discussion-context.png" width="620" alt="Member instructions, saved prompt and submitted results">
 
 </details>
+
+Manual canvas edits save directly; AI proposals still require confirmation. Member configuration discussions show a context-and-intent panel before opening a fresh independent session. New execution tasks added to running teams start paused so you can wire them before resuming.
 
 ## Validation scope
 

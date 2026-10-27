@@ -856,17 +856,17 @@ export type ActivityPanelProps = {
   readonly conversationVisible?: boolean
   readonly sessionsList: ObservableSnapshot<SessionListState>
   readonly modelDirectories: ModelDirectoryResolver
-  readonly openMember: (parentId: SessionId, childId: SessionId) => void
+  readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>
 } & PropsLocale<'agentTeams'>
 
 export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true }: ActivityPanelProps) {
   // Navigating to a member's subagent transcript is an explicit departure:
   // hide the floater immediately instead of waiting out the autocollapse
   // grace, so the panel never lingers over the member session.
-  const navigateToSession = (parentId: SessionId, childId: SessionId): void => {
+  const navigateToSession = (parentId: SessionId, childId: SessionId): void | Promise<void> => {
     setOpen(false)
     setWasActive(false)
-    openMember(parentId, childId)
+    return openMember(parentId, childId)
   }
   const [open, setOpen] = useState(false)
   const [openOwner, setOpenOwner] = useState<SessionId | undefined>()

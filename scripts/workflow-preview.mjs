@@ -3,9 +3,10 @@ import { createServer } from 'node:http';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { build } from 'tsdown';
-import { applyWorkflowProposal, checkpointReady, decideCheckpoint, proposeWorkflow, workflowState } from '../lib/workflow.js';
+import { applyWorkflowProposal, checkpointReady, decideCheckpoint, proposeWorkflow, workflowFingerprint, workflowState } from '../lib/workflow.js';
 import { workflowMaterials } from '../lib/workflow-runtime.js';
 
+const port = Number(process.env.TEAMFLOW_PREVIEW_PORT ?? 8371);
 const directory = resolve('node_modules/workflow-ui');
 mkdirSync(directory, { recursive: true });
 writeFileSync(directory + '/entry.tsx', `import React from 'react';
@@ -35,6 +36,7 @@ createServer(async (req, res) => {
     const state = workflowState(team), slot = `discussion:${key}`;
     const discussion = state.discussions[slot] ??= { key, messages: [], calls: [] };
     if (body.action === 'preview') discussion.proposal = proposeWorkflow(team, body.title, body.operations);
+    if (body.action === 'edit') { if (body.base !== workflowFingerprint(team)) throw Error('团队已变化'); const oldIds = team.tasks.map(task => task.id); team = applyWorkflowProposal(team, proposeWorkflow(team, body.title, body.operations)); if (body.positions) { const layout = workflowState(team).positions; for (const [id, point] of Object.entries(body.positions)) if (team.tasks.some(task => task.id === id)) layout[`task:${id}`] = point; for (const task of team.tasks) if (!oldIds.includes(task.id)) { layout[`task:${task.id}`] = { x: 32, y: Math.max(0, ...Object.values(layout).map(point => point.y)) + 160 }; if (!task.checkpoint && team.phase !== 'staged') task.workflowPaused = true; } } }
     if (body.action === 'apply') team = applyWorkflowProposal(team, discussion.proposal);
     if (body.action === 'dismiss' && discussion.proposal) discussion.proposal.status = 'dismissed';
     if (body.action === 'layout') state.positions[`task:${body.taskId}`] = { x: body.x, y: body.y };
@@ -46,6 +48,6 @@ createServer(async (req, res) => {
     }
     if (body.action === 'open_discussion') throw new Error('此开发预览不包含 DSH 原生会话，请在真实宿主中使用此入口。');
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [] });
+    send(res, 200, { team, base: workflowFingerprint(team), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [] });
   } catch (error) { send(res, 409, { error: error.message }); }
-}).listen(8371, '127.0.0.1', () => console.log('Workflow UI fixture: http://127.0.0.1:8371'));
+}).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));

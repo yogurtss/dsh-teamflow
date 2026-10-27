@@ -13,7 +13,7 @@ import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren } from './harness-compat.ts'
 import { readArtifactScope } from './artifacts.ts'
-import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, proposeWorkflow, workflowState } from './workflow.ts'
+import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
 
 function string(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 16000) throw new Error(`${name} 不能为空或过长`)
@@ -92,7 +92,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       let openedSessionId: string | undefined
       if (action === 'open_discussion') {
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
-        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root))
+        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
       } else if (action === 'materials') {
         await withTeamLock(lock, async () => {
           const team = await load(), discussion = discussionOf(team, key)
@@ -154,10 +154,27 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             state.positions[`task:${String(body['taskId'])}`] = { x, y }
           } else if (action === 'preview') {
             discussionOf(team, key).proposal = proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers)
-          } else if (action === 'apply') {
-            const proposal = discussionOf(team, key).proposal
-            if (!proposal || proposal.id !== body['proposalId']) throw new Error('提案不存在或已替换')
+          } else if (action === 'apply' || action === 'edit') {
+            if (action === 'edit' && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新画布后重试')
+            const proposal = action === 'edit' ? proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers) : discussionOf(team, key).proposal
+            if (!proposal || (action === 'apply' && proposal.id !== body['proposalId'])) throw new Error('提案不存在或已替换')
             const updated = applyWorkflowProposal(team, proposal, config.maxMembers)
+            if (action === 'edit' && body['positions'] !== undefined) {
+              const positions = body['positions']
+              if (!positions || typeof positions !== 'object' || Array.isArray(positions)) throw new Error('无效节点布局')
+              const layout = workflowState(updated).positions
+              for (const [id, point] of Object.entries(positions)) {
+                if (!team.tasks.some(task => task.id === id)) throw new Error('布局节点不存在')
+                const { x, y } = (point ?? {}) as { x?: unknown; y?: unknown }
+                if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 10000 || y > 10000) throw new Error('节点位置超出范围')
+                if (updated.tasks.some(task => task.id === id)) layout[`task:${id}`] = { x, y }
+              }
+              let row = Math.min(9800, Math.max(0, ...Object.values(layout).map(point => point.y)) + 160)
+              for (const task of updated.tasks) if (!team.tasks.some(existing => existing.id === task.id)) { layout[`task:${task.id}`] = { x: 32, y: row }; row = Math.min(10000, row + 160) }
+            }
+            if (action === 'edit' && team.phase !== 'staged') {
+              for (const task of updated.tasks) if (!task.checkpoint && !team.tasks.some(existing => existing.id === task.id)) task.workflowPaused = true
+            }
             for (const op of proposal.operations) {
               if (op.action === 'add_member') {
                 const member = updated.members.find(m => m.name === op.name)!
@@ -201,13 +218,15 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if (['apply', 'review', 'resume_task'].includes(action)) {
+        if (['apply', 'edit', 'review', 'resume_task'].includes(action)) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }
       }
-      const team = await load()
-      reply(200, { team, ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
+      // A fresh discussion may archive the caller's old discussion after ownership was checked.
+      const team = openedSessionId ? await readTeam(root, teamId) : await load()
+      if (!team) throw new Error('团队不存在')
+      reply(200, { team, base: workflowFingerprint(team), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })
     } catch (error) {
       reply(error instanceof RequestBodyError ? error.status : 409, { error: error instanceof Error ? error.message : '操作失败' })
