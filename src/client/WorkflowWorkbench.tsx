@@ -168,7 +168,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     if (result?.openedSessionId && result.openedSessionId.startsWith('session-at-discussion-') && result.openedSessionId !== team?.captainSessionId) setEmbeddedDiscussion(key)
     else if (result) setError('宿主未返回独立讨论会话')
   }
-  function prepareDiscussion(name: string): void { void startEmbedded(`member:${name}`, activeId, true) }
+  function prepareDiscussion(name: string): void { void startEmbedded(`member:${name}`, activeId) }
   async function deleteEdge(): Promise<void> {
     const target = team?.tasks.find(task => task.id === selectedEdge?.to)
     if (!target || !selectedEdge || working) return
@@ -295,7 +295,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
               {m.id && openExecution && <button onClick={() => { openExecution(m.id, team.captainSessionId); setOpened(false) }}>执行对话 ↗</button>}
               {openExecution && m.previousSessionIds?.map((id, i) => <button key={id} onClick={() => { openExecution(id, team.captainSessionId); setOpened(false) }}>历史执行 {i + 1} ↗</button>)}</div>
           </article>)}
-          <p className={css.hint}>点击成员卡片直接编辑；讨论调整会新建独立对话，先显示成员资料。</p>
+          <p className={css.hint}>点击成员卡片直接编辑；讨论调整默认继续该成员的独立讨论，保留历史上下文。</p>
         </aside>
         <main className={css.graphArea}>
           <nav className={css.toolbar}><button disabled={working || !!editor} onClick={() => edit('task')}>＋ 任务</button><button disabled={working || !!editor} onClick={() => edit('check')}>＋ 人工检查</button><button aria-label="缩小画布" onClick={() => setZoom(value => Math.max(.45, value - .1))}>−</button><button aria-label="放大画布" onClick={() => setZoom(value => Math.min(1.5, value + .1))}>＋</button><button onClick={fitCanvas}>适应画布</button><span role={link || taskEditing ? 'status' : undefined}>{link ? link.issue ?? (link.to ? '已吸附到输入端 · 松开连接' : '靠近下一节点以连接 · Esc 取消') : '拖动节点右侧中心连接柄建立交接；点击节点编辑属性、点击连线查看；Delete 删除选中对象'}</span></nav>
@@ -369,7 +369,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           </div>}
           {reviewTask?.checkpoint?.decision === 'reject' && <p className={css.notice}>已拒绝，下游保持等待。请讨论返工对象并确认新方案。</p>}
           {reviewTask && <div className={css.composer}><label>验收意见（随决定保存）<textarea aria-label="验收意见" value={note} onChange={e => setNote(e.target.value)} placeholder="记录通过或退回的原因…" /></label><button disabled={working || !data.ready.includes(reviewTask.id)} onClick={() => void perform('materials')}>刷新验收材料</button></div>}
-          {!member && !data.currentDiscussion && <button disabled={working || data.busy.includes(discussion)} onClick={() => void startEmbedded(discussion, activeId, true)}>新建独立讨论</button>}
+          {!data.currentDiscussion && <details><summary>重新开始讨论</summary><p className={css.hint}>新建独立讨论会归档当前讨论，从当前资料重新开始。</p><button disabled={working || data.busy.includes(discussion)} onClick={() => void startEmbedded(discussion, activeId, true)}>新建独立讨论</button></details>}
         </aside>}
 
       {editor && <form key={`${editor.type}:${editor.id ?? 'new'}`} data-workflow-editor className={css.editor} onSubmit={event => {

@@ -457,3 +457,33 @@ test('edited approval applies the human version, audits the AI suggestion and re
   assert.equal(saved.workflow.discussions['discussion:graph'].proposal.operations[0].summary,'Human version')
   await send([{action:'update_member',name:'worker',summary:'Replay'}]);assert.equal(status,409)
 })
+
+test('reopening member discussions preserves history and pending proposals without generating again', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-reopen-')); t.after(() => rmSync(root, {recursive:true,force:true}))
+  const source = team(), agents = new Map(), events = [], sent = []; let created = 0, resumed = 0
+  await createTeamDir(join(root,'.agent-teams'),source)
+  const makeAgent = id => ({id,status:'idle',session:{header:{cwd:root},ownEvents:()=>events},whenIdle:async()=>{},followup:message=>{ sent.push(message); events.push({type:'user/message',seq:events.length+1,data:message}) }})
+  const ctx = { tools:{register(){}},subagents:{registerContinuableSetup(){}},llm:{resolveCallConfig:async value=>value},effect(){},sessions:{flush:async()=>{}},agents:{
+    get:id=>agents.get(id),
+    create:async spec=>{created++;const agent=makeAgent(spec.sessionId);agents.set(agent.id,agent);return {agent,dispose(){}}},
+    resume:async spec=>{resumed++;const agent=makeAgent(spec.resumeSessionId);agents.set(agent.id,agent);return {agent,dispose(){}}},
+  } }
+  const captain={id:'captain-id',options:{provider:'fake',model:'fake'},session:{header:{cwd:root},requestHeader:()=>({config:{}})}}
+  const runtime=installWorkflowConversations(ctx,{stateDir:'.agent-teams',maxMembers:8},workflowMaterials)
+  const stateRoot=join(root,'.agent-teams'), id=await runtime.open(captain,source,'member:worker',stateRoot)
+  const discussion=source.workflow.discussions['discussion:member:worker']
+  discussion.messages.push({role:'user',text:'Keep my earlier requirements',at:1})
+  discussion.proposal=proposeWorkflow(source,'Existing suggestion',[{action:'update_member',name:'worker',summary:'Pending summary'}])
+  await writeTeam(stateRoot,source)
+  for(let i=0;i<3;i++) assert.equal(await runtime.open(captain,source,'member:worker',stateRoot),id)
+  assert.equal(created,1); assert.equal(sent.length,1)
+  assert.equal(source.workflow.discussions['discussion:member:worker'].proposal.id,discussion.proposal.id)
+  assert.equal(Object.keys(source.workflow.discussions).filter(key=>key.startsWith('archive:')).length,0)
+  agents.delete(id)
+  const restored=await readTeam(stateRoot,source.id)
+  assert.equal(await runtime.open(captain,restored,'member:worker',stateRoot),id)
+  const transcript=await runtime.readEmbedded(restored,'member:worker')
+  assert.equal(resumed,1);assert.equal(created,1);assert.equal(sent.length,1)
+  assert.equal(transcript.messages.length,1)
+  assert.equal(restored.workflow.discussions['discussion:member:worker'].messages[0].text,'Keep my earlier requirements')
+})
