@@ -8,7 +8,7 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { createTeamDir, readTeam } from '../lib/state.js'
+import { createTeamDir, readTeam, writeTeam } from '../lib/state.js'
 import { installWorkflowConversations } from '../lib/workflow-native.js'
 import { connectionIssue, connectionTarget } from '../lib/client/workflow-connections.js'
 import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
@@ -431,4 +431,29 @@ test('embedded discussion reads and sends only the bound isolated session', asyn
   assert.equal(captain.session.ownEvents().length,0)
   agent.status='running'; await call('conversation_send','another'); assert.equal(status,409); assert.equal(sent.length,1)
   await call('conversation_state',undefined,'graph'); assert.equal(status,409)
+})
+
+test('edited approval applies the human version, audits the AI suggestion and rejects stale or invalid changes', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-human-edit-')); t.after(() => rmSync(root, {recursive:true,force:true}))
+  const source=team(); source.tasks.push(task('t2',['t1']))
+  const proposal=proposeWorkflow(source,'AI suggestion',[{action:'update_member',name:'worker',summary:'AI version'}])
+  workflowState(source).discussions['discussion:graph']={key:'graph',messages:[],calls:[],proposal}
+  await createTeamDir(join(root,'.agent-teams'),source)
+  const captain={id:'captain-id',session:{header:{cwd:root},ownEvents:()=>[]},status:'idle'}
+  let route,status,result
+  const ctx={agents:{get:()=>captain},effect:fn=>fn(),logger:{warn(){}}}
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{}},{register:value=>{route=value;return()=>{}}})
+  async function send(operations,id=proposal.id) { const req=Readable.from([JSON.stringify({action:'apply',sessionId:captain.id,teamId:source.id,discussion:'graph',proposalId:id,operations})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{result=JSON.parse(body)}}) }
+  await send([{action:'update_member',name:'worker',summary:'Wrong id'}],'replaced');assert.equal(status,409)
+  await send([{action:'update_task',id:'t1',dependencies:['t2']}]);assert.equal(status,409)
+  assert.equal((await readTeam(join(root,'.agent-teams'),source.id)).workflow.discussions['discussion:graph'].proposal.status,'pending')
+  const current=await readTeam(join(root,'.agent-teams'),source.id);current.tasks[0].output='Concurrent result';await writeTeam(join(root,'.agent-teams'),current)
+  await send([{action:'update_member',name:'worker',summary:'Human version'}]);assert.equal(status,409)
+  await writeTeam(join(root,'.agent-teams'),source)
+  await send([{action:'update_member',name:'worker',summary:'Human version'}]);assert.equal(status,200,JSON.stringify(result))
+  const saved=await readTeam(join(root,'.agent-teams'),source.id)
+  assert.equal(saved.members[0].summary,'Human version')
+  assert.equal(saved.workflow.history.at(-1).suggestedOperations[0].summary,'AI version')
+  assert.equal(saved.workflow.discussions['discussion:graph'].proposal.operations[0].summary,'Human version')
+  await send([{action:'update_member',name:'worker',summary:'Replay'}]);assert.equal(status,409)
 })

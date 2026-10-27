@@ -105,7 +105,7 @@
 .embeddedComposer button { justify-self: end; }
 .discussion summary { font-size: 12px; cursor: pointer; color: var(--wb-muted); }
 .discussion pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.75; max-height: 230px; overflow: auto; }
-.proposal { padding: 12px 16px; background: color-mix(in srgb, var(--wb-accent) 4%, var(--wb-bg)); border-top: 1px solid var(--wb-border); max-height: 34%; overflow: auto; flex-shrink: 0; }
+.proposal { padding: 12px 16px; background: color-mix(in srgb, var(--wb-accent) 4%, var(--wb-bg)); border-top: 1px solid var(--wb-border); max-height: 68%; overflow: auto; flex-shrink: 0; }
 .proposal strong { font-size: 12px; }.proposal button { margin: 8px 6px 0 0; }
 .decisions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--wb-border); }
 .composer { padding: 12px 16px; border-top: 1px solid var(--wb-border); }
@@ -202,3 +202,5 @@
 .reviewDot { width: 8px; height: 8px; border-radius: 50%; background: var(--wb-accent); animation: reviewPulse 2s ease-in-out infinite; }
 @keyframes reviewPulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--wb-accent) 18%, transparent); } }
 @media(prefers-reduced-motion: reduce) { .reviewDot { animation: none; } }
+
+@media(min-width:1101px) { .columns[data-approving="true"] { grid-template-columns: 200px minmax(240px,1fr) minmax(420px,42%); } }

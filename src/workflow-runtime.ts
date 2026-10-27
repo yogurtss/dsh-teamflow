@@ -13,7 +13,7 @@ import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren } from './harness-compat.ts'
 import { readArtifactScope } from './artifacts.ts'
-import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
+import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, parseWorkflowOperations, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
 
 function string(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 16000) throw new Error(`${name} 不能为空或过长`)
@@ -164,8 +164,13 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             discussionOf(team, key).proposal = proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers)
           } else if (action === 'apply' || action === 'edit') {
             if (action === 'edit' && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新画布后重试')
-            const proposal = action === 'edit' ? proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers) : discussionOf(team, key).proposal
+            let proposal = action === 'edit' ? proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers) : discussionOf(team, key).proposal
             if (!proposal || (action === 'apply' && proposal.id !== body['proposalId'])) throw new Error('提案不存在或已替换')
+            if (action === 'apply' && body['operations'] !== undefined) {
+              // Keep the original base and identity: edited approval must never
+              // silently rebase onto concurrent execution or a newer AI proposal.
+              proposal = { ...proposal, suggestedOperations: proposal.suggestedOperations ?? proposal.operations, operations: parseWorkflowOperations(body['operations']) }
+            }
             const updated = applyWorkflowProposal(team, proposal, config.maxMembers)
             if (action === 'edit' && body['positions'] !== undefined) {
               const positions = body['positions']
@@ -204,6 +209,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             team = updated
           } else if (action === 'dismiss') {
             const proposal = discussionOf(team, key).proposal
+            if (body['proposalId'] !== undefined && proposal?.id !== body['proposalId']) throw new Error('提案已替换，请检查新提案')
             if (proposal?.status === 'pending') proposal.status = 'dismissed'
           } else if (action === 'new_discussion') {
             if (address && key === currentDiscussion) throw new Error('请返回队长会话后新建讨论；当前原生历史会保留')

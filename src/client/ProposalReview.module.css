@@ -1,0 +1,30 @@
+.review { font-size: 12px; line-height: 1.65; container-type: inline-size; }
+.review header p { color: var(--wb-muted); margin: 6px 0 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: 0; z-index: 1; padding: 6px 0; background: var(--wb-bg); }
+.actions button { font: inherit; color: inherit; background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+.actions .apply { color: var(--wb-accent); border-color: var(--wb-accent); font-weight: 600; }
+.actions button:disabled { opacity: .5; cursor: not-allowed; }
+.operation { margin: 10px 0 16px; border: 1px solid var(--wb-border); border-radius: 8px; overflow: hidden; }
+.include { display: flex; align-items: flex-start; gap: 6px; padding: 9px; background: var(--wb-base); font-weight: 600; }
+.include input { margin-top: 4px; flex: none; }
+.field { padding: 9px; border-top: 1px solid var(--wb-border); }
+.fieldHeading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 5px; }
+.fieldHeading>span { color: var(--wb-muted); font-size: 11px; }
+.pair { display: grid; gap: 8px; }
+.pair>* { min-width: 0; }
+.caption { display: block; font-size: 11px; color: var(--wb-muted); margin: 2px 0 4px; }
+.review pre, .review textarea { box-sizing: border-box; font: inherit; width: 100%; margin: 0; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--wb-border); border-radius: 6px; background: var(--wb-bg); color: inherit; max-height: 260px; overflow: auto; }
+.review textarea { min-height: 64px; resize: vertical; }
+.field[data-change='added'] .pair>label textarea, .field[data-change='changed'] .pair>label textarea { border-color: var(--wb-accent); }
+.review details { margin-top: 6px; }
+.review summary { font-size: 11px; color: var(--wb-muted); cursor: pointer; }
+.diff { margin-top: 4px; border: 1px solid var(--wb-border); border-radius: 5px; overflow: auto; max-height: 260px; }
+.diff>div { display: flex; gap: 7px; padding: 3px 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff>div>span { flex: none; width: 12px; font-family: monospace; }
+.diff code { font: inherit; min-width: 0; }
+.diff [data-kind='same'] { color: var(--wb-muted); }
+.diff [data-kind='added'] { background: light-dark(#e5f5eb, #173d2a); color: light-dark(#17613c, #a1e1ba); }
+.diff [data-kind='removed'] { background: light-dark(#fff0ee, #482322); color: light-dark(#a02e28, #f5b2ad); }
+.operation[data-included='false']>.field { opacity: .55; }
+.review [role='alert'] { color: var(--wb-error); }
+@container(min-width:400px) { .pair { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } }

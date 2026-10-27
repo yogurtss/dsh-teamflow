@@ -23,6 +23,7 @@ function proposal(value: unknown): boolean {
   return record(value) && ['id', 'base', 'title'].every(key => string(value[key])) && number(value['createdAt'])
     && ['pending', 'applied', 'dismissed'].includes(value['status'] as string)
     && Array.isArray(value['operations']) && value['operations'].every(operation)
+    && (value['suggestedOperations'] === undefined || Array.isArray(value['suggestedOperations']) && value['suggestedOperations'].every(operation))
 }
 function discussion(value: unknown): boolean {
   if (!record(value) || !string(value['key'])) return false

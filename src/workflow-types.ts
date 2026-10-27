@@ -21,6 +21,8 @@ export interface WorkflowProposal {
   base: string
   title: string
   operations: WorkflowOperation[]
+  /** Original model suggestion when the human edited it during approval. */
+  suggestedOperations?: WorkflowOperation[]
   status: 'pending' | 'applied' | 'dismissed'
   createdAt: number
 }

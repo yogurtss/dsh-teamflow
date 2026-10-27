@@ -11,6 +11,7 @@ import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/
 import type { AgentTeamsTranslate } from './locales.ts'
 import { StagedModelPicker } from './StagingPlanEditor.tsx'
 import { EmbeddedDiscussion } from './EmbeddedDiscussion.tsx'
+import { ProposalReview, type ProposalReviewDraft } from './ProposalReview.tsx'
 
 interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
@@ -41,22 +42,6 @@ function ReviewMaterials({ text }: { text: string }) {
   } catch { return <pre>{text}</pre> }
 }
 
-function describeOperation(op: WorkflowOperation, team: TeamState, operations: WorkflowOperation[] = []): string {
-  const taskName = (id: string) => {
-    const added = operations.find(item => item.action === 'add_task' && item.id === id)
-    return added?.action === 'add_task' ? added.subject : team.tasks.find(t => t.id === id)?.subject ?? id
-  }
-  const value = (v: unknown) => Array.isArray(v) ? v.map(id => taskName(String(id))).join('、') || '无' : String(v || '未设置')
-  if (op.action === 'add_member') return `新增成员「${op.name}」\n职责概述：${op.summary}\n长期职责：${op.role || '未设置'}\n执行指令：${op.executionPrompt || '未设置'}`
-  if (op.action === 'remove_member') return `移除成员「${op.name}」`
-  if (op.action === 'remove_task') return `删除节点「${taskName(op.id)}」`
-  if (op.action === 'rework') return `为「${taskName(op.id)}」创建新一轮返工\n返工任务：${op.taskIds.map(taskName).join('、')}\n要求：${op.instructions}\n依赖这些结果的中间步骤也会重新执行，旧结果保留。`
-  if (op.action === 'add_task') return `新增${op.checkpoint ? '人工检查' : '任务'}「${op.subject}」\n说明：${op.description || '未设置'}\n负责人：${op.checkpoint ? '你与独立验收 Agent' : op.assignee || '自动分配'}\n前置任务：${value(op.dependencies)}`
-  const before = op.action === 'update_member' ? team.members.find(m => m.name === op.name) : team.tasks.find(t => t.id === op.id)
-  const labels: Record<string, string> = { summary: '职责概述', role: '长期职责', executionPrompt: '执行指令', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', subject: '任务名称', description: '任务说明', assignee: '负责人', dependencies: '前置任务' }
-  return `修改「${op.action === 'update_member' ? op.name : taskName(op.id)}」\n` + Object.entries(op).filter(([key]) => key in labels).map(([key, v]) => `${labels[key]}：${value((before as unknown as Record<string, unknown>)?.[key])}\n→ ${value(v)}`).join('\n')
-}
-
 export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t }: {
   modelDirectory?: ModelDirectory
   t?: AgentTeamsTranslate
@@ -75,6 +60,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   const [selectedTask, setSelectedTask] = useState<string>()
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ProposalReviewDraft>>({})
   const [working, setWorking] = useState(false)
   const [note, setNote] = useState('')
   const [embeddedDiscussion, setEmbeddedDiscussion] = useState<string>()
@@ -242,6 +228,12 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       setOpened(true); await startEmbedded(`check:${id}`)
     }
   }
+  function renderProposalReview() {
+    if (!proposal || !team || !data) return null
+    return <ProposalReview key={proposal.id} team={team} proposal={proposal} base={data.base} busy={working} draft={reviewDrafts[proposal.id]} onChange={draft => setReviewDrafts(prev => ({ ...prev, [proposal.id]: draft }))}
+      onApply={operations => void perform('apply', { proposalId: proposal.id, operations }).then(result => { if (result) setFeedback('修改已应用，可继续讨论。') })}
+      onDismiss={() => void perform('dismiss', { proposalId: proposal.id }).then(result => { if (result) setFeedback('修改已放弃，可以继续讨论。') })} />
+  }
   const pendingProposals = Object.entries(team?.workflow?.discussions ?? {}).filter(([key, item]) => key.startsWith('discussion:') && item.proposal?.status === 'pending').map(([, item]) => item)
   const pendingCount = pendingProposals.length
   const pendingNotice = pendingCount > 0 && <div className={css.pendingNotice} role="status"><strong>有 {pendingCount} 项修改等待确认</strong>
@@ -272,9 +264,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label>
       {feedback && <p role="status">{feedback}</p>}
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
-      {proposal && <section className={css.contextProposal} aria-label="待确认修改"><strong>待确认 · {proposal.title}</strong><p>请检查修改内容；确认后才会生效。</p>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}
-        {data.currentDiscussion === discussion && <div className={css.contextActions}><button className={css.confirmProposal} disabled={working} onClick={() => void perform('apply', { proposalId: proposal.id }).then(result => { if (result) setFeedback('修改已应用，可继续讨论或返回团队。') })}>确认应用</button><button disabled={working} onClick={() => void perform('dismiss').then(result => { if (result) setFeedback('提案已放弃，可以继续讨论。') })}>放弃提案</button></div>}
-        <button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
+      {proposal && !opened && <section className={css.contextProposal} aria-label="待确认修改">{renderProposalReview()}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
       <WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
     </section>}
     {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
@@ -297,7 +287,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {!activeId ? <form className={css.create} onSubmit={e => { e.preventDefault(); void createFlow() }}>
         <h2>描述目标，一起规划团队</h2><label>团队名称<input required value={name} onChange={e => setName(e.target.value)} /></label>
         <label>团队目标<textarea required value={goal} onChange={e => setGoal(e.target.value)} /></label><button className={css.primary} disabled={working}>在 DSH 中讨论方案 ↗</button>
-      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
+      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-approving={!!proposal && !editor && !activeTask && !selectedEdge} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
         <aside className={css.roster}><h3>成员 <button aria-label="添加成员" disabled={working} onClick={() => edit('member')}>＋ 添加</button></h3>
           {team.members.filter(m => m.status !== 'removed').map(m => <article key={m.name} className={editor?.type === 'member' && editor.id === m.name ? css.selected : ''} onClick={event => { if (!(event.target as HTMLElement).closest('button')) { selectDiscussion(`member:${m.name}`); setSelectedTask(undefined); edit('member', m.name) } }}>
             <button className={css.member} disabled={working} onClick={() => { selectDiscussion(`member:${m.name}`); setSelectedTask(undefined); edit('member', m.name) }}><img src={memberArtUrl(m.name, m.role ?? '')} alt="" /><span><strong>{m.name}</strong><span>{m.summary || m.role || '尚未填写职责概述'}</span></span></button>
@@ -372,7 +362,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
             {conversation?.materials && <details open><summary>本轮验收材料与证据</summary><ReviewMaterials text={conversation.materials} /></details>}
             {data.busy.includes(discussion) && <p role="status">原生对话正在整理方案…</p>}
           </div>
-          {proposal && <section className={css.proposal}><strong>{proposal.title}</strong><div><button className={css.primary} disabled={working} onClick={() => void perform('apply', { proposalId: proposal.id })}>确认应用</button><button disabled={working} onClick={() => void perform('dismiss')}>放弃修改</button></div><details open><summary>修改预览（不会立即执行）</summary>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}</details></section>}
+          {proposal && <section className={css.proposal}>{renderProposalReview()}</section>}
           {reviewTask && conversation?.evidence && conversation.materialsRound === reviewTask.checkpoint?.round && data.ready.includes(reviewTask.id) && !reviewTask.checkpoint?.decision && <div className={css.decisions}>
             <button className={css.primary} disabled={working} onClick={() => void perform('review', { taskId: reviewTask.id, evidence: conversation.evidence, decision: 'approve', note }).then(ok => { if (ok) setNote('') })}>通过验收</button>
             <button disabled={working} onClick={() => void perform('review', { taskId: reviewTask.id, evidence: conversation.evidence, decision: 'reject', note }).then(ok => { if (ok) { setNote(''); void startEmbedded(discussion) } })}>退回并讨论返工</button>

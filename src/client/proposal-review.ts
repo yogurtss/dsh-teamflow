@@ -1,0 +1,49 @@
+/** Readable field comparisons and line diffs for human workflow approval. */
+import type { TeamState } from '../types.ts'
+import type { WorkflowOperation } from '../workflow-types.ts'
+
+const memberFields = ['summary', 'role', 'executionPrompt', 'provider', 'model', 'reasoningEffort'] as const
+const taskFields = ['subject', 'description', 'assignee', 'dependencies'] as const
+const labels: Record<string, string> = { name: '成员名称', id: '任务 ID', summary: 'Summary · 功能概述', role: '长期职责', executionPrompt: '执行指令 / PE', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', subject: '任务名称', description: '任务要求 / 验收要求', assignee: '负责人', dependencies: '上游任务 ID', taskIds: '返工任务 ID', instructions: '返工要求' }
+export type ReviewField = { key: string; label: string; before: string; after: string; array: boolean; editable: boolean }
+const show = (value: unknown): string => Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''
+export function reviewFields(team: TeamState, operation: WorkflowOperation): { title: string; fields: ReviewField[] } {
+  const op = operation as unknown as Record<string, unknown>
+  const isMember = operation.action.endsWith('member')
+  const removed = operation.action.startsWith('remove_')
+  const added = operation.action.startsWith('add_')
+  const original = isMember ? team.members.find(item => item.name === op['name']) : team.tasks.find(item => item.id === op['id'])
+  const before = added ? {} : (original ?? {}) as unknown as Record<string, unknown>
+  const keys: readonly string[] = operation.action === 'rework' ? ['taskIds', 'instructions'] : isMember ? [...(added ? ['name'] : []), ...memberFields] : [...(added && op['id'] ? ['id'] : []), ...taskFields]
+  const fields = keys.filter(key => !(key === 'assignee' && operation.action === 'add_task' && operation.checkpoint)).map(key => ({ key, label: labels[key] ?? key, before: show(before[key]), after: removed ? '' : show(op[key] === undefined && !added ? before[key] : op[key]), array: ['dependencies', 'taskIds'].includes(key), editable: !removed && key !== 'id' }))
+  const name = String(isMember ? op['name'] : op['subject'] ?? before['subject'] ?? op['id'])
+  return { title: `${added ? '新增' : removed ? '删除' : operation.action === 'rework' ? '返工' : '修改'}${isMember ? '成员' : operation.action === 'add_task' && op['checkpoint'] ? '人工检查' : '任务'} · ${name}`, fields }
+}
+export function setReviewField(operation: WorkflowOperation, field: ReviewField, value: string): WorkflowOperation {
+  return { ...operation, [field.key]: field.array ? [...new Set(value.split(/[\n,，]+/u).map(item => item.trim()).filter(Boolean))] : value } as WorkflowOperation
+}
+export function reviewedOperations(team: TeamState, operations: WorkflowOperation[], included: boolean[]): WorkflowOperation[] {
+  return operations.flatMap((operation, index) => {
+    if (!included[index]) return []
+    if (!operation.action.startsWith('update_')) return [operation]
+    const result: Record<string, unknown> = operation.action === 'update_member' ? { action: operation.action, name: operation.name } : { action: operation.action, id: (operation as Extract<WorkflowOperation, { action: 'update_task' }>).id }
+    for (const field of reviewFields(team, operation).fields) if (field.before !== field.after) result[field.key] = (operation as unknown as Record<string, unknown>)[field.key]
+    return Object.keys(result).length > 2 ? [result as unknown as WorkflowOperation] : []
+  })
+}
+export type DiffLine = { kind: 'same' | 'removed' | 'added'; text: string }
+export function lineDiff(before: string, after: string): DiffLine[] {
+  if (before === after) return before.split('\n').map(text => ({ kind: 'same', text }))
+  const a = before ? before.split('\n') : [], b = after ? after.split('\n') : []
+  // Large PE values must not allocate an unbounded quadratic table.
+  if (a.length * b.length > 160000) return [...a.map(text => ({ kind: 'removed' as const, text })), ...b.map(text => ({ kind: 'added' as const, text }))]
+  const table = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1))
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) table[i]![j] = a[i] === b[j] ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
+  const result: DiffLine[] = []; let i = 0, j = 0
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) { result.push({ kind: 'same', text: a[i++]! }); j++ }
+    else if (i < a.length && (j === b.length || table[i + 1]![j]! >= table[i]![j + 1]!)) result.push({ kind: 'removed', text: a[i++]! })
+    else result.push({ kind: 'added', text: b[j++]! })
+  }
+  return result
+}

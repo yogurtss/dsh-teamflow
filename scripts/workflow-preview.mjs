@@ -51,7 +51,11 @@ createServer(async (req, res) => {
     const discussion = state.discussions[slot] ??= { key, messages: [], calls: [] };
     if (body.action === 'preview') discussion.proposal = proposeWorkflow(team, body.title, body.operations);
     if (body.action === 'edit') { if (body.base !== workflowFingerprint(team)) throw Error('团队已变化'); const oldIds = team.tasks.map(task => task.id); team = applyWorkflowProposal(team, proposeWorkflow(team, body.title, body.operations)); if (body.positions) { const layout = workflowState(team).positions; for (const [id, point] of Object.entries(body.positions)) if (team.tasks.some(task => task.id === id)) layout[`task:${id}`] = point; for (const task of team.tasks) if (!oldIds.includes(task.id)) { layout[`task:${task.id}`] = { x: 32, y: Math.max(0, ...Object.values(layout).map(point => point.y)) + 160 }; if (!task.checkpoint && team.phase !== 'staged') task.workflowPaused = true; } } }
-    if (body.action === 'apply') team = applyWorkflowProposal(team, discussion.proposal);
+    if (body.action === 'apply') {
+      if (!discussion.proposal || discussion.proposal.id !== body.proposalId) throw new Error('提案已替换');
+      const proposal = body.operations ? { ...discussion.proposal, suggestedOperations: discussion.proposal.operations, operations: body.operations } : discussion.proposal;
+      team = applyWorkflowProposal(team, proposal);
+    }
     if (body.action === 'dismiss' && discussion.proposal) discussion.proposal.status = 'dismissed';
     if (body.action === 'layout') state.positions[`task:${body.taskId}`] = { x: body.x, y: body.y };
     if (body.action === 'start') team.phase = 'running';

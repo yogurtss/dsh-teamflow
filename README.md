@@ -287,3 +287,5 @@ Select a member card in TeamFlow to edit its model and thinking level. For a sta
 Select a member in the activity view to edit its model, thinking level and role inline. In the workbench, selecting a member highlights their tasks and brings model settings to the top. See the [walkthrough](docs/member-selection-2026-10-27/README.md).
 
 Discuss, review, and apply member proposals in the TeamFlow workbench alongside the canvas. When the host supports workspace membership, new discussions are grouped with the captain's existing project when it can be identified unambiguously.
+
+Proposal approval includes before/after fields and line diffs. Edit the proposed values inline or skip an operation, then apply the final version. The original AI suggestion is retained in the applied history. See the [walkthrough](docs/editable-approval-2026-10-27/README.md).

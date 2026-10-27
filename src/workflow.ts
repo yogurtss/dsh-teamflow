@@ -194,7 +194,7 @@ export function applyWorkflowProposal(team: TeamState, proposal: WorkflowProposa
   if (proposal.status !== 'pending' || proposal.base !== workflowFingerprint(team)) throw new Error('团队状态已变化，请重新生成修改预览')
   const updated = applyWorkflowOperations(team, parseWorkflowOperations(proposal.operations), maxMembers)
   const state = workflowState(updated)
-  for (const discussion of Object.values(state.discussions)) if (discussion.proposal?.id === proposal.id) discussion.proposal.status = 'applied'
+  for (const discussion of Object.values(state.discussions)) if (discussion.proposal?.id === proposal.id) discussion.proposal = { ...proposal, status: 'applied' }
   state.history.push({ ...proposal, status: 'applied' })
   return updated
 }
