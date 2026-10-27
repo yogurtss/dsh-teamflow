@@ -12,6 +12,8 @@ import type { AgentTeamsTranslate } from './locales.ts'
 import { StagedModelPicker } from './StagingPlanEditor.tsx'
 import { EmbeddedDiscussion } from './EmbeddedDiscussion.tsx'
 import { ProposalReview, type ProposalReviewDraft } from './ProposalReview.tsx'
+import { TaskRerunPicker } from './TaskRerunPicker.tsx'
+import { rerunnableTasks } from '../task-rerun.ts'
 
 interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
@@ -21,7 +23,7 @@ async function request(payload: Record<string, unknown>): Promise<Response | und
   if (!result.team) return
   return result
 }
-const taskStatus = (task: TeamTask, ready: string[]): string => task.workflowPaused ? '已暂停 · 可编辑'
+const taskStatus = (task: TeamTask, ready: string[]): string => task.workflowRerunRequired ? '下游挂起 · 待你确认' : task.workflowPaused ? '已暂停 · 可编辑'
   : task.checkpoint?.decision === 'reject' ? '已拒绝 · 等待返工'
   : ready.includes(task.id) ? '等待人工验收'
   : ({ pending: '等待执行', claimed: '已领取', in_progress: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消' })[task.status]
@@ -159,8 +161,10 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     const created = await perform('create', { name, description: goal })
     if (created) await startEmbedded('graph', created.team.id)
   }
-  async function saveEdit(operations: WorkflowOperation[], title: string, finishEditing = false): Promise<void> {
-    if (await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, pos(task.id)]) ?? []) })) { if (finishEditing) setEditor(undefined); setSelectedEdge(undefined) }
+  async function saveEdit(operations: WorkflowOperation[], title: string, finishEditing = false): Promise<Response | undefined> {
+    const result=await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, pos(task.id)]) ?? []) })
+    if (result) { if (finishEditing) setEditor(undefined); setSelectedEdge(undefined) }
+    return result
   }
   async function startEmbedded(key: string, targetId = activeId, fresh = false): Promise<void> {
     setEditor(undefined); setSelectedEdge(undefined); setSelectedTask(undefined); selectDiscussion(key)
@@ -199,7 +203,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   function edit(type: 'member' | 'task' | 'check', id?: string): void {
     setEditor({ type, id }); setPane(type === 'member' ? 'members' : 'flow'); setError(''); setSelectedEdge(undefined)
     const m = team?.members.find(item => item.name === id), t = team?.tasks.find(item => item.id === id)
-    setDraft(type === 'member' ? { name: m?.name ?? '', summary: m?.summary ?? m?.role ?? '', role: m?.role ?? '', executionPrompt: m?.executionPrompt ?? '', provider: m?.provider ?? '', model: m?.model ?? '', reasoningEffort: m?.reasoningEffort ?? '', routeChanged: '' }
+    setDraft(type === 'member' ? { name: m?.name ?? '', summary: m?.summary ?? m?.role ?? '', role: m?.role ?? '', executionPrompt: m?.executionPrompt ?? '', provider: m?.provider ?? '', model: m?.model ?? '', reasoningEffort: m?.reasoningEffort ?? '', routeChanged: '', rerunTaskId: m ? rerunnableTasks(team?.tasks ?? [], m.name).at(-1)?.id ?? '' : '', rerunInstructions: '' }
       : { subject: t?.subject ?? '', description: t?.description ?? '', assignee: t?.assignee ?? '' })
   }
   const field = (key: string, label: string, multiline = false) => <label>{label}{multiline
@@ -283,6 +287,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           <button onClick={() => setOpened(false)} aria-label="关闭编排工作台">关闭</button></div></header>
       {team && <nav className={css.paneTabs} aria-label="工作台视图">{(['members', 'flow', 'discussion'] as const).map(value => <button key={value} aria-pressed={pane === value} onClick={() => setPane(value)}>{value === 'members' ? `成员 ${team.members.filter(m => m.status !== 'removed').length}` : value === 'flow' ? '任务流程' : '修改与验收'}{value === 'discussion' && proposal && <i aria-label="有待确认的修改" />}</button>)}</nav>}
       {pendingNotice}
+      {!!team?.tasks.some(task => task.workflowRerunRequired) && <details className={css.suspendedNotice} open><summary>上游已重跑 · {team.tasks.filter(task => task.workflowRerunRequired).length} 个下游节点等待你确认</summary><p>此前结果已失效。上游完成后，点击节点可修改要求，再确认执行或重新验收。</p>{team.tasks.filter(task => task.workflowRerunRequired).map(task => <button key={task.id} disabled={working} onClick={() => { setSelectedTask(task.id); edit(task.checkpoint ? 'check' : 'task', task.id) }}>{task.subject} · {task.dependencies.every(id => team.tasks.find(item => item.id === id)?.status === 'completed') ? '可确认' : '等待上游'}</button>)}</details>}
       {error && <div className={css.error} role="alert">{error}</div>}
       {!activeId ? <form className={css.create} onSubmit={e => { e.preventDefault(); void createFlow() }}>
         <h2>描述目标，一起规划团队</h2><label>团队名称<input required value={name} onChange={e => setName(e.target.value)} /></label>
@@ -309,7 +314,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
                 </g> }))}
                 {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
               </svg>
-              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-member-match={!!editor?.id && editor.type === 'member' && task.assignee === editor.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
+              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-member-match={!!editor?.id && editor.type === 'member' && task.assignee === editor.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); if (task.status === 'pending' && ((task.attempt ?? 0) === 0 || task.workflowRerunRequired) && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
                 <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工验收' : '执行任务'} · {task.id}</div>
                 <button className={css.nodeBody} >
                   <strong>{task.subject}</strong><span className={css.taskOwner}><img src={task.checkpoint ? REVIEW_ART : memberArtUrl(task.assignee ?? '', team.members.find(m => m.name === task.assignee)?.role ?? '')} alt="" />{task.checkpoint ? '验收 Agent 与你' : task.assignee || '自动分配成员'}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
@@ -349,7 +354,8 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
         </main>
           {selectedEdge && <aside className={css.editor} aria-label="交接详情"><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>上游完成后，下游才开始。按 Delete 删除此连线。</p><button disabled={working} onClick={() => void deleteEdge()}>删除连线</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor}><strong>{activeTask.subject}</strong><p>{activeTask.description || '暂无任务说明'}</p><div>
-            {!activeTask.checkpoint && !['completed', 'failed', 'cancelled'].includes(activeTask.status) && <button disabled={working} onClick={() => void perform(activeTask.workflowPaused ? 'resume_task' : 'stop_task', { taskId: activeTask.id })}>{activeTask.workflowPaused ? '继续执行' : '停止任务以编辑'}</button>}
+            {!activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { selectDiscussion(`member:${activeTask.assignee}`); edit('member', activeTask.assignee); setDraft(prev => ({ ...prev, rerunTaskId: activeTask.id })) }}>修改负责人并重跑此任务</button>}
+            {!activeTask.checkpoint && !['completed', 'failed', 'cancelled'].includes(activeTask.status) && <button disabled={working} onClick={() => void perform(activeTask.workflowPaused ? 'resume_task' : 'stop_task', { taskId: activeTask.id, base: data.base })}>{activeTask.workflowPaused ? '继续执行' : '停止任务以编辑'}</button>}
           </div></aside>}
 
         {!editor && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
@@ -378,14 +384,24 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           const route = draft['routeChanged'] ? { provider: draft['provider'], model: draft['model'], reasoningEffort: draft['reasoningEffort'] || 'default' } : {}
           const operations: WorkflowOperation[] = editor.type === 'member' ? [editor.id ? { action: 'update_member', name: editor.id, summary: draft['summary'], role: draft['role'], executionPrompt: draft['executionPrompt'], ...route } : { action: 'add_member', name: draft['name'] ?? '', summary: draft['summary'] ?? '', role: draft['role'], executionPrompt: draft['executionPrompt'], ...route }]
             : [editor.id ? { action: 'update_task', id: editor.id, subject: draft['subject'] ?? '', description: draft['description'], assignee: editor.type === 'check' ? undefined : draft['assignee'] } : { action: 'add_task', checkpoint: editor.type === 'check', subject: draft['subject'] ?? '', description: draft['description'], assignee: editor.type === 'check' ? undefined : draft['assignee'], dependencies: [] }]
-          void saveEdit(operations, editor.type === 'member' ? '调整团队成员' : '调整任务', true)
+          const rerun = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('data-rerun') === 'true'
+          if (rerun) {
+            if (!editor.id || !draft['rerunTaskId'] || !team.tasks.some(task => task.id === draft['rerunTaskId'] && task.assignee === editor.id)) throw new Error('请选择该成员的已结束任务')
+            operations.push({ action: 'rerun_task', id: draft['rerunTaskId'], instructions: draft['rerunInstructions'] })
+          }
+          const resumeId = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('data-resume') === 'true' ? editor.id : undefined
+          const resumeCheck = editor.type === 'check'
+          void saveEdit(operations, rerun ? '调整成员并单独重跑任务' : editor.type === 'member' ? '调整团队成员' : '调整任务', true).then(async saved => { if (saved && resumeId && await perform('resume_task', { taskId: resumeId, base: saved.base }) && resumeCheck) await openReview(resumeId) })
         } catch (error) { setError(String(error)) }
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'}</h3>
         {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
             <p className={css.hint}>保存节点后，直接拖动画布中的连接柄建立关系。点击连线可查看两端并删除。</p></>}
+        {editor.type === 'member' && editor.id && <TaskRerunPicker tasks={team.tasks} member={editor.id} taskId={draft['rerunTaskId'] ?? ''} instructions={draft['rerunInstructions'] ?? ''} disabled={working} onTask={id => setDraft(prev => ({ ...prev, rerunTaskId: id }))} onInstructions={text => setDraft(prev => ({ ...prev, rerunInstructions: text }))} />}
+        {editor.type !== 'member' && team.tasks.find(task => task.id === editor.id)?.workflowRerunRequired && <p className={css.hint}>上游重跑后，此节点等待你确认。{team.tasks.find(task => task.id === editor.id)!.dependencies.some(id => team.tasks.find(task => task.id === id)?.status !== 'completed') ? `尚未完成：${team.tasks.find(task => task.id === editor.id)!.dependencies.filter(id => team.tasks.find(task => task.id === id)?.status !== 'completed').map(id => team.tasks.find(task => task.id === id)?.subject ?? id).join('、')}` : '上游已完成，确认后使用最新结果。'}</p>}
         <footer><button className={css.primary} disabled={working}>保存</button>
-          {editor.id && editor.type === 'task' && team.tasks.find(task => task.id === editor.id)?.workflowPaused && <button type="button" disabled={working} onClick={() => void perform('resume_task', { taskId: editor.id }).then(ok => { if (ok) setEditor(undefined) })}>继续执行</button>}
+          {editor.type === 'member' && editor.id && draft['rerunTaskId'] && <button type="submit" data-rerun="true" disabled={working}>保存并仅重跑所选任务</button>}
+          {editor.id && editor.type !== 'member' && team.tasks.find(task => task.id === editor.id)?.workflowPaused && <button type="submit" data-resume="true" disabled={working || (team.tasks.find(task => task.id === editor.id)?.workflowRerunRequired && team.tasks.find(task => task.id === editor.id)!.dependencies.some(id => team.tasks.find(task => task.id === id)?.status !== 'completed'))}>保存并确认{editor.type === 'check' ? '重新验收' : '执行'}</button>}
           {editor.id && editor.type !== 'member' && <button type="button" disabled={working} onClick={() => void deleteNode(editor.id!)}>删除节点</button>}
           {editor.type === 'check' && editor.id && data.ready.includes(editor.id) && <button type="button" disabled={working} onClick={() => void openReview(editor.id!)}>开始验收 ↗</button>}<button type="button" onClick={() => setEditor(undefined)}>取消</button>
           {editor.type === 'member' && editor.id && <button type="button" disabled={working} onClick={() => void saveEdit([{ action: 'remove_member', name: editor.id! }], `移除 ${editor.id}`, true)}>移除成员</button>}</footer>

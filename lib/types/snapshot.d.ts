@@ -33,6 +33,7 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
     readonly checkpoint?: import('./workflow-types.ts').Checkpoint;
     readonly workflowPaused?: boolean;
+    readonly workflowRerunRequired?: boolean;
     readonly id: string;
     readonly subject: string;
     readonly description: string;

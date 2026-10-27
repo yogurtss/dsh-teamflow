@@ -46,6 +46,7 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
   readonly checkpoint?: import('./workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
+  readonly workflowRerunRequired?: boolean
   readonly id: string
   readonly subject: string
   readonly description: string
@@ -220,10 +221,11 @@ export async function assembleTeamSnapshot(
       id: task.id,
       ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },
       ...task.workflowPaused ? { workflowPaused: true } : {},
+      ...task.workflowRerunRequired ? { workflowRerunRequired: true } : {},
       subject: task.subject,
       description: task.description ?? '',
       status: task.status,
-      state: taskVisualState(task.status, task.dependencies, tasks),
+      state: task.workflowPaused && task.status === 'pending' ? 'blocked' : taskVisualState(task.status, task.dependencies, tasks),
       assignee: task.assignee ?? '',
       model: memberModelRoute(roster.find((member) => member.name === task.assignee)),
       dependencies: task.dependencies,

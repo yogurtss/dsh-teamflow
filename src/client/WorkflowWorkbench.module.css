@@ -145,6 +145,9 @@
 
 .draftNode { border: 2px dashed var(--wb-accent); pointer-events: none; }
 .editor footer { position: sticky; bottom: -18px; background: var(--wb-bg); padding: 12px 0; border-top: 1px solid var(--wb-border); }
+.suspendedNotice { padding: 10px 20px; border-bottom: 1px solid var(--wb-border); background: var(--wb-bg); font-size: 12px; max-height: 150px; overflow: auto; }
+.suspendedNotice summary { cursor: pointer; color: #b77c12; font-weight: 600; }.suspendedNotice p { margin: 8px 0; }.suspendedNotice button { margin: 0 6px 6px 0; }
+.node[data-suspended='true'] { border-style: dashed; border-color: #b77c12; }
 .contextPanel { font-size: 12px; line-height: 1.75; border: 1px solid var(--wb-border); border-radius: 10px; background: var(--wb-bg); padding: 14px; margin-bottom: 16px; overflow-wrap: anywhere; }
 .contextPanel>header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 12px; }
 .contextPanel>header span { color: var(--wb-muted); font-size: 11px; }

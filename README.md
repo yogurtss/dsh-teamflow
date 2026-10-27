@@ -36,6 +36,8 @@ Edges mean execution order: B waits for A. To insert a checkpoint manually, add 
 
 Manual canvas edits save directly; AI proposals still require confirmation. Member discussions reuse their independent session and context when reopened; only the first opening generates an introduction. Use the explicit restart action to archive the old discussion and begin again. New execution tasks added to running teams start paused so you can wire them before resuming.
 
+To rerun one member's finished task, click the member, adjust its role, PE or model, select a task under **单独重跑**, then choose **保存并仅重跑所选任务**. The same task ID and connections remain; its result is replaced in place. All transitive downstream nodes, including completed tasks and human checkpoints, reset and suspend. Open each suspended node after its upstream work completes, optionally edit it, then confirm execution or renewed review. Unrelated branches remain unchanged. Result version management is not included. Active affected tasks must be stopped first.
+
 ## Validation scope
 
 The workflow previously passed isolated **Harness `0.2.1-rc.2`** runtime checks with deterministic model fixtures and the full `pnpm verify` suite. On 2026-10-27, a live test in **Desktop `0.2.1-rc.3` with a real DeepSeek model** exercised team creation, instruction changes, checkpoint insertion, rejection, rework, second-round approval, downstream execution and restart recovery. Two issues found during that test were fixed; all 24 workflow tests and core checks pass.

@@ -4,6 +4,7 @@ import type { TeamState } from '../types.ts'
 import type { WorkflowOperation, WorkflowProposal } from '../workflow-types.ts'
 import { lineDiff, reviewedOperations, reviewFields, setReviewField } from './proposal-review.ts'
 import css from './ProposalReview.module.css'
+import { TaskRerunImpact } from './TaskRerunPicker.tsx'
 
 export type ProposalReviewDraft = { operations: WorkflowOperation[]; included: boolean[] }
 export function ProposalReview({ team, proposal, base, busy, onApply, onDismiss, draft, onChange }: {
@@ -25,6 +26,7 @@ export function ProposalReview({ team, proposal, base, busy, onApply, onDismiss,
     {operations.map((operation, index) => {
       const comparison = reviewFields(original, operation)
       return <article key={index} className={css.operation} data-included={included[index]}><label className={css.include}><input type="checkbox" checked={included[index]} disabled={busy} onChange={event => onChange({ operations, included: included.map((value, i) => i === index ? event.target.checked : value) })} />应用此项 · {comparison.title}</label>
+        {operation.action === 'rerun_task' && <TaskRerunImpact tasks={original.tasks} taskId={operation.id} />}
         {comparison.fields.map(field => {
           const same = field.before === field.after
           return <section key={field.key} className={css.field} data-change={same ? 'same' : !field.before ? 'added' : !field.after ? 'removed' : 'changed'}><div className={css.fieldHeading}><strong>{field.label}</strong><span>{same ? '= 相同' : !field.before ? '+ 新增' : !field.after ? '− 删除' : '± 修改'}</span></div>

@@ -7,6 +7,7 @@ const statuses = { pending: '等待执行', claimed: '已领取', in_progress: '
 function TaskRecord({ task, team }: { task: TeamTask; team: TeamState }) {
   return <details className={css.contextTask} open={task.status === 'in_progress'}><summary>{task.subject} · {task.workflowPaused ? '已暂停' : statuses[task.status]}</summary>
     <p>{task.description || '未单独填写任务说明'}</p>
+    {task.workflowRerunRequired && <p><strong>上游已重跑：</strong>当前节点已挂起，请在画布中确认后执行。此前结果已失效。</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>
     {task.objective && <p><strong>目标：</strong>{task.objective}</p>}
     {!!task.inScope?.length && <p><strong>工作范围：</strong>{task.inScope.join('、')}</p>}

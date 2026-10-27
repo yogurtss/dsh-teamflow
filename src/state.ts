@@ -206,6 +206,8 @@ export function beginTaskAttempt(task: TeamTask, assignee: string): string {
 export function cancelUnfinishedTask(task: TeamTask, output?: string): void {
   if (TERMINAL_TASK_STATUSES.includes(task.status)) return
   task.status = 'cancelled'
+  task.workflowPaused = false
+  task.workflowRerunRequired = false
   task.attemptId = undefined
   task.handoffId = undefined
   task.reassigning = false
@@ -1042,6 +1044,7 @@ function describeFindingDefect(finding: unknown): string | undefined {
 export function isTeamTask(value: unknown): value is TeamTask {
   if (!isRecord(value)) return false
   return typeof value['id'] === 'string'
+    && (value['workflowRerunRequired'] === undefined || typeof value['workflowRerunRequired'] === 'boolean')
     && (value['workflowPaused'] === undefined || typeof value['workflowPaused'] === 'boolean')
     && (value['checkpoint'] === undefined || isCheckpoint(value['checkpoint']))
     && (value['stoppedAttempts'] === undefined || isStoppedAttempts(value['stoppedAttempts']))

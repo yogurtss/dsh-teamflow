@@ -8,16 +8,113 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { createTeamDir, readTeam, writeTeam } from '../lib/state.js'
+import { cancelUnfinishedTask, createTeamDir, readTeam, writeTeam } from '../lib/state.js'
 import { installWorkflowConversations } from '../lib/workflow-native.js'
 import { connectionIssue, connectionTarget } from '../lib/client/workflow-connections.js'
 import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
+import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
+
+test('rerun overwrites the same task, suspends all transitive dependents and preserves unrelated work', () => {
+  const source=withGate()
+  source.members.push({...member,name:'other'})
+  Object.assign(source.tasks[0],{status:'completed',attempt:3,attemptId:'old',output:'old result',profileSeedId:'seed',deliverables:['report.md'],coverageOf:['goal'],commandsRun:[{command:'check',status:'passed'}],supplementalEvidence:[{at:1,by:'worker',attempt:3,note:'old note'}]})
+  decideCheckpoint(source,'gate','approve','old-evidence','old-evidence','old approval')
+  Object.assign(source.tasks[2],{status:'completed',attempt:2,output:'dependent old result',assignee:'other',reviewedAttempt:3,reviewedArtifacts:[{path:'report.md',present:false}]})
+  source.tasks.push({...task('parallel'),assignee:'other',status:'completed',output:'preserve this'}, {...task('future',['after']),assignee:'other'})
+  workflowState(source).discussions['discussion:check:gate']={key:'check:gate',messages:[],calls:[],materials:'old materials',evidence:'old-evidence',materialsRound:1,native:{sessionId:'review-session',label:'review',reviewEvidence:'old-evidence'}}
+  const before=structuredClone(source)
+  const result=applyWorkflowOperations(source,[{action:'update_member',name:'worker',executionPrompt:'New PE'},{action:'rerun_task',id:'t1',instructions:'Check again'}])
+  assert.deepEqual(source,before,'proposal validation is pure')
+  assert.equal(result.tasks.length,source.tasks.length); assert.equal(result.taskSeq,source.taskSeq)
+  assert.deepEqual(result.tasks.map(t=>[t.id,t.dependencies]),source.tasks.map(t=>[t.id,t.dependencies]),'IDs and connections do not change')
+  const selected=result.tasks[0]
+  assert.equal(selected.status,'pending'); assert.equal(selected.workflowPaused,false); assert.equal(selected.attempt,3,'generation stays monotonic')
+  assert.equal(selected.attemptId,undefined); assert.equal(selected.output,undefined); assert.equal(selected.supplementalEvidence,undefined)
+  assert.equal(selected.commandsRun,undefined); assert.match(selected.description,/Check again/)
+  assert.equal(selected.profileSeedId,'seed'); assert.deepEqual(selected.deliverables,['report.md']); assert.deepEqual(selected.coverageOf,['goal'])
+  for(const id of ['gate','after','future']) {
+    const item=result.tasks.find(t=>t.id===id)
+    assert.equal(item.status,'pending'); assert.equal(item.workflowPaused,true); assert.equal(item.workflowRerunRequired,true); assert.equal(item.output,undefined)
+  }
+  assert.equal(result.tasks[2].reviewedAttempt,undefined); assert.equal(result.tasks[2].reviewedArtifacts,undefined)
+  assert.equal(result.tasks[1].checkpoint.round,2); assert.equal(result.tasks[1].checkpoint.decision,undefined); assert.equal(result.tasks[1].checkpoint.history.length,1)
+  assert.deepEqual(result.tasks.find(t=>t.id==='parallel'),source.tasks.find(t=>t.id==='parallel'))
+  assert.deepEqual(result.members[1],source.members[1]); assert.equal(result.members[0].executionPrompt,'New PE')
+  assert.equal(checkpointReady(result,result.tasks[1]),false)
+  const review=result.workflow.discussions['discussion:check:gate']
+  assert.equal(review.materials,undefined);assert.equal(review.evidence,undefined);assert.equal(review.materialsRound,undefined);assert.equal(review.native.reviewEvidence,undefined);assert.equal(review.native.sessionId,'review-session','discussion context is retained while obsolete materials are invalidated')
+  assert.deepEqual(rerunImpact(source.tasks,'t1').descendants.map(t=>t.id),['gate','after','future'])
+})
+
+test('rerun rejects active work and invalid targets without partially saving member changes', () => {
+  for(const mutate of [s=>s.tasks[0].status='pending',s=>s.phase='staged',s=>s.halted=true,s=>s.members[0].status='removed',s=>s.members[0].stopping=true,s=>s.tasks[2].status='in_progress',s=>s.tasks.push({...task('busy'),status:'claimed'})]) {
+    const source=withGate();source.tasks[0].status='completed';mutate(source)
+    const before=structuredClone(source)
+    assert.throws(()=>applyWorkflowOperations(source,[{action:'update_member',name:'worker',summary:'must not save'},{action:'rerun_task',id:'t1'}]))
+    assert.deepEqual(source,before)
+  }
+  const source=withGate();source.tasks[0].status='completed'
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'rerun_task',id:'gate'}]),/只能重跑/)
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'rerun_task',id:'missing'}]),/不存在/)
+  assert.deepEqual(rerunnableTasks(source.tasks,'worker').map(t=>t.id),['t1'])
+  assert.deepEqual(parseWorkflowOperations([{action:'rerun_task',id:'t1',instructions:' fix ',output:'untrusted'}]),[{action:'rerun_task',id:'t1',instructions:'fix'}])
+})
+
+test('rerun route dispatches one task; downstream waits for manual confirmation and new human approval', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-rerun-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const source=withGate();Object.assign(source.tasks[0],{status:'completed',output:'OLD RESULT',attempt:1,attemptId:'old-capability'})
+  source.members.push({...member,name:'other'})
+  Object.assign(source.tasks[2],{status:'completed',output:'OLD DOWNSTREAM',attempt:1,assignee:'other'})
+  decideCheckpoint(source,'gate','approve','old','old','previous approval')
+  source.tasks.push({...task('parallel'),assignee:'other',status:'completed',output:'UNRELATED'})
+  await createTeamDir(join(root,'.agent-teams'),source)
+  const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
+  const dispatched=[];let route,status,response
+  const ctx={agents:{get:id=>id===captain.id?captain:undefined},on(){},effect:fn=>fn(),logger:{warn:message=>{throw Error(message)}}}
+  const scheduler=installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async(...args)=>{dispatched.push(args);return true}})
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},scheduler,{register:value=>{route=value;return()=>{}}})
+  const read=()=>readTeam(join(root,'.agent-teams'),'demo')
+  async function send(action,extra={}) {const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...action==='resume_task'?{base:workflowFingerprint(await read())}:{},...extra})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await send('edit',{base:workflowFingerprint(source),title:'Edit and rerun',operations:[{action:'update_member',name:'worker',role:'Adjusted role'},{action:'rerun_task',id:'t1'}]})
+  assert.equal(status,200,JSON.stringify(response));assert.equal(dispatched.length,1);assert.equal(dispatched[0][2],'worker');assert.match(dispatched[0][3],/Task: t1/)
+  let saved=await read();assert.equal(saved.tasks[0].attempt,2);assert.notEqual(saved.tasks[0].attemptId,'old-capability');assert.equal(saved.members[0].role,'Adjusted role')
+  await send('resume_task',{taskId:'gate'});assert.equal(status,409);assert.match(response.error,/上游/)
+  saved=await read();Object.assign(saved.tasks[0],{status:'completed',output:'NEW RESULT'});saved.members[0].status='idle';await writeTeam(join(root,'.agent-teams'),saved)
+  await scheduler.kickTeam(root,'demo',captain);assert.equal(dispatched.length,1,'completion alone cannot release descendants')
+  await send('resume_task',{taskId:'gate',base:'stale'});assert.equal(status,409);assert.match(response.error,/重新确认/)
+  await send('state');assert.deepEqual(response.ready,[],'suspended gate is not ready for review')
+  await send('resume_task',{taskId:'after'});assert.equal(status,409,'transitive consumer also waits for its direct predecessor')
+  await send('resume_task',{taskId:'gate'});assert.equal(status,200);assert.deepEqual(response.ready,['gate']);assert.equal(dispatched.length,1,'checkpoint never dispatched')
+  saved=await read();const materials=workflowMaterials(saved,'gate',root)
+  assert.match(materials.text,/NEW RESULT/);assert.doesNotMatch(materials.text,/OLD RESULT|OLD DOWNSTREAM/)
+  assert.throws(()=>decideCheckpoint(saved,'gate','approve','old',materials.evidence,''),/材料已变化/)
+  decideCheckpoint(saved,'gate','approve',materials.evidence,materials.evidence,'new approval');await writeTeam(join(root,'.agent-teams'),saved)
+  await scheduler.kickTeam(root,'demo',captain);assert.equal(dispatched.length,1,'approval does not auto-release paused downstream')
+  await send('edit',{base:workflowFingerprint(await read()),title:'Adjust suspended task',operations:[{action:'update_task',id:'after',description:'Use the new input'}]})
+  assert.equal(status,200,JSON.stringify(response));assert.equal(dispatched.length,1)
+  await send('resume_task',{taskId:'after'});assert.equal(status,200);assert.equal(dispatched.length,2);assert.equal(dispatched[1][2],'other');assert.match(dispatched[1][3],/NEW RESULT/);assert.doesNotMatch(dispatched[1][3],/OLD RESULT/)
+  saved=await read();assert.equal(saved.tasks[2].attempt,2);assert.deepEqual(saved.tasks.find(t=>t.id==='parallel'),source.tasks.find(t=>t.id==='parallel'))
+  Object.assign(saved.tasks[0],{status:'completed',output:'NEW RESULT'});saved.members[0].status='idle';saved.tasks[2].status='completed';saved.members[1].status='idle';await writeTeam(join(root,'.agent-teams'),saved)
+  await send('edit',{base:workflowFingerprint(saved),title:'Rerun again',operations:[{action:'rerun_task',id:'t1'}]})
+  assert.equal(status,200);assert.equal(dispatched.length,3);assert.equal((await read()).tasks.length,source.tasks.length,'repeated reruns overwrite in place')
+})
+
+test('suspension survives reload and malformed confirmation flags fail the durable boundary', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-rerun-state-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const source=withGate();source.tasks[0].status='completed'
+  const updated=applyWorkflowOperations(source,[{action:'rerun_task',id:'t1'}]);await createTeamDir(root,updated)
+  assert.equal((await readTeam(root,'demo')).tasks[1].workflowRerunRequired,true)
+  const cancelled=structuredClone(updated.tasks[2]);cancelUnfinishedTask(cancelled,'stop')
+  assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.workflowPaused,false);assert.equal(cancelled.workflowRerunRequired,false,'stopping the team must remove pending confirmation badges')
+  updated.tasks[1].workflowRerunRequired='true';writeFileSync(join(root,'demo','team.json'),JSON.stringify(updated))
+  await assert.rejects(readTeam(root,'demo'),/invalid AgentTeams state/)
+})
 
 test('malformed model operations explain the required action discriminator', () => {
   for (const operation of [{ type: 'update_member', name: 'worker' }, { op: 'update_member' }, { update_member: { name: 'worker' } }]) {
@@ -107,6 +204,8 @@ test('connection magnet accepts node interiors and rejects duplicate, cyclic and
   assert.equal(connectionIssue(tasks, 'a', 'c'), undefined)
   tasks[2].status = 'in_progress'
   assert.match(connectionIssue(tasks, 'a', 'c'), /停止/)
+  Object.assign(tasks[2],{status:'pending',attempt:2,workflowPaused:true,workflowRerunRequired:true})
+  assert.equal(connectionIssue(tasks,'a','c'),undefined,'suspended downstream nodes remain editable with drawio connections')
 })
 
 test('native discussion and return-to-captain navigation open ordinary sessions', async () => {
@@ -118,6 +217,7 @@ test('native discussion and return-to-captain navigation open ordinary sessions'
 test('restored native discussion is restricted and cannot propose outside its own scope', async t => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-native-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = team(), label = 'native-label', nativeId = `session-at-discussion-${createHash('sha256').update('demo').digest('hex').slice(0, 16)}-00000000-0000-0000-0000-000000000001`
+  source.tasks[0].status='completed'
   workflowState(source).discussions['discussion:member:worker'] = { key: 'member:worker', messages: [], calls: [], native: { sessionId: nativeId, label } }
   source.members.push({ ...source.members[0], name: 'unrelated' })
   source.tasks.push({ ...task('unrelated-task'), assignee: 'unrelated', output: 'UNRELATED EXECUTION' })
@@ -139,8 +239,11 @@ test('restored native discussion is restricted and cannot propose outside its ow
   const propose = args => definitions.get('agent_teams_workflow_propose').execute({ base: context.base, title: 'edit', operations: JSON.stringify(args) }, exec)
   await assert.rejects(propose([{ action: 'add_member', name: 'other', summary: 'other scope' }]), /只能调整/)
   await propose([{ action: 'update_member', name: 'worker', summary: 'new summary' }])
+  await propose([{action:'rerun_task',id:'t1',instructions:'Only after human approval'}])
+  await assert.rejects(propose([{action:'rerun_task',id:'unrelated-task'}]))
   const persisted = await readTeam(join(root, '.agent-teams'), 'demo')
   assert.equal(persisted.members[0].summary, undefined)
+  assert.equal(persisted.tasks[0].status,'completed','proposing a rerun cannot execute it')
   assert.equal(persisted.workflow.discussions['discussion:member:worker'].proposal.status, 'pending')
   const intruder = { ...agent, id: nativeId.replace(/1$/, '2') }
   await assert.rejects(definitions.get('agent_teams_workflow_context').execute({}, { ...exec, agent: intruder }), /失效|关联记录缺失/)

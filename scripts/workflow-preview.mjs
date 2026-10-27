@@ -32,6 +32,11 @@ let team = {
     { id: 't3', subject: '开发与自测', description: '仅在需求通过后执行', assignee: 'developer', dependencies: ['t2'], status: 'pending', attempt: 0, createdAt: 1, updatedAt: 1 },
   ],
 };
+if (process.env.TEAMFLOW_PREVIEW_RERUN) {
+  decideCheckpoint(team,'t2','approve','fixture','fixture','模拟已通过')
+  Object.assign(team.tasks[2],{status:'completed',attempt:1,output:'模拟已完成的实现结果'})
+  team.tasks.push({id:'t4',subject:'独立文档整理',assignee:'developer',dependencies:[],status:'completed',attempt:1,output:'独立分支结果保持不变',createdAt:1,updatedAt:1}); team.taskSeq=4
+}
 if (process.env.TEAMFLOW_PREVIEW_DISCUSSION) {
   const key = 'member:researcher'
   workflowState(team).discussions[`discussion:${key}`] = { key, messages: [], calls: [], proposal: proposeWorkflow(team, '调整研究成员职责', [{ action: 'update_member', name: 'researcher', summary: '整理需求并明确每项验收标准。', role: '需求与验收分析师' }]) }
@@ -56,6 +61,14 @@ createServer(async (req, res) => {
       const proposal = body.operations ? { ...discussion.proposal, suggestedOperations: discussion.proposal.operations, operations: body.operations } : discussion.proposal;
       team = applyWorkflowProposal(team, proposal);
     }
+    if (body.action === 'resume_task') {
+      const task=team.tasks.find(task=>task.id===body.taskId)
+      if(!task?.workflowPaused || task.status!=='pending') throw Error('节点没有挂起')
+      if(task.workflowRerunRequired && task.dependencies.some(id=>team.tasks.find(item=>item.id===id)?.status!=='completed')) throw Error('请先等待所有上游任务完成')
+      task.workflowPaused=false;task.workflowRerunRequired=false
+    }
+    // Explicit fixture mode: simulate successful work; never calls a real model.
+    if (process.env.TEAMFLOW_PREVIEW_RERUN) for(const task of team.tasks) if(task.status==='pending' && !task.checkpoint && !task.workflowPaused && task.dependencies.every(id=>team.tasks.find(item=>item.id===id)?.status==='completed')) {task.status='completed';task.attempt=(task.attempt??0)+1;task.output='模拟重跑结果：已按最新要求重新执行。'}
     if (body.action === 'dismiss' && discussion.proposal) discussion.proposal.status = 'dismissed';
     if (body.action === 'layout') state.positions[`task:${body.taskId}`] = { x: body.x, y: body.y };
     if (body.action === 'start') team.phase = 'running';

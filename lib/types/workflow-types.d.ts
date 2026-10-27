@@ -39,6 +39,10 @@ export type WorkflowOperation = {
     action: 'remove_task';
     id: string;
 } | {
+    action: 'rerun_task';
+    id: string;
+    instructions?: string;
+} | {
     action: 'rework';
     id: string;
     taskIds: string[];

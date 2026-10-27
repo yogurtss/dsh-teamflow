@@ -4,6 +4,7 @@ import type { TeamState, TeamTask } from './types.ts'
 import type { WorkflowOperation, WorkflowProposal, WorkflowState } from './workflow-types.ts'
 import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
+import { rerunImpact, resetTaskForRerun } from './task-rerun.ts'
 
 export function workflowState(team: TeamState): WorkflowState {
   return team.workflow ??= { positions: {}, discussions: {}, history: [] }
@@ -45,6 +46,7 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
       case 'update_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['subject', 'description', 'assignee']),
         ...op['dependencies'] === undefined ? {} : { dependencies: strings(op['dependencies'], 'dependencies') } }
       case 'remove_task': return { action, id: text(op['id'], 'id', true)! }
+      case 'rerun_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['instructions']) }
       case 'rework': return { action, id: text(op['id'], 'id', true)!, taskIds: strings(op['taskIds'], 'taskIds'), instructions: text(op['instructions'], 'instructions', true)! }
       default: throw new Error(`未知修改操作：${String(action)}`)
     }
@@ -61,7 +63,7 @@ function nextTaskId(team: TeamState): string {
   return id
 }
 function editable(task: TeamTask): void {
-  if (task.status !== 'pending' || (task.attempt ?? 0) !== 0 || task.reassigning || task.checkpoint?.decision) {
+  if (task.status !== 'pending' || ((task.attempt ?? 0) !== 0 && !(task.workflowPaused && task.workflowRerunRequired)) || task.reassigning || task.checkpoint?.decision) {
     throw new Error(`任务 ${task.id} 已开始；请先停止该任务，完成的任务请通过返工创建新一轮`)
   }
 }
@@ -86,7 +88,7 @@ export function validateWorkflowGraph(team: TeamState): void {
   team.tasks.forEach(visit)
 }
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
-  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending'
+  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
 /** All transitive upstream results, in dependency order. */
@@ -153,6 +155,24 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       const task = taskOf(team, op.id); editable(task)
       if (team.tasks.some(t => t.dependencies.includes(task.id))) throw new Error('请先断开该任务的下游连接')
       team.tasks = team.tasks.filter(t => t.id !== task.id)
+    } else if (op.action === 'rerun_task') {
+      const original = taskOf(team, op.id)
+      if (team.phase === 'staged') throw new Error('团队尚未启动，请直接编辑待执行任务')
+      if (original.checkpoint || !['completed', 'failed', 'cancelled'].includes(original.status)) throw new Error('只能重跑已结束的执行任务')
+      const owner = team.members.find(member => member.name === original.assignee && member.status !== 'removed')
+      if (!owner || owner.stopping || team.tasks.some(task => task.assignee === owner.name && (['claimed', 'in_progress'].includes(task.status) || task.reassigning))) throw new Error('执行成员不可用或仍在运行，请先停止该成员的任务')
+      const impact = rerunImpact(team.tasks, original.id)
+      if (impact.active.length) throw new Error('受影响的下游任务仍在运行，请先停止后重跑')
+      resetTaskForRerun(original, false, now)
+      if (op.instructions) original.description = `${original.description ?? ''}\n\n本次重跑要求：${op.instructions}`
+      for (const task of impact.descendants) {
+        resetTaskForRerun(task, true, now)
+        const review = task.checkpoint && team.workflow?.discussions[`discussion:check:${task.id}`]
+        if (review) {
+          delete review.materials; delete review.evidence; delete review.materialsRound
+          if (review.native) delete review.native.reviewEvidence
+        }
+      }
     } else {
       const gate = taskOf(team, op.id)
       if (gate.checkpoint?.decision !== 'reject' || gate.status !== 'pending') throw new Error('只能为已拒绝的人工检查创建返工')

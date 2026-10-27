@@ -38,3 +38,13 @@ test('large multiline instructions use bounded diff memory', () => {
   assert.equal(result.filter(line=>line.kind==='removed').length,450)
   assert.equal(result.filter(line=>line.kind==='added').length,450)
 })
+
+test('rerun approval names the existing task and keeps editable rerun instructions', () => {
+  const operation={action:'rerun_task',id:'t1',instructions:'Review latest input'}
+  const review=reviewFields(team,operation)
+  assert.match(review.title,/仅重跑任务 · Task/)
+  assert.deepEqual(review.fields.map(f=>f.key),['instructions'])
+  const edited=setReviewField(operation,review.fields[0],'Human requirement')
+  assert.deepEqual(reviewedOperations(team,[edited],[true]),[{action:'rerun_task',id:'t1',instructions:'Human requirement'}])
+  assert.deepEqual(reviewedOperations(team,[edited],[false]),[])
+})

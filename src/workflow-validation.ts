@@ -15,6 +15,7 @@ function operation(value: unknown): boolean {
     case 'update_member': case 'remove_member': return string(value['name'])
     case 'add_task': return string(value['subject']) && strings(value['dependencies']) && (value['checkpoint'] === undefined || typeof value['checkpoint'] === 'boolean')
     case 'update_task': case 'remove_task': return string(value['id'])
+    case 'rerun_task': return string(value['id'])
     case 'rework': return string(value['id']) && strings(value['taskIds']) && string(value['instructions'])
     default: return false
   }

@@ -6,6 +6,7 @@ export type WorkflowOperation =
   | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean }
   | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[] }
   | { action: 'remove_task'; id: string }
+  | { action: 'rerun_task'; id: string; instructions?: string }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
 
 export interface Checkpoint {

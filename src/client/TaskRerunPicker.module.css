@@ -1,0 +1,5 @@
+.picker { min-width: 0; margin-top: 16px; border: 1px solid var(--wb-border, #9ba3b344); border-radius: 8px; padding: 12px; }
+.picker .field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 10px 0; font-size: 12px; }
+.field select,.field textarea { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; color: inherit; background: var(--wb-bg, transparent); border: 1px solid var(--wb-border, #9ba3b344); border-radius: 5px; padding: 7px; }
+.impact { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; opacity: .85; }
+.impact p { margin: 6px 0; }

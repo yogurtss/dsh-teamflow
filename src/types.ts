@@ -161,6 +161,8 @@ export interface TaskEvidence {
 
 /** One task of a team's task list. */
 export interface TeamTask {
+  /** Upstream rerun invalidated this task; explicit human confirmation is required. */
+  workflowRerunRequired?: boolean
   workflowPaused?: boolean
   stoppedAttempts?: { attemptId?: string; output?: string; at: number }[]
   /** Human-only gate. Never dispatched to an execution member. */

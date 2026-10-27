@@ -226,7 +226,11 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           } else if (action === 'resume_task') {
             const task = team.tasks.find(t => t.id === body['taskId'])
             if (!task || !task.workflowPaused || task.status !== 'pending' || team.members.some(m => m.name === task.assignee && m.stopping)) throw new Error('任务尚未停止完成')
+            if (task.workflowRerunRequired && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新节点后重新确认')
+            if (task.workflowRerunRequired && task.dependencies.some(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))) throw new Error('请先等待所有上游任务完成，再确认此节点重跑')
             task.workflowPaused = false
+            task.workflowRerunRequired = false
+            task.updatedAt = Date.now()
           } else throw new Error('未知操作')
           if (retired.length) await recordRetiredMemberIds(root, retired)
           await writeTeam(root, team)

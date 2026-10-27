@@ -362,7 +362,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
               <span className={css.completionDot} aria-hidden>{task.verdictStale !== undefined ? '!' : !discarded && task.status === 'completed' ? '✓' : '·'}</span>
               <span className={css.completionTaskId}>{task.id}</span>
               <span className={css.completionTaskSubject} title={task.subject}>{task.subject}</span>
-              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : taskStatusLabel(task.status, t)}</span>
+              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(task.status, t)}</span>
             </li>)}
           </ul>}
         </div>
@@ -510,7 +510,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               <span className={css.taskDetailId}>{detailTask.id}</span>
               <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject.replace(/^开发\s*/u, '')}</span>
               <span className={css.taskDetailBadge} data-state={discarded ? 'cancelled' : taskTone(detailTask.state, detailTask.status)}>
-                {discarded ? t('task.status.notRun') : taskStatusLabel(detailTask.status, t)}
+                {discarded ? t('task.status.notRun') : detailTask.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(detailTask.status, t)}
               </span>
             </span>
             <span className={css.taskDetailLine}>
