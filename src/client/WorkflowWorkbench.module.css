@@ -1,5 +1,5 @@
 /* The workbench uses the same semantic surfaces and controls as WorkspaceActivity. */
-.entry, .workbench, .contextPanel {
+.entry, .workbench, .contextPanel, .reviewNotice {
   --wb-bg: var(--dsw-alias-bg-layer-1, light-dark(#fff, #202226));
   --wb-base: var(--dsw-alias-bg-module-platform, light-dark(#f6f7f9, #181a1e));
   --wb-border: var(--dsw-alias-border-l2, light-dark(#e1e5eb, #363940));
@@ -172,3 +172,16 @@
 @media(max-width:520px) { .columns[data-editing='true'] { grid-template-columns: minmax(0,1fr); grid-template-rows: 140px 240px minmax(250px,1fr); } .columns[data-editing='true']>.roster { grid-row: auto; } .columns[data-editing='true']>.editor { grid-column: 1; } }
 
 .editor[data-discussion-intro]>.contextInfo { max-height: 220px; overflow: auto; border: 1px solid var(--wb-border); border-radius: 8px; padding: 0 10px; }
+
+.checkpoint { border: 2px dashed var(--wb-accent); border-radius: 18px; }
+.checkpoint .drag { color: var(--wb-accent); font-weight: 600; }
+.node[data-review-ready='true'] { border-style: solid; outline: 3px solid color-mix(in srgb, var(--wb-accent) 20%, transparent); }
+.reviewNotice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 10px; border: 1px solid var(--wb-accent); border-radius: 10px; background: color-mix(in srgb, var(--wb-accent) 8%, var(--wb-bg)); font-size: 12px; }
+.reviewNotice strong { display: inline-flex; align-items: center; gap: 6px; }
+.reviewNotice small { color: var(--wb-muted); flex-basis: 100%; }
+.reviewNotice button { font: inherit; color: var(--wb-accent); background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+.reviewNotice button:focus-visible { outline: 2px solid var(--wb-accent); outline-offset: 2px; }
+.reviewNotice button:disabled { cursor: wait; opacity: .6; }
+.reviewDot { width: 8px; height: 8px; border-radius: 50%; background: var(--wb-accent); animation: reviewPulse 2s ease-in-out infinite; }
+@keyframes reviewPulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--wb-accent) 18%, transparent); } }
+@media(prefers-reduced-motion: reduce) { .reviewDot { animation: none; } }

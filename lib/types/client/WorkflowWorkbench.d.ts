@@ -1,4 +1,5 @@
-export declare function WorkflowWorkbench({ sessionId, teamId, waitingCount, openExecution, openConversation, nativeOnly, embeddedContext, onNativeContext, openContext }: {
+export declare function WorkflowWorkbench({ sessionId, teamId, waitingCount, openExecution, openConversation, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext }: {
+    reviewEntryOnly?: boolean;
     embeddedContext?: boolean;
     onNativeContext?: (value: boolean) => void;
     openContext?: () => void;

@@ -279,3 +279,5 @@ Use an explicit profile flag: `/teamflow --profile demo-delivery implement the f
 ## License
 
 [MIT](./LICENSE)
+
+Human review gates have a distinct frame. When ready, the team panel and captain chat header show an actionable review notification. Opening it starts an independent review conversation with requirements and upstream results already listed; the review agent then summarizes evidence, gaps, and checks for the human decision. See the [walkthrough and UI screenshots](docs/human-review-2026-10-27/README.md).

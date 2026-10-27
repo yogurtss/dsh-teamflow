@@ -329,3 +329,29 @@ test('pausing a queued task preserves another running task and its member stop b
   assert.equal(response.team.members[0].stopping, true); assert.equal(response.team.members[0].id, 'child')
   disposers.reverse().forEach(dispose => dispose?.()); assert.equal(removed, true)
 })
+
+test('first human review opens an isolated conversation with checklist and stored evidence before the model responds', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-review-intro-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = withGate(); source.tasks[0].status = 'completed'; source.tasks[0].output = 'Implemented login validation'
+  source.tasks[1].description = 'Check validation and error messages'
+  await createTeamDir(join(root, '.agent-teams'), source)
+  let spec; const prompts = []
+  const ctx = { tools: { register() {} }, subagents: { registerContinuableSetup() {} }, llm: { resolveCallConfig: async value => value }, effect() {}, sessions: { flush: async () => {} }, agents: {
+    get: () => ({ status: 'idle' }), create: async value => { spec = value; return { agent: { id: value.sessionId, session: {}, whenIdle: async () => {}, followup: message => prompts.push(message) }, dispose() {} } },
+  } }
+  const runtime = installWorkflowConversations(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, workflowMaterials)
+  const captain = { id: 'captain-id', options: { provider: 'fake', model: 'fake' }, session: { header: { cwd: root }, requestHeader: () => ({ config: {} }) } }
+  const id = await runtime.open(captain, source, 'check:gate', join(root, '.agent-teams'))
+  assert.notEqual(id, captain.id); assert.equal(spec.parentSessionId, undefined)
+  assert.match(prompts[0].content[0].text, /^## 待你验收/)
+  assert.match(prompts[0].content[0].text, /Check validation and error messages/)
+  assert.match(prompts[0].content[0].text, /Implemented login validation/)
+  const saved = await readTeam(join(root, '.agent-teams'), source.id)
+  const discussion = saved.workflow.discussions['discussion:check:gate']
+  assert.equal(discussion.materialsRound, 1)
+  assert.equal(discussion.native.reviewEvidence, discussion.evidence)
+  assert.match(discussion.materials, /Implemented login validation/)
+  await runtime.open(captain, source, 'check:gate', join(root, '.agent-teams'))
+  assert.equal(prompts.length, 1)
+  assert.equal(source.tasks[1].checkpoint.decision, undefined)
+})

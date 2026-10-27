@@ -14,10 +14,11 @@ export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRu
   if (!team) return <WorkflowWorkbench key={sessionId} sessionId={sessionId} nativeOnly openContext={openContext}
     openConversation={id => openMember?.(id as typeof sessionId, id as typeof sessionId)}
     openExecution={(id, parentId) => openMember?.((parentId ?? sessionId) as typeof sessionId, id as typeof sessionId)} />
-  return <button className={css.chatEntry} data-team-chat-entry type="button" title={t('workspace.focus')}
+  return <><button className={css.chatEntry} data-team-chat-entry type="button" title={t('workspace.focus')}
     onClick={() => openActivityPanel({ teamId: team.teamId, captainSessionId: sessionId, teamName: team.name, members: team.members })}>
     <img src={LEAD_ART} alt="" aria-hidden />{t('workspace.focus')}
-  </button>
+  </button><WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={team.teamId} reviewEntryOnly
+    openConversation={openMember ? id => openMember(id as typeof sessionId, id as typeof sessionId) : undefined} /></>
 }
 
 export function TeamTurnCard({ sessionId, turn, useChat, t, openMember }: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<'agentTeams'> & AgentTeamsCardInjected) {

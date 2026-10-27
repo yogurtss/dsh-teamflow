@@ -53,7 +53,8 @@ function describeOperation(op: WorkflowOperation, team: TeamState, operations: W
   return `修改「${op.action === 'update_member' ? op.name : taskName(op.id)}」\n` + Object.entries(op).filter(([key]) => key in labels).map(([key, v]) => `${labels[key]}：${value((before as unknown as Record<string, unknown>)?.[key])}\n→ ${value(v)}`).join('\n')
 }
 
-export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExecution, openConversation, nativeOnly = false, embeddedContext = false, onNativeContext, openContext }: {
+export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext }: {
+  reviewEntryOnly?: boolean
   embeddedContext?: boolean
   onNativeContext?: (value: boolean) => void
   openContext?: () => void
@@ -230,6 +231,12 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   }
   const pendingCount = Object.values(team?.workflow?.discussions ?? {}).filter(item => item.proposal?.status === 'pending').length
   const reviewCount = data?.ready.length ?? waitingCount
+  const reviewNotice = !!data?.ready.length && <div className={css.reviewNotice} role="status" aria-label="等待你验收">
+    <strong><span className={css.reviewDot} aria-hidden />等待你验收</strong>
+    {data.ready.map(id => <button type="button" key={id} disabled={working} onClick={() => void openReview(id)}>验收 · {team?.tasks.find(t => t.id === id)?.subject} ↗</button>)}
+    {!reviewEntryOnly && <small>上游已完成 · 打开独立对话查看材料与 AI 总结</small>}
+  </div>
+  if (reviewEntryOnly) return <>{reviewNotice}{error && <span role="alert">{error}</span>}</>
   if (nativeOnly && !data?.currentDiscussion) return null
   return <>
     {data?.currentDiscussion && team && <div className={css.nativeBanner}><span>{data.currentDiscussion.startsWith('check:') ? '独立验收对话' : '独立配置对话'} · {team.name}</span><button className={css.entry} onClick={() => void openExecution?.(team.captainSessionId, team.captainSessionId)}>返回队长对话 ↗</button></div>}
@@ -239,6 +246,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {pendingCount > 0 && <span>{pendingCount} 项修改待确认</span>}
       {reviewCount > 0 && <span>{reviewCount} 项等待人工验收</span>}
     </button>
+    {!nativeOnly && reviewNotice}
     {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>讨论资料 ↗</button>}
     {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label><WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
@@ -275,7 +283,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
         </aside>
         <main className={css.graphArea}>
           <nav className={css.toolbar}><button disabled={working || !!editor} onClick={() => edit('task')}>＋ 任务</button><button disabled={working || !!editor} onClick={() => edit('check')}>＋ 人工检查</button><button aria-label="缩小画布" onClick={() => setZoom(value => Math.max(.45, value - .1))}>−</button><button aria-label="放大画布" onClick={() => setZoom(value => Math.min(1.5, value + .1))}>＋</button><button onClick={fitCanvas}>适应画布</button><span role={link || taskEditing ? 'status' : undefined}>{link ? link.issue ?? (link.to ? '已吸附到输入端 · 松开连接' : '靠近下一节点以连接 · Esc 取消') : '拖动节点右侧中心连接柄建立交接；点击节点编辑属性、点击连线查看；Delete 删除选中对象'}</span></nav>
-          {!!data?.ready.length && <div className={css.notice} role="status">等待人工验收：{data.ready.map(id => <button key={id} disabled={working} onClick={() => void openReview(id)}>{team.tasks.find(t => t.id === id)?.subject} →</button>)}</div>}
+          {reviewNotice}
           <div className={css.canvas} ref={canvas} onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)) { setSelectedEdge(undefined); setSelectedTask(undefined); setEditor(undefined); setDiscussionIntro(undefined) } }}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
               <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor" /></marker></defs>
@@ -285,8 +293,8 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
                 </g> }))}
                 {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
               </svg>
-              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); setDiscussionIntro(undefined); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
-                <div className={css.drag}>⠿ {task.checkpoint ? '人工检查' : '执行任务'} · {task.id}</div>
+              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); setDiscussionIntro(undefined); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
+                <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工验收' : '执行任务'} · {task.id}</div>
                 <button className={css.nodeBody} >
                   <strong>{task.subject}</strong><span className={css.taskOwner}><img src={task.checkpoint ? REVIEW_ART : memberArtUrl(task.assignee ?? '', team.members.find(m => m.name === task.assignee)?.role ?? '')} alt="" />{task.checkpoint ? '验收 Agent 与你' : task.assignee || '自动分配成员'}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
                 <button className={`${css.port} ${css.input}`} data-connection-handle data-input-id={task.id} aria-label={`${task.subject} 输入端`} />

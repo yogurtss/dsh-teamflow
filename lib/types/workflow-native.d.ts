@@ -4,6 +4,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { ToolsConfig } from './tools.ts';
 import type { TeamState } from './types.ts';
 import type { WorkflowDiscussion } from './workflow-types.ts';
+export declare function reviewOpening(team: TeamState, taskId: string): string;
 export declare function workflowDiscussion(team: TeamState, key: string): WorkflowDiscussion;
 /** The reserved ID namespace fails closed if plugin state is missing. Native
  * session logs contain only host-supported records; identity lives in team.json. */
