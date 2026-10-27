@@ -42,6 +42,9 @@ export type WorkflowOperation = {
     action: 'rerun_task';
     id: string;
     instructions?: string;
+    subject?: string;
+    description?: string;
+    assignee?: string;
 } | {
     action: 'rework';
     id: string;

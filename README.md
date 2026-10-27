@@ -6,9 +6,9 @@ This is the [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) de
 
 **Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the version stays at `0.1.27` for now. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
 
-Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; archived teams open read-only records.
+Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; completed and archived teams also open the full canvas, including task requirements, results and verification records.
 
-Human checkpoints require opening their evidence and clicking **通过验收** or **退回**; a chat message such as “review passed” does not write an approval. Completed workflows remain editable, and the archive tool rejects unfinished workflows. A TeamFlow archive can be restored from its history window with **恢复为待确认流程**: the archive and completed results remain intact, fresh member sessions are prepared, unfinished execution tasks stay paused, and the restored plan requires review before starting. Existing live teams are never overwritten. See the [recovery walkthrough](./docs/approval-recovery-2026-10-27/README.md).
+Human checkpoints require opening their evidence and clicking **通过验收** or **退回**; a chat message such as “review passed” does not write an approval. Completed workflows remain editable, and the archive tool rejects unfinished workflows. A TeamFlow archive can be restored in the same canvas with **恢复并编辑流程**: the archive and completed results remain intact, fresh member sessions are prepared, unfinished execution tasks stay paused, and the restored plan requires review before starting. Existing live teams are never overwritten. See the [recovery walkthrough](./docs/approval-recovery-2026-10-27/README.md).
 
 Use `/teamflow` to start. Only `/teamflow` and `/teamflow-<profile>` commands are registered; the old `/agent-teams` command and its profile aliases have been removed. Use `/teamflow --profile <name> <goal>` to select a profile explicitly. The `.agent-teams/` data directory, internal `agent_teams_*` tools and session event protocol remain unchanged to preserve existing records. Historical reports retain the names and screenshots captured at the time.
 
@@ -39,6 +39,8 @@ Edges mean execution order: B waits for A. To insert a checkpoint manually, add 
 Manual canvas edits save directly; AI proposals still require confirmation. Member discussions reuse their independent session and context when reopened; only the first opening generates an introduction. Use the explicit restart action to archive the old discussion and begin again. New execution tasks added to running teams start paused so you can wire them before resuming.
 
 Member cards always open member settings; canvas nodes open task or checkpoint properties, with related objects highlighted. Selection remains available during requests, and late responses do not change the current panel. Unsaved drafts are retained separately while switching objects, including typing after a save starts. Discard affects only the current draft; save before reloading the page.
+
+Use **编辑流程 / 查看流程** in the canvas header to switch between editing and inspection. All task details remain accessible while running or after completion. Click a finished execution node, edit its name, requirements or owner, then choose **保存并重跑此任务**. The affected downstream nodes are listed before submission and suspend for individual confirmation. See the [completed workflow walkthrough](./docs/completed-canvas-2026-10-27/README.md).
 
 To rerun one member's finished task, click the member, adjust its role, PE or model, select a task under **单独重跑**, then choose **保存并仅重跑所选任务**. The same task ID and connections remain; its result is replaced in place. All transitive downstream nodes, including completed tasks and human checkpoints, reset and suspend. Open each suspended node after its upstream work completes, optionally edit it, then confirm execution or renewed review. Unrelated branches remain unchanged. Result version management is not included. Active affected tasks must be stopped first.
 
@@ -133,7 +135,7 @@ To return to upstream, uninstall and install `@nanmicoder/dsh-agent-teams@0.1.27
 
 Describe a goal → discuss the initial team → inspect members/tasks → edit the canvas → confirm execution → discuss and decide at checkpoints.
 
-Proposals require human confirmation. Stop running tasks before editing, then resume; completed tasks use new rework rounds. Configuration/review agents can only read context and propose, not execute or approve. Review uses agent-submitted results and host-computed file digests, not independent test execution. Role-prompt snapshots are not complete model requests. Rework crossing another human checkpoint must be handled in segments.
+Proposals require human confirmation. Stop running tasks before applying edits, then resume; completed execution tasks can be edited and rerun in place. Configuration/review agents can only read context and propose, not execute or approve. Review uses agent-submitted results and host-computed file digests, not independent test execution. Role-prompt snapshots are not complete model requests. Rework crossing another human checkpoint must be handled in segments.
 
 The inherited activity panel, slash command and configuration remain available, as described below.
 

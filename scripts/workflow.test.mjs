@@ -70,6 +70,10 @@ test('archive recovery route is owner-bound, never starts work, and formal appro
   const ctx={agents:{get:id=>id===captain.id?captain:id===stranger.id?stranger:undefined},effect:fn=>fn(),logger:{warn(){}}}
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{kicks++}},{register:value=>{handler=value;return()=>{}}})
   async function send(action,extra={}) {const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...extra})]);req.method='POST';req.headers={};await handler.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await send('archive_state',{sessionId:stranger.id});assert.equal(status,409)
+  await send('archive_state');assert.equal(status,200,JSON.stringify(response));assert.deepEqual(response.team,JSON.parse(JSON.stringify(source)))
+  assert.equal(await readTeam(stateRoot,'demo'),undefined,'inspecting an archive never restores or starts it');assert.equal(kicks,0)
+  await send('edit',{base:workflowFingerprint(source),title:'must not edit archive',operations:[{action:'update_member',name:'worker',summary:'unsafe'}]});assert.equal(status,409)
   await send('restore_archive',{sessionId:stranger.id});assert.equal(status,409);assert.equal(await readTeam(stateRoot,'demo'),undefined)
   await send('restore_archive');assert.equal(status,200,JSON.stringify(response));assert.equal(kicks,0);assert.equal(response.team.phase,'staged');assert.equal(response.activity.tasks.filter(t=>t.status==='completed').length,6)
   assert.deepEqual(await readArchivedTeam(stateRoot,'demo'),JSON.parse(JSON.stringify(source)),'original archive remains intact')
@@ -81,6 +85,24 @@ test('archive recovery route is owner-bound, never starts work, and formal appro
   assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks.filter(t=>t.status==='completed').length,7)
   assert.equal(response.activity.tasks.filter(t=>t.status==='completed').length,7,'the main activity view receives the same approved state immediately')
   assert.equal(response.team.tasks.find(t=>t.id==='gate').checkpoint.decision,'approve');assert.ok(await readTeam(stateRoot,'demo'),'approval does not archive the team')
+})
+
+test('completed canvas tasks edit and rerun atomically while preserving unrelated work and suspending descendants',()=>{
+  const source=withGate();source.tasks[0].status='completed';source.tasks[0].output='old result'
+  source.tasks[0].attempt=1;source.tasks[0].objective='keep objective';source.tasks[0].acceptance=['keep acceptance']
+  source.tasks[1].status='completed';source.tasks[1].checkpoint.decision='approve'
+  source.tasks[2].status='completed';source.tasks[2].output='downstream old'
+  source.tasks.push({...task('unrelated'),status:'completed',output:'preserved'})
+  source.members.push({...member,name:'replacement'})
+  const before=structuredClone(source), operation=parseWorkflowOperations([{action:'rerun_task',id:'t1',subject:'Revised task',description:'New requirement',assignee:'replacement',output:'ignore forged result'}])[0]
+  assert.equal(editorTarget(source,{type:'task',id:'t1'},true).type,'task')
+  const result=applyWorkflowOperations(source,[operation])
+  assert.deepEqual(source,before);assert.equal(result.tasks[0].subject,'Revised task');assert.equal(result.tasks[0].description,'New requirement');assert.equal(result.tasks[0].assignee,'replacement')
+  assert.equal(result.tasks[0].status,'pending');assert.equal(result.tasks[0].output,undefined);assert.equal(result.tasks[0].objective,'keep objective');assert.deepEqual(result.tasks[0].acceptance,['keep acceptance'])
+  assert.equal(result.tasks[1].workflowPaused,true);assert.equal(result.tasks[1].checkpoint.decision,undefined);assert.equal(result.tasks[2].workflowRerunRequired,true)
+  assert.deepEqual(result.tasks[3],source.tasks[3])
+  for(const extra of [{subject:''},{assignee:'missing'}]) assert.throws(()=>applyWorkflowOperations(source,[{action:'rerun_task',id:'t1',...extra}]))
+  assert.deepEqual(source,before,'rejected edited reruns leave all prior results intact')
 })
 
 test('member, task, checkpoint and discussion selection each own one property context', () => {

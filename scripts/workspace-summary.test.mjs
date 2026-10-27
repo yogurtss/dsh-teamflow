@@ -19,12 +19,20 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   return source === undefined ? next(specifier, context) : { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true }
 } })
 const { TeamSection } = await import('../lib/client/ActivityPanel.js')
+const { TaskRecord } = await import('../lib/client/WorkflowContext.js')
 hook.deregister()
 const base = { workspace: '', teamId: 'summary', name: 'Summary', captainSessionId: 'captain', phase: 'running', members: [], tasks: [], messageCount: 0, captainInbox: [] }
 const task = (id, status, state = status) => ({ id, subject: id, status, state, assignee: '', dependencies: [], depth: 0 })
 const render = (team, dict, extra = {}) => renderToStaticMarkup(React.createElement(TeamSection, {
   team, workspace: true, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
 }))
+
+test('finished canvas task details expose submitted results and verification records without starting work',()=>{
+  const finished={...task('done','completed'),subject:'Finished task',description:'Original requirements',objective:'Goal',acceptance:['Criterion'],verify:['run tests'],output:'Delivered result',commandsRun:[{command:'test command',status:'passed',evidence:'verification evidence'}],acceptanceResults:[{criterion:'Criterion',status:'passed',evidence:'acceptance evidence'}]}
+  const html=renderToStaticMarkup(React.createElement(TaskRecord,{task:finished,team:{tasks:[finished]},expanded:true}))
+  assert.match(html,/<details[^>]*open=""/)
+  for(const text of ['Original requirements','Goal','Criterion','run tests','Delivered result','verification evidence','acceptance evidence']) assert.ok(html.includes(text))
+})
 
 for (const dict of [en, zh]) test(`workspace completion preserves lifecycle and stale-verdict warnings (${dict === en ? 'en' : 'zh'})`, () => {
   const team = { ...base, tasks: [task('done', 'completed'), task('failed', 'failed'), task('cancelled', 'cancelled'), task('claimed', 'claimed'), task('running', 'in_progress', 'running')] }

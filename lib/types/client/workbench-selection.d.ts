@@ -23,7 +23,7 @@ export type WorkbenchView = {
 };
 export declare const initialWorkbenchView: () => WorkbenchView;
 export declare const editorKey: (teamId: string, target: EditorTarget) => string;
-export declare function editorTarget(team: TeamState | undefined, target: WorkbenchTarget): EditorTarget | undefined;
+export declare function editorTarget(team: TeamState | undefined, target: WorkbenchTarget, allowRerun?: boolean): EditorTarget | undefined;
 export declare function targetDiscussion(target: WorkbenchTarget): string;
 export declare function draftSource(team: TeamState | undefined, target: EditorTarget): string;
 export declare function initialEditorDraft(team: TeamState | undefined, target: EditorTarget): EditorDraft;

@@ -14,7 +14,7 @@ export function reviewFields(team: TeamState, operation: WorkflowOperation): { t
   const added = operation.action.startsWith('add_')
   const original = isMember ? team.members.find(item => item.name === op['name']) : team.tasks.find(item => item.id === op['id'])
   const before = added ? {} : (original ?? {}) as unknown as Record<string, unknown>
-  const keys: readonly string[] = operation.action === 'rerun_task' ? ['instructions'] : operation.action === 'rework' ? ['taskIds', 'instructions'] : isMember ? [...(added ? ['name'] : []), ...memberFields] : [...(added && op['id'] ? ['id'] : []), ...taskFields]
+  const keys: readonly string[] = operation.action === 'rerun_task' ? [...taskFields.filter(key => key !== 'dependencies' && op[key] !== undefined), 'instructions'] : operation.action === 'rework' ? ['taskIds', 'instructions'] : isMember ? [...(added ? ['name'] : []), ...memberFields] : [...(added && op['id'] ? ['id'] : []), ...taskFields]
   const fields = keys.filter(key => !(key === 'assignee' && operation.action === 'add_task' && operation.checkpoint)).map(key => ({ key, label: labels[key] ?? key, before: show(before[key]), after: removed ? '' : show(op[key] === undefined && !added ? before[key] : op[key]), array: ['dependencies', 'taskIds'].includes(key), editable: !removed && key !== 'id' }))
   const name = String(isMember ? op['name'] : op['subject'] ?? before['subject'] ?? op['id'])
   return { title: `${added ? '新增' : removed ? '删除' : operation.action === 'rerun_task' ? '仅重跑' : operation.action === 'rework' ? '返工' : '修改'}${isMember ? '成员' : operation.action === 'add_task' && op['checkpoint'] ? '人工检查' : '任务'} · ${name}`, fields }

@@ -1,6 +1,7 @@
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { AgentTeamsTranslate } from './locales.ts';
-export declare function WorkflowWorkbench({ sessionId, teamId, waitingCount, openExecution, openConversation, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t }: {
+export declare function WorkflowWorkbench({ sessionId, teamId, archived, waitingCount, openExecution, openConversation, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t }: {
+    archived?: boolean;
     modelDirectory?: ModelDirectory;
     t?: AgentTeamsTranslate;
     reviewEntryOnly?: boolean;

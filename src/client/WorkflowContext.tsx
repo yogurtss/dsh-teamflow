@@ -4,8 +4,8 @@ import css from './WorkflowWorkbench.module.css'
 
 const statuses = { pending: '等待执行', claimed: '已领取', in_progress: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消' }
 
-function TaskRecord({ task, team }: { task: TeamTask; team: TeamState }) {
-  return <details className={css.contextTask} open={task.status === 'in_progress'}><summary>{task.subject} · {task.workflowPaused ? '已暂停' : statuses[task.status]}</summary>
+export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; team: TeamState; expanded?: boolean }) {
+  return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {task.workflowPaused ? '已暂停' : statuses[task.status]}</summary>
     <p>{task.description || '未单独填写任务说明'}</p>
     {task.workflowRerunRequired && <p><strong>上游已重跑：</strong>当前节点已挂起，请在画布中确认后执行。此前结果已失效。</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>
@@ -16,6 +16,7 @@ function TaskRecord({ task, team }: { task: TeamTask; team: TeamState }) {
     {!!task.verify?.length && <p><strong>计划验证：</strong>{task.verify.join('；')}</p>}
     {!!task.deliverables?.length && <p><strong>约定交付：</strong>{task.deliverables.join('、')}</p>}
     <p><strong>已提交结果：</strong>{task.output || '尚未提交结果'}</p>
+    {!!task.checkpoint?.history.length && <details><summary>历轮人工验收记录</summary>{task.checkpoint.history.map((decision,i)=><p key={i}>第 {decision.round} 轮 · {decision.decision==='approve'?'通过':'退回'} · {decision.note || '未填写意见'}</p>)}</details>}
     {!!task.changedPaths?.length && <p><strong>已报告变更：</strong>{task.changedPaths.join('、')}</p>}
     {task.commandsRun?.map((item, i) => <p key={`cmd:${i}`}><strong>{item.status === 'passed' ? '报告通过' : '报告失败'}：</strong>{item.command}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
     {task.acceptanceResults?.map((item, i) => <p key={`result:${i}`}>{item.criterion} · {item.status === 'passed' ? '报告通过' : '报告失败'}{item.evidence ? `\n${item.evidence}` : ''}</p>)}

@@ -8,10 +8,11 @@ export type EditorDraft = { values: Record<string,string>; source: string }
 export type WorkbenchView = { target: WorkbenchTarget; revision: number; drafts: Record<string,EditorDraft> }
 export const initialWorkbenchView = (): WorkbenchView => ({ target: {type:'discussion',key:'graph'}, revision:0, drafts:{} })
 export const editorKey = (teamId: string, target: EditorTarget): string => JSON.stringify([teamId,target.type,target.id??null])
-export function editorTarget(team: TeamState | undefined, target: WorkbenchTarget): EditorTarget | undefined {
+export function editorTarget(team: TeamState | undefined, target: WorkbenchTarget, allowRerun = false): EditorTarget | undefined {
   if(target.type==='edge'||target.type==='discussion') return
   if(target.type==='member'||!target.id) return target
   const task=team?.tasks.find(item=>item.id===target.id)
+  if(allowRerun && task && !task.checkpoint && ['completed','failed','cancelled'].includes(task.status)) return target
   if(task?.status==='pending' && ((task.attempt??0)===0 || task.workflowPaused) && !task.checkpoint?.decision && !task.reassigning) return target
 }
 export function targetDiscussion(target: WorkbenchTarget): string {

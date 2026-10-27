@@ -40,7 +40,7 @@ const PERSONA = `你是 TeamFlow 的独立配置顾问或验收 Agent，在 Harn
 退回后讨论返工对象。仅可编辑未开始或已停止的任务。用户希望某个成员重跑时，默认提出 rerun_task，指定该成员一个已结束的任务；它重置同一任务并覆盖当前结果，不创建结果版本；所有依赖下游（包括已完成任务与人工检查）重置并挂起，由用户在画布逐个确认后重跑或验收。无关分支不变。
 operations 必须是 JSON 数组编码后的字符串；每个对象必须包含 action 字段，其他参数直接放在同一对象内，不使用 type、op 或嵌套 payload。
 示例：[{"action":"update_member","name":"planner","summary":"输出三项准备工作","executionPrompt":"每项包含动作和完成标准"}]
-支持的 action 及其同层字段：add_member {name,summary,role?,executionPrompt?,provider?,model?,reasoningEffort?}; update_member {name,summary?,role?,executionPrompt?,provider?,model?,reasoningEffort?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rerun_task {id:已结束的执行任务ID,instructions?:本次要求}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
+支持的 action 及其同层字段：add_member {name,summary,role?,executionPrompt?,provider?,model?,reasoningEffort?}; update_member {name,summary?,role?,executionPrompt?,provider?,model?,reasoningEffort?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rerun_task {id:已结束的执行任务ID,instructions?:本次要求,subject?,description?,assignee?}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
 人工检查不设 assignee。你没有文件、终端、执行或消息发送工具，不得声称独立运行了验证。提案后提示用户在当前对话旁的 TeamFlow 讨论资料中查看并确认修改，也可以选择打开画布。`
 
 export function workflowDiscussion(team: TeamState, key: string): WorkflowDiscussion {

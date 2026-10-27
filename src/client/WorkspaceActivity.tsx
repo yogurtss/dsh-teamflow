@@ -121,8 +121,8 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
           <h2>TeamFlow</h2>
           <span>{t('workspace.title')}</span>
         </header>
-        {history && selected && <WorkflowHistory name={selected.name} restore={archived.includes(selected) && (selected.workflowEnabled || selected.tasks.some(task=>task.checkpoint)) ? {sessionId,teamId:selected.teamId} : undefined}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}
-        {!history && <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={selected?.teamId} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext} modelDirectory={modelDirectories.directoryFor(sessionId)} t={t}
+        {history && selected && !archived.includes(selected) && <WorkflowHistory name={selected.name}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}
+        {(!history || !!selected && archived.includes(selected)) && <WorkflowWorkbench key={`${sessionId}:${selected?.teamId ?? ''}`} sessionId={sessionId} teamId={selected?.teamId} archived={history} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext} modelDirectory={modelDirectories.directoryFor(sessionId)} t={t}
           waitingCount={selected?.phase !== 'staged' && !selected?.halted ? selected?.tasks.filter(task => task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && task.dependencies.every(id => selected.tasks.some(t => t.id === id && t.status === 'completed'))).length : 0}
           openConversation={id => openWorkflowConversation(openMember, id as import('@deepseek-ai/dsh-session/types').SessionId)}
           openExecution={(id, parentId) => openMember((parentId ?? sessionId) as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)} />}

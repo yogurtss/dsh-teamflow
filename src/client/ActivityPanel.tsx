@@ -1345,12 +1345,9 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
               {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current} modelDirectory={modelDirectories.directoryFor(current)} t={t}
                 openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
-              {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
+              {[...visibleTeams,...visibleArchived].map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} archived={visibleArchived.includes(team)} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
                 openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
-              {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name} restore={team.workflowEnabled || team.tasks.some(task=>task.checkpoint) ? {sessionId:team.captainSessionId,teamId:team.teamId} : undefined}>
-                <TeamSection team={team} workspace historic onNavigate={navigateToSession} t={t} />
-              </WorkflowHistory>)}
               {visibleHistoric.map(({ data, owner }) => <WorkflowHistory key={data.teamId} name={data.teamName}>
                 <TeamSection team={historicCardTeam(data, owner)} workspace historic onNavigate={navigateToSession} t={t} />
               </WorkflowHistory>)}
