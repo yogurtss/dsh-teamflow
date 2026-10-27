@@ -7,12 +7,16 @@ export type WorkflowOperation = {
     executionPrompt?: string;
     provider?: string;
     model?: string;
+    reasoningEffort?: string;
 } | {
     action: 'update_member';
     name: string;
     summary?: string;
     role?: string;
     executionPrompt?: string;
+    provider?: string;
+    model?: string;
+    reasoningEffort?: string;
 } | {
     action: 'remove_member';
     name: string;

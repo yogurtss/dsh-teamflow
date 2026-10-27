@@ -1,7 +1,7 @@
 /** Persistent human-controlled workflow and isolated discussion contracts. */
 export type WorkflowOperation =
-  | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; provider?: string; model?: string }
-  | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string }
+  | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
+  | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
   | { action: 'remove_member'; name: string }
   | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean }
   | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[] }

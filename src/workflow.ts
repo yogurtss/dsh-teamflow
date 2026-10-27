@@ -34,8 +34,8 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
     if (typeof action !== 'string' || !action.trim()) throw new Error('每个修改对象必须包含 action 字段，例如 {"action":"update_member","name":"planner","summary":"职责说明"}；参数与 action 同层，不使用 type、op 或嵌套 payload')
     const fields = (names: string[]) => Object.fromEntries(names.flatMap(name => op[name] === undefined ? [] : [[name, text(op[name], name)]]))
     switch (action) {
-      case 'add_member': return { action, name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'provider', 'model']) }
-      case 'update_member': return { action, name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt']) }
+      case 'add_member': return { action, name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'provider', 'model', 'reasoningEffort']) }
+      case 'update_member': return { action, name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'remove_member': return { action, name: text(op['name'], 'name', true)! }
       case 'add_task': {
         if (op['checkpoint'] !== undefined && typeof op['checkpoint'] !== 'boolean') throw new Error('checkpoint 必须是布尔值')
@@ -111,7 +111,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (sanitizeKey(op.name) === 'captain' || team.members.some(m => sanitizeKey(m.name) === sanitizeKey(op.name))) throw new Error('成员名称重复或保留')
       if (team.members.filter(m => m.status !== 'removed').length >= maxMembers) throw new Error('已达到团队成员上限')
       team.members.push({ id: '', name: op.name, summary: op.summary, role: op.role, executionPrompt: op.executionPrompt,
-        provider: op.provider, model: op.model, joinedAt: now, status: 'idle' })
+        provider: op.provider, model: op.model, reasoningEffort: op.reasoningEffort, joinedAt: now, status: 'idle' })
     } else if (op.action === 'update_member' || op.action === 'remove_member') {
       const member = team.members.find(m => m.name === op.name && m.status !== 'removed')
       if (!member) throw new Error('成员不存在')
@@ -123,6 +123,9 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         if (op.summary !== undefined) member.summary = op.summary
         if (op.role !== undefined) member.role = op.role
         if (op.executionPrompt !== undefined) member.executionPrompt = op.executionPrompt
+        if (op.provider !== undefined) member.provider = op.provider
+        if (op.model !== undefined) member.model = op.model
+        if (op.reasoningEffort !== undefined) member.reasoningEffort = op.reasoningEffort
       }
     } else if (op.action === 'add_task') {
       const id = op.id || nextTaskId(team)

@@ -15,6 +15,7 @@ import { zh, en } from '../lib/client/locales.js'
 const hook = registerHooks({ resolve(specifier, context, next) {
   let source
   if (specifier.endsWith('.module.css')) source = 'export default new Proxy({}, {get: (_, key) => key})'
+  if (context.parentURL?.endsWith('/client/WorkflowWorkbench.js') && specifier === './StagingPlanEditor.js') source = 'export const StagedModelPicker = () => null'
   if (context.parentURL?.endsWith('/client/ActivityPanel.js')) {
     if (specifier === '@deepseek-ai/dsh-client-ui-primitives') source = 'export const Modal = () => null'
     if (specifier === './AgentTeamsCard.js') source = 'export const OPEN_PANEL_EVENT = "test-open"'

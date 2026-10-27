@@ -176,10 +176,12 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
               for (const task of updated.tasks) if (!task.checkpoint && !team.tasks.some(existing => existing.id === task.id)) task.workflowPaused = true
             }
             for (const op of proposal.operations) {
-              if (op.action === 'add_member') {
+              if (op.action === 'add_member' || (op.action === 'update_member' && (op.provider !== undefined || op.model !== undefined || op.reasoningEffort !== undefined))) {
                 const member = updated.members.find(m => m.name === op.name)!
-                const route = await resolveMemberLlmSelection(ctx, captain, { provider: member.provider, model: member.model })
+                const route = await resolveMemberLlmSelection(ctx, captain, { provider: member.provider, model: member.model, reasoningEffort: member.reasoningEffort })
                 member.provider = route.provider; member.model = route.model; member.reasoningEffort = route.reasoningEffort
+                // A deliberate route selection supersedes an earlier runtime fallback.
+                delete member.activeProvider; delete member.activeModel; delete member.fallbackActive
               }
               if (op.action === 'update_member' || op.action === 'remove_member') {
                 const member = updated.members.find(m => m.name === op.name)!

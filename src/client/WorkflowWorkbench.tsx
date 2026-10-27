@@ -7,6 +7,9 @@ import css from './WorkflowWorkbench.module.css'
 import { WorkflowContext } from './WorkflowContext.tsx'
 import { connectionIssue, connectionTarget } from './workflow-connections.ts'
 import { LEAD_ART, REVIEW_ART, memberArtUrl } from './artwork.ts'
+import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type { AgentTeamsTranslate } from './locales.ts'
+import { StagedModelPicker } from './StagingPlanEditor.tsx'
 
 interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
@@ -49,11 +52,13 @@ function describeOperation(op: WorkflowOperation, team: TeamState, operations: W
   if (op.action === 'rework') return `为「${taskName(op.id)}」创建新一轮返工\n返工任务：${op.taskIds.map(taskName).join('、')}\n要求：${op.instructions}\n依赖这些结果的中间步骤也会重新执行，旧结果保留。`
   if (op.action === 'add_task') return `新增${op.checkpoint ? '人工检查' : '任务'}「${op.subject}」\n说明：${op.description || '未设置'}\n负责人：${op.checkpoint ? '你与独立验收 Agent' : op.assignee || '自动分配'}\n前置任务：${value(op.dependencies)}`
   const before = op.action === 'update_member' ? team.members.find(m => m.name === op.name) : team.tasks.find(t => t.id === op.id)
-  const labels: Record<string, string> = { summary: '职责概述', role: '长期职责', executionPrompt: '执行指令', subject: '任务名称', description: '任务说明', assignee: '负责人', dependencies: '前置任务' }
+  const labels: Record<string, string> = { summary: '职责概述', role: '长期职责', executionPrompt: '执行指令', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', subject: '任务名称', description: '任务说明', assignee: '负责人', dependencies: '前置任务' }
   return `修改「${op.action === 'update_member' ? op.name : taskName(op.id)}」\n` + Object.entries(op).filter(([key]) => key in labels).map(([key, v]) => `${labels[key]}：${value((before as unknown as Record<string, unknown>)?.[key])}\n→ ${value(v)}`).join('\n')
 }
 
-export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext }: {
+export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t }: {
+  modelDirectory?: ModelDirectory
+  t?: AgentTeamsTranslate
   reviewEntryOnly?: boolean
   embeddedContext?: boolean
   onNativeContext?: (value: boolean) => void
@@ -198,7 +203,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   function edit(type: 'member' | 'task' | 'check', id?: string): void {
     setEditor({ type, id }); setPane(type === 'member' ? 'members' : 'flow'); setError(''); setSelectedEdge(undefined)
     const m = team?.members.find(item => item.name === id), t = team?.tasks.find(item => item.id === id)
-    setDraft(type === 'member' ? { name: m?.name ?? '', summary: m?.summary ?? m?.role ?? '', role: m?.role ?? '', executionPrompt: m?.executionPrompt ?? '' }
+    setDraft(type === 'member' ? { name: m?.name ?? '', summary: m?.summary ?? m?.role ?? '', role: m?.role ?? '', executionPrompt: m?.executionPrompt ?? '', provider: m?.provider ?? '', model: m?.model ?? '', reasoningEffort: m?.reasoningEffort ?? '', routeChanged: '' }
       : { subject: t?.subject ?? '', description: t?.description ?? '', assignee: t?.assignee ?? '' })
   }
   const field = (key: string, label: string, multiline = false) => <label>{label}{multiline
@@ -225,7 +230,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     selectDiscussion(`check:${id}`); setSelectedTask(id)
     if (await perform('materials', { discussion: `check:${id}` })) await openDiscussion(`check:${id}`)
   }
-  const pendingCount = Object.values(team?.workflow?.discussions ?? {}).filter(item => item.proposal?.status === 'pending').length
+  const pendingCount = Object.entries(team?.workflow?.discussions ?? {}).filter(([key, item]) => key.startsWith('discussion:') && item.proposal?.status === 'pending').length
   const reviewCount = data?.ready.length ?? waitingCount
   const reviewNotice = !!data?.ready.length && <div className={css.reviewNotice} role="status" aria-label="等待你验收">
     <strong><span className={css.reviewDot} aria-hidden />等待你验收</strong>
@@ -242,6 +247,8 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {pendingCount > 0 && <span>{pendingCount} 项修改待确认</span>}
       {reviewCount > 0 && <span>{reviewCount} 项等待人工验收</span>}
     </button>
+    {!nativeOnly && team?.phase === 'staged' && <button type="button" className={`${css.entry} ${css.startEntry}`} disabled={working || !!editor || pendingCount > 0} title={editor ? '请在工作台保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动团队</button>}
+    {error && !opened && <div className={css.error} role="alert">{error}</div>}
     {!nativeOnly && reviewNotice}
     {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>讨论资料 ↗</button>}
     {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label><WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
@@ -260,7 +267,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       }
     }}>
       <header className={css.header}><div className={css.title}><img src={LEAD_ART} alt="" /><div><strong>{team?.name ?? '创建团队'}</strong><span>{team?.phase === 'staged' ? '准备流程 · 确认后开始执行' : '团队工作台'}</span></div></div>
-        <div>{team?.phase === 'staged' && <button className={css.primary} disabled={working} onClick={() => void perform('start')}>确认并启动</button>}
+        <div>{team?.phase === 'staged' && <button className={css.primary} disabled={working || !!editor || pendingCount > 0} title={editor ? '请先保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动</button>}
           <button onClick={() => setOpened(false)} aria-label="关闭编排工作台">关闭</button></div></header>
       {team && <nav className={css.paneTabs} aria-label="工作台视图">{(['members', 'flow', 'discussion'] as const).map(value => <button key={value} aria-pressed={pane === value} onClick={() => setPane(value)}>{value === 'members' ? `成员 ${team.members.filter(m => m.status !== 'removed').length}` : value === 'flow' ? '任务流程' : '修改与验收'}{value === 'discussion' && proposal && <i aria-label="有待确认的修改" />}</button>)}</nav>}
       {error && <div className={css.error} role="alert">{error}</div>}
@@ -355,12 +362,14 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {editor && <form data-workflow-editor className={css.editor} onSubmit={event => {
         event.preventDefault()
         try {
-          const operations: WorkflowOperation[] = editor.type === 'member' ? [editor.id ? { action: 'update_member', name: editor.id, summary: draft['summary'], role: draft['role'], executionPrompt: draft['executionPrompt'] } : { action: 'add_member', name: draft['name'] ?? '', summary: draft['summary'] ?? '', role: draft['role'], executionPrompt: draft['executionPrompt'] }]
+          const route = draft['routeChanged'] ? { provider: draft['provider'], model: draft['model'], reasoningEffort: draft['reasoningEffort'] || 'default' } : {}
+          const operations: WorkflowOperation[] = editor.type === 'member' ? [editor.id ? { action: 'update_member', name: editor.id, summary: draft['summary'], role: draft['role'], executionPrompt: draft['executionPrompt'], ...route } : { action: 'add_member', name: draft['name'] ?? '', summary: draft['summary'] ?? '', role: draft['role'], executionPrompt: draft['executionPrompt'], ...route }]
             : [editor.id ? { action: 'update_task', id: editor.id, subject: draft['subject'] ?? '', description: draft['description'], assignee: editor.type === 'check' ? undefined : draft['assignee'] } : { action: 'add_task', checkpoint: editor.type === 'check', subject: draft['subject'] ?? '', description: draft['description'], assignee: editor.type === 'check' ? undefined : draft['assignee'], dependencies: [] }]
           void saveEdit(operations, editor.type === 'member' ? '调整团队成员' : '调整任务', true)
         } catch (error) { setError(String(error)) }
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'}</h3>
-        {editor.type === 'member' ? <>{field('name', '名称')}{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
+        {editor.type === 'member' ? <>{field('name', '名称')}{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}
+          <div><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div></>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
             <p className={css.hint}>保存节点后，直接拖动画布中的连接柄建立关系。点击连线可查看两端并删除。</p></>}
         <footer><button className={css.primary} disabled={working}>保存</button>

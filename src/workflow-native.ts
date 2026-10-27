@@ -40,7 +40,7 @@ const PERSONA = `你是 TeamFlow 的独立配置顾问或验收 Agent，在 Harn
 退回后讨论返工对象，使用 rework 创建新轮次，保留旧结果。仅可编辑未开始或已停止的任务。
 operations 必须是 JSON 数组编码后的字符串；每个对象必须包含 action 字段，其他参数直接放在同一对象内，不使用 type、op 或嵌套 payload。
 示例：[{"action":"update_member","name":"planner","summary":"输出三项准备工作","executionPrompt":"每项包含动作和完成标准"}]
-支持的 action 及其同层字段：add_member {name,summary,role?,executionPrompt?,provider?,model?}; update_member {name,summary?,role?,executionPrompt?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
+支持的 action 及其同层字段：add_member {name,summary,role?,executionPrompt?,provider?,model?,reasoningEffort?}; update_member {name,summary?,role?,executionPrompt?,provider?,model?,reasoningEffort?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
 人工检查不设 assignee。你没有文件、终端、执行或消息发送工具，不得声称独立运行了验证。提案后提示用户打开编排画布查看修改并确认。`
 
 export function workflowDiscussion(team: TeamState, key: string): WorkflowDiscussion {

@@ -1326,10 +1326,10 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
           </header>
           <div className={css.teams}>
             <div className={css.workflowLaunchers}>
-              {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current}
+              {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current} modelDirectory={modelDirectories.directoryFor(current)} t={t}
                 openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
-              {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId}
+              {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
                 openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
               {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name}>

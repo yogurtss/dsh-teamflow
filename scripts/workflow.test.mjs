@@ -371,3 +371,24 @@ test('first human review opens an isolated conversation with checklist and store
   assert.equal(prompts.length, 1)
   assert.equal(source.tasks[1].checkpoint.decision, undefined)
 })
+
+test('member model and thinking changes validate and persist atomically in workflow edits', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-route-')); t.after(() => rmSync(root, { recursive: true, force: true }))
+  const source = team(); source.phase = 'staged'; Object.assign(source.members[0], { activeProvider: 'old', activeModel: 'fallback', fallbackActive: true })
+  await createTeamDir(join(root, '.agent-teams'), source)
+  const captain = { id: 'captain-id', options: { provider: 'fixture', model: 'fixture' }, session: { header: { cwd: root }, requestHeader: () => ({ config: { provider: 'fixture', model: 'fixture' } }), ownEvents: () => [] }, status: 'idle' }
+  let route, status, result
+  const ctx = { agents: { get: () => captain }, llm: { resolveCallConfig: async config => { if (config.model === 'invalid') throw Error('unknown model'); return { ...config, reasoningEffort: config.reasoningEffort ?? 'medium' } } }, effect: fn => fn(), logger: { warn() {} } }
+  installWorkflowWorkbench(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, { kickTeam: async () => {} }, { register: value => { route = value; return () => {} } })
+  async function send(operation, base) {
+    const req = Readable.from([JSON.stringify({ sessionId: captain.id, teamId: source.id, action: 'edit', title: 'Change route', operations: [operation], base })]); req.method = 'POST'; req.headers = {}
+    await route.handler(req, { writeHead: code => { status = code }, end: body => { result = JSON.parse(body) } })
+  }
+  await send({ action: 'update_member', name: 'worker', provider: 'fixture', model: 'model-b', reasoningEffort: 'high' }, workflowFingerprint(source))
+  assert.equal(status, 200, JSON.stringify(result)); assert.equal(result.team.members[0].model, 'model-b'); assert.equal(result.team.members[0].reasoningEffort, 'high'); assert.equal(result.team.members[0].fallbackActive, undefined); assert.equal(result.team.members[0].activeModel, undefined)
+  let saved = await readTeam(join(root, '.agent-teams'), source.id); assert.equal(saved.members[0].reasoningEffort, 'high')
+  await send({ action: 'update_member', name: 'worker', provider: 'fixture', model: 'invalid', reasoningEffort: 'high', summary: 'should not save' }, workflowFingerprint(saved))
+  assert.equal(status, 409); saved = await readTeam(join(root, '.agent-teams'), source.id); assert.equal(saved.members[0].model, 'model-b'); assert.notEqual(saved.members[0].summary, 'should not save')
+  await send({ action: 'update_member', name: 'worker', provider: 'fixture', model: 'model-b', reasoningEffort: 'default' }, workflowFingerprint(saved))
+  assert.equal(status, 200); assert.equal(result.team.members[0].reasoningEffort, 'medium')
+})
