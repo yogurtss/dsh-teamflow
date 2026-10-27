@@ -14,11 +14,76 @@ import { connectionIssue, connectionTarget } from '../lib/client/workflow-connec
 import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
+import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
+
+test('member, task, checkpoint and discussion selection each own one property context', () => {
+  const source=withGate(); let view=selectWorkbench(initialWorkbenchView(),{type:'task',id:'t1'},source)
+  assert.equal(editorTarget(source,view.target).type,'task')
+  view=selectWorkbench(view,{type:'member',id:'worker'},source)
+  assert.deepEqual(view.target,{type:'member',id:'worker'});assert.equal(editorTarget(source,view.target).type,'member');assert.equal(targetDiscussion(view.target),'member:worker')
+  view=selectWorkbench(view,{type:'check',id:'gate'},source)
+  assert.equal(editorTarget(source,view.target).type,'check');assert.equal(targetDiscussion(view.target),'check:gate')
+  view=selectWorkbench(view,{type:'edge',from:'t1',to:'gate'},source)
+  assert.equal(editorTarget(source,view.target),undefined);assert.equal(targetDiscussion(view.target),'graph')
+  view=selectWorkbench(view,{type:'discussion',key:'member:worker'},source)
+  assert.equal(editorTarget(source,view.target),undefined,'leaving member editing cannot expose an old task selection')
+})
+
+test('unsaved member and task drafts survive switching while saved source is unchanged', () => {
+  const source=team(), memberTarget={type:'member',id:'worker'}, taskTarget={type:'task',id:'t1'}
+  let view=selectWorkbench(initialWorkbenchView(),memberTarget,source,{executionPrompt:'Unsaved PE'})
+  const memberKey=editorKey(source.id,memberTarget)
+  view=selectWorkbench(view,taskTarget,source,{description:'Unsaved task requirement'})
+  const taskKey=editorKey(source.id,taskTarget)
+  view=selectWorkbench(view,memberTarget,source)
+  assert.equal(view.drafts[memberKey].values.executionPrompt,'Unsaved PE')
+  assert.equal(view.drafts[taskKey].values.description,'Unsaved task requirement')
+  assert.equal(view.drafts[memberKey].source,draftSource(source,memberTarget))
+  const taskSource=draftSource(source,taskTarget);source.tasks[0].dependencies=['another-task'];source.tasks[0].updatedAt=2
+  assert.equal(draftSource(source,taskTarget),taskSource,'moving or connecting nodes cannot invalidate property drafts that do not edit dependencies')
+  source.members[0].role='Concurrent edit'
+  assert.notEqual(view.drafts[memberKey].source,draftSource(source,memberTarget),'concurrent configuration changes cannot silently overwrite a retained draft')
+  assert.notEqual(editorKey('another-team',memberTarget),memberKey)
+})
+
+test('late saves cannot move a newer selection or remove newer typing', () => {
+  const source=team(), target={type:'task',id:'t1'}, key=editorKey(source.id,target)
+  let view=selectWorkbench(initialWorkbenchView(),target,source,{description:'Submitted value'})
+  const revision=view.revision, submitted=view.drafts[key]
+  view=selectWorkbench(view,{type:'member',id:'worker'},source,{role:'Member draft'})
+  const completed=finishWorkbenchSave(view,key,submitted,revision,source,{type:'discussion',key:'graph'})
+  assert.deepEqual(completed.target,view.target);assert.equal(completed.revision,view.revision);assert.equal(completed.drafts[key],undefined)
+  const memberKey=editorKey(source.id,{type:'member',id:'worker'})
+  assert.equal(completed.drafts[memberKey].values.role,'Member draft')
+  view=selectWorkbench(view,target,source,{description:'Newer typing during save'})
+  assert.equal(finishWorkbenchSave(view,key,submitted,revision,source).drafts[key].values.description,'Newer typing during save')
+  const saved=structuredClone(source);saved.tasks[0].description='Submitted value';saved.tasks[0].updatedAt=2
+  const retained=finishWorkbenchSave(view,key,submitted,revision,saved,undefined,target)
+  assert.equal(retained.drafts[key].values.description,'Newer typing during save')
+  assert.equal(retained.drafts[key].source,draftSource(saved,target),'our own save advances the baseline without discarding newer typing')
+  const memberTarget={type:'member',id:'worker'}, routeKey=editorKey(source.id,memberTarget)
+  let routeView=selectWorkbench(initialWorkbenchView(),memberTarget,source,{model:'submitted-model',routeChanged:'yes'})
+  const routeDraft=routeView.drafts[routeKey], routeRevision=routeView.revision
+  routeView=selectWorkbench(routeView,memberTarget,source,{model:'newer-model',routeChanged:'yes'})
+  saved.members[0].model='submitted-model'
+  const routeSaved=finishWorkbenchSave(routeView,routeKey,routeDraft,routeRevision,saved,undefined,memberTarget)
+  assert.equal(routeSaved.drafts[routeKey].values.model,'newer-model');assert.equal(routeSaved.drafts[routeKey].values.routeChanged,'yes','newer model changes still get submitted on the next save')
+})
+
+test('completed work remains a task selection and explicit member navigation clears it', () => {
+  const source=team();source.tasks[0].status='completed'
+  let view=selectWorkbench(initialWorkbenchView(),{type:'task',id:'t1'},source)
+  assert.equal(editorTarget(source,view.target),undefined,'completed work has read-only task properties')
+  view=selectWorkbench(view,{type:'member',id:'worker'},source,{rerunTaskId:'t1'})
+  assert.equal(view.target.type,'member');assert.equal(editorTarget(source,view.target).type,'member')
+  view=selectWorkbench(view,{type:'discussion',key:'member:worker'},source)
+  assert.equal(view.target.type,'discussion','cancelling does not fall back to the completed task')
+})
 
 test('rerun overwrites the same task, suspends all transitive dependents and preserves unrelated work', () => {
   const source=withGate()

@@ -36,6 +36,8 @@ Edges mean execution order: B waits for A. To insert a checkpoint manually, add 
 
 Manual canvas edits save directly; AI proposals still require confirmation. Member discussions reuse their independent session and context when reopened; only the first opening generates an introduction. Use the explicit restart action to archive the old discussion and begin again. New execution tasks added to running teams start paused so you can wire them before resuming.
 
+Member cards always open member settings; canvas nodes open task or checkpoint properties, with related objects highlighted. Selection remains available during requests, and late responses do not change the current panel. Unsaved drafts are retained separately while switching objects, including typing after a save starts. Discard affects only the current draft; save before reloading the page.
+
 To rerun one member's finished task, click the member, adjust its role, PE or model, select a task under **单独重跑**, then choose **保存并仅重跑所选任务**. The same task ID and connections remain; its result is replaced in place. All transitive downstream nodes, including completed tasks and human checkpoints, reset and suspend. Open each suspended node after its upstream work completes, optionally edit it, then confirm execution or renewed review. Unrelated branches remain unchanged. Result version management is not included. Active affected tasks must be stopped first.
 
 ## Validation scope
