@@ -1,146 +1,125 @@
-<p align="right">
-  <a href="./README.md">English</a> · <strong>简体中文</strong>
-</p>
+简体中文 · [English](./README.md)
 
-<p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="dsh-agent-teams 把一个 DeepSeek Harness 会话变成可协作的多智能体团队">
-</p>
+# AgentTeams · 人机协作编排
 
-<div align="center">
+这是 [yogurtss/dsh-agent-teams](https://github.com/yogurtss/dsh-agent-teams) 开发分支，基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 扩展。让模型先讨论并建立团队，再由你调整成员职责、任务交接和人工验收节点。
 
-[![AtomGit](https://atomgit.com/NanmiCoder/dsh-agent-teams/star/new_badge.svg)](https://atomgit.com/NanmiCoder/dsh-agent-teams)
+**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 包名仍为 `@nanmicoder/dsh-agent-teams`，版本仍为 `0.1.27`；这些改动尚未发布到 npm，安装 npm 同名包会得到上游版本。
 
-</div>
+## 本分支新增功能
 
-<p align="center">
-  <a href="https://dshfind.com/zh/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://img.shields.io/badge/%E7%94%B1%20dshfind-%E6%8E%A8%E8%8D%90-FFD700?style=flat-square" alt="由 dshfind 推荐"></a>
-  <a href="https://dshfind.com/zh/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://dshfind.com/api/badge/NanmiCoder/dsh-agent-teams?lang=zh" alt="dshfind 评分"></a>
-  <a href="https://dshfind.com/zh/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://dshfind.com/api/badge/NanmiCoder/dsh-agent-teams?metric=downloads&amp;lang=zh" alt="dshfind 下载量"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@nanmicoder/dsh-agent-teams"><img src="https://img.shields.io/npm/v/@nanmicoder/dsh-agent-teams?style=flat-square&amp;color=5B4CF0" alt="npm 版本"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B7285?style=flat-square" alt="MIT 许可证"></a>
-  <a href="./cordis.patch.yml"><img src="https://img.shields.io/badge/DSH-Web%20%2B%20Headless-5B4CF0?style=flat-square" alt="DSH Web 与 Headless"></a>
-</p>
-
-## 一句话，拉起一支真正协作的团队
-
-`dsh-agent-teams` 让当前 DeepSeek Harness 会话成为队长：创建可续聊的子 Agent、把目标拆成有依赖的任务，并通过直达消息协调成员工作。
-
-你只需用自然语言提出目标。插件会提供精简的固定团队协议、14 个业务工具、持久化状态、自动共享任务调度和实时 Web UI，不需要额外的 Workflow 引擎。
-
-<p align="center">
-  <img src="./assets/readme/workspace.png" width="100%" alt="DeepSeek Harness 对话与 AgentTeams 实时活动面板，展示成员、任务依赖和回报">
-</p>
-
-## 版本更新
-
-[最新发布](https://github.com/NanmiCoder/dsh-agent-teams/releases/latest) 增加 Harness `0.2.1-rc.3` 支持，修复 Windows 打包与运行验证问题，并补齐新增宿主时容易遗漏的安装检查。npm 安装使用 `latest`，GitHub 安装使用默认分支，不需要填写版本号。推荐宿主仍为 `0.2.1-rc.2`。详见[兼容清单](./compatibility.json)和[发布说明](./release-notes/v0.1.27.md)。
-
-## 为什么需要 AgentTeams？
-
-### 本地开发版：人机编排工作台
-
-在 AgentTeams 工作区点击「打开编排画布」。统一使用“讨论初步团队 → 在画布调整 → 确认启动”的流程，不再区分自动和手动模式。既可以在原有队长对话中创建团队，也可以从「讨论创建团队」填写目标后打开独立的 DSH 原生规划会话。成员配置、流程讨论和验收讨论都在 DSH 中间的原生会话中进行，复用宿主输入、流式回复、停止与历史能力。
-
-- 左侧成员列表显示 Summary；点击「讨论调整」进入独立配置讨论，编辑长期职责、执行指令（PE）及其待执行任务。配置讨论不向执行会话注入消息，方案先预览，由用户点击「应用修改」后生效。
-- 工作台沿用原面板的主题颜色与控件风格；窄窗口通过「成员／任务流程／修改与验收」切换，原生会话顶部提供返回队长与编排画布入口。全插件使用简洁的身份图标，相同职责默认共用头像；有职责时优先按职责匹配，仅在职责为空时参考名字。
-- 中间画布以任务为节点，同一成员可以承担多个节点。拖动节点保存布局，从输出端拉线，靠近目标卡片时吸附并高亮，松开生成连线提案；也可通过表单编辑依赖。流程讨论可以提出一组成员与任务修改。
-- 原生讨论旁的 AgentTeams 侧栏提供「讨论资料」，按团队、成员或检查点查看当前职责、PE、执行角色提示词快照、任务要求、已提交结果和验证记录。会话顶部也有打开资料的入口。角色提示词由插件组装，不等于完整模型请求；未保存的信息明确显示为空缺。
-- 添加任务或人工检查时，编辑区与原画布并排，窄窗口上下排列。切换「上游／后续」后直接点击画布节点选择，草稿节点与虚线实时预览交接；也可以按名称勾选。选中某节点后可「在此之后插入人工检查」。插入 A 与 B 之间时，将 A → B 改为 A → 检查 → B，保留 B 的其他依赖，整组变更预览确认后才生效。
-- 上游完成后，人工检查显示「等待人工验收」。点击后打开独立验收讨论，整理上游结果、命令记录和文件摘要。验收 Agent 无执行工具，不能自行批准；用户讨论后点击 Approve 或 Reject。
-- Reject 保持依赖该检查点的下游等待，其他分支继续。讨论确定返工对象后，确认新提案会新增返工任务并重跑受影响的中间步骤，保留旧结果与验收轮次。
-- 执行中的任务须先「停止任务以编辑」，修改后点击「继续执行」。已完成任务通过返工新增轮次；队长亲自执行的任务须先在宿主中停止队长。原生对话历史由 Harness 保存；会话关联、提案和验收记录保存于团队状态目录。
-
-第一版边界：配置顾问和验收 Agent 使用独立的 Harness 原生会话，通过持久化身份绑定到团队和讨论对象。创建和恢复时都只开放读取上下文与提交提案两个工具；不向执行 Agent 注入讨论内容，也不能代替用户应用修改或验收。验收依据执行 Agent 提交的结果和宿主计算的文件摘要；不会独立运行测试或读取全部文件。跨越另一个人工检查的返工须分段进行。模型提案以当前团队状态为基准；执行进度变化后须重新生成预览。
-
-开发验证：`pnpm build` 后运行 `node --test scripts/workflow.test.mjs`；`node scripts/workflow-preview.mjs` 启动本机交互预览（仅模拟执行结果；原生讨论入口需在 DSH 中使用，不连接个人会话）。真实宿主回归使用 `scripts/harness-runtime-verify.mjs` 的 `web-approval` 场景，验证打包安装、独立讨论与人工审批。
-
-| 能力 | 带来的变化 |
+| 功能 | 使用方式 |
 | --- | --- |
-| **队长式委派** | 当前会话负责建队、分配角色并汇总最终结果。 |
-| **可续聊成员** | 成员是可持续唤醒的 DSH 子 Agent，可以继续执行聚焦的后续轮次。 |
-| **带依赖的任务** | 任务有明确状态；依赖未完成时不能领取。 |
-| **自动续领与安全接管** | 成员空闲后自动领取下一项就绪任务；转派会撤销旧 attempt，冷恢复会重试遗留任务，迟到结果无法覆盖。 |
-| **成员直达消息** | 成员通过持久化邮箱直接联系队友或队长，不需要队长中转。 |
-| **实时活动面板** | Web UI 用分段进度、可折叠成员树和可交互 DAG 展示实时工作；运行中的子任务会标出使用的模型，团队结束后仍保留完整成员与任务历史。 |
-| **质量门禁** | 人只提供目标和约束。默认任务顺序是需求 → 实现 → 验证 → 审查 → 集成，失败后自动修复/复审，恢复团队必须显式 resume。第一版范围控制是完成时审计，不是 host 写入拦截。详见 [docs/quality-gates.md](./docs/quality-gates.md)。 |
+| 成员 Summary、职责与 PE | 查看功能概述，直接编辑长期职责和执行指令，或通过独立配置对话讨论调整。 |
+| 统一任务流程画布 | 先讨论得到初步团队，再手动调整；不区分自动／手动模式，同一个 Agent 可以承担多个任务。 |
+| 拖拽连接与插入节点 | 拉线时吸附目标；添加任务或检查点时原画布始终可见，点击节点选择上游／后续，虚线预览后确认应用。 |
+| 原生 DSH 讨论 | 所有模型交互放在 DSH 中间的原生会话中。配置和验收讨论与执行会话隔离。 |
+| 讨论资料 | 侧栏展示职责、PE、已保存的角色提示词快照、任务要求、提交结果与验证记录；缺失信息明确标注。 |
+| 人工验收与返工 | 与独立验收 Agent 讨论材料，由你通过或退回；共同决定返工对象，保留旧结果并新建轮次。 |
+| 简洁身份头像 | 同身份默认共用头像，沿用原面板的主题与控件风格。 |
 
-对话卡片与活动面板接入 Harness 官方多语言服务，会随宿主在简体中文和英文之间实时切换；任务/成员状态、动态摘要、操作按钮、历史归档标识和无障碍文案都会同步更新，无需刷新页面，也不增加插件自己的语言设置。
+连接表示任务交接：A 完成后 B 才能开始。在 A 与 B 之间插入人工检查，会将 A → B 改为 A → 检查 → B，保留 B 的其他依赖。被退回检查点的下游等待，其他分支继续执行。
 
-## 安装与版本选择
+<img src="./assets/readme/workflow-editor.png" width="620" alt="添加检查点时原流程与编辑面板同时可见">
 
-**推荐组合：DeepSeek Harness `0.2.1-rc.2` + AgentTeams `0.1.27`。宿主仍为 RC 版本。**
+*实际界面的开发预览截图，使用模拟数据；窄窗口上下排列，宽窗口并排显示。*
 
-| 使用场景 | DeepSeek Harness | AgentTeams 插件 |
-| --- | --- | --- |
-| **推荐版本** | **`0.2.1-rc.2`** | **`0.1.27`** |
-| 预览宿主 | `0.2.1-rc.3` | `0.1.27` |
-| 上一推荐 RC | `0.2.1-rc.1`, `0.2.0-rc.2`, `0.1.7-rc.2` | `0.1.27` |
-| 保留旧 RC | `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.5-rc.3` | `0.1.27` |
-| 保留旧 RC | `0.1.2-rc.1` | `0.1.27` |
-| 开发者测试 Alpha | `0.1.2-alpha.5` | `0.1.27` |
-| 保留旧 Alpha | `0.1.2-alpha.2` | `0.1.27` |
+<details><summary>查看讨论资料面板</summary>
 
-### 桌面端
+<img src="./assets/readme/discussion-context.png" width="620" alt="成员职责、PE、执行快照与提交成果">
 
-在应用侧栏打开「插件 → 添加插件」，可以直接通过 GitHub 地址安装。在插件输入框中粘贴下面的仓库地址，无需追加版本号、tag 或 commit：
+</details>
 
-```text
-https://github.com/NanmiCoder/dsh-agent-teams
-```
+## 验证范围
 
-此方式从默认分支安装，刚发布后即可使用。也支持下面的等价简写：
+新增流程已在隔离的 **Harness `0.2.1-rc.2`** 中验证安装、原生讨论、审批、成员调度和冷恢复，模型服务使用确定性模拟数据。23 项流程测试、完整 `pnpm verify` 和浏览器交互检查已通过；用户日常桌面端的真实模型验收尚未完成。
 
-```text
-github:NanmiCoder/dsh-agent-teams
-```
+[兼容清单](./compatibility.json)和[上游发布说明](./release-notes/v0.1.27.md)保留上游基线信息，不代表本分支新增流程已在所有列出的宿主上逐一验证。不能仅凭相同的 `0.1.27` 版本号判断安装来源。
 
-从 npm 安装时输入带版本号的包名 `@nanmicoder/dsh-agent-teams@0.1.27`。桌面端的 pnpm 11 默认不自动安装发布未满 24 小时的版本：新版发布后的 24 小时内，不带版本号或使用 `@latest` 都会装到上一个版本，即使预览显示的是新版；如果上一个版本与你的宿主不兼容，安装会失败。写明版本号可以立即安装该版本；更换镜像源不会消除这项规则。GitHub 方式需要能够访问 GitHub，默认分支代码可能先于 npm 发布。
+## 卸载旧版并安装本分支
 
-安装完成后点击「立即启用」；宿主提示需要重启时，重启桌面应用。无需关闭兼容检查或全局发布等待期规则。
+先结束或暂停正在执行的团队，保存需要保留的插件配置。上游与本分支使用同一包名，应在**同一个 profile** 中替换。卸载插件包不需要删除项目中的 `.agent-teams/` 团队记录。
 
-桌面端自带 Harness 内核与包管理器，升级全局 CLI 不会升级桌面端；普通独立 CLI 不能管理桌面 profile，桌面端自带的 CLI carrier 在此版本可以管理。当前精确目标是已发布的 `0.2.1-rc.2`，仍属于 RC；此前源码预测的 `0.2.0` 已退出支持声明。详见[迁移验收记录](./docs/harness-0.2.1-rc.2/README.md)。
+### 桌面端：推荐从 GitHub 安装
 
-### CLI / Web：1. 安装 DeepSeek Harness
+1. 在 DSH 插件管理页找到 AgentTeams（`@nanmicoder/dsh-agent-teams`），卸载旧插件。
+2. 打开「添加插件」，粘贴：
 
-```sh
-npm install --global @deepseek-ai/dsh
-dsh --version
-```
+~~~text
+https://github.com/yogurtss/dsh-agent-teams
+~~~
 
-此命令安装宿主的 npm `latest`；升级后请用 `dsh --version` 对照兼容清单。Alpha 仅供主动测试：手动指定表中的 Alpha 版本，并按[维护指南](./docs/maintenance-workflow.md)锁定整组宿主依赖。
+3. 安装并启用，重启 DSH 桌面应用。AgentTeams 工作区应出现「打开编排画布」和「讨论资料」。
 
-### CLI / Web：2. 安装 AgentTeams 插件
+**桌面端拥有自己的内核和 profile，普通 CLI 的 `--profile web` 不会替换桌面端插件。** 优先使用桌面端自身插件管理页；本地包安装需使用桌面端提供的 CLI carrier，并确认实际 profile，不能套用独立 CLI 的 profile 名称。升级全局 CLI 不会升级桌面内核。
 
-从 npm 安装或升级插件时写明版本号（当前正式版为 `0.1.27`）：
+### CLI / Web：从 GitHub 安装
 
-```sh
-dsh plugin --profile web add --save-exact @nanmicoder/dsh-agent-teams@0.1.27
-```
+先运行 `dsh --version` 确认宿主。将 `web` 换成实际使用的 profile，停止对应的 Harness 进程。首次安装跳过 remove。
 
-CLI 管理的安装可将 `web` 换成实际使用的 CLI profile。**安装后，停止并重新启动该 profile 的 Harness 进程，再刷新浏览器。** 安装插件不会自动升级宿主；Harness 的 `latest` 与插件的 `latest` 是两个独立渠道。
+~~~sh
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add github:yogurtss/dsh-agent-teams#main
+dsh --profile web
+~~~
 
-也可以从 GitHub 默认分支安装或更新，无需追加 tag 或 commit：
+重启后刷新浏览器。Git 分支包含已构建的 `lib/`，直接安装不需要手动构建，但需要访问 GitHub。
 
-```sh
-dsh plugin --profile web add github:NanmiCoder/dsh-agent-teams
-```
+### 从克隆或下载的源码安装（Windows PowerShell）
 
-更新时把命令里的版本号换成新版本再运行，然后重启对应 profile；已有安装只重复裸包名时，包管理器可能保留旧的精确版本。不带版本号或使用 `@latest` 时，新版发布后的 24 小时内会装到上一个版本。镜像源尚未同步新发布时，可在 npm 命令后追加 `--registry=https://registry.npmjs.org`。GitHub 默认分支的代码可能先于 npm `latest` 发布；默认分支包含已验证的 `lib/` 构建产物。仓库随代码分发服务端、客户端和类型产物，安装时不需要执行 `prepare` 或批准构建脚本。源码维护者每次修改源码后，都需运行 `pnpm build` 并更新已提交的产物。已经发布的 npm 产物保持不变。
+使用 `git clone https://github.com/yogurtss/dsh-agent-teams.git`，或 Code → Download ZIP 后解压。下面以源码位于 `G:\dsh_agents` 为例，请替换成实际路径。需要 Node.js `^22.19.0 || >=24` 和 pnpm。
 
-手动克隆源码的用户，拉取代码后需重新运行 `pnpm install --frozen-lockfile` 和 `pnpm build`，再重启对应的 Harness；只更新 Git 不会更新本地构建产物。详见[维护指南](./docs/maintenance-workflow.md)。
+**方式 A：打包成 tgz，适合稳定使用或复制到其他机器。**
 
-> 旧 `0.1.0-*` / `0.1.1-*` 或其他未列出的宿主，请先保留已工作的组合，参考[旧版本与诊断指引](./docs/maintenance-workflow.md)。
+~~~powershell
+Set-Location G:\dsh_agents
+pnpm install --frozen-lockfile
+pnpm build
+pnpm pack --out "$env:TEMP\agent-teams-fork.tgz"
 
-完整[兼容清单](./compatibility.json)、[源码安装与 Alpha 验证](./docs/maintenance-workflow.md)、[已验证范围与平台限制](./docs/maintenance-2026-09-06/release/README.md)。
+# 停止对应 profile 的 DSH；首次安装跳过 remove
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add --save-exact "$env:TEMP\agent-teams-fork.tgz"
+dsh --profile web
+~~~
 
-接着直接用自然语言拉团队：
+已有构建好的 `.tgz` 时，直接安装它的绝对路径。GitHub 的源码 ZIP 要先解压，不能当作插件 tgz 安装。
 
-> 使用 AgentTeams 审查 v0.5.3 之后的提交，分别从性能、安全和产品角度分工，最后输出一份汇总报告。
+**方式 B：链接本地源码目录，适合继续开发。** 完成依赖安装和构建后，停止 DSH，再执行：
 
-队长会话从第一轮起保留精简的固定核心协议和原有 14 个业务工具，直接调用，无需额外的加载工具或激活调用。已配置模板的精简目录固定保留。创建、批准、继续或结束团队都不会改写系统提示词和工具 schema，会话压缩或代码模式丢弃工具结果也不会丢失核心规则。成员保留四个团队工具、固定成员说明及普通编程/研究工具。Web 批准后会通知并唤醒队长，后续成员报告会再次唤醒它，无需忙轮询。详见[固定协议与 benchmark 标准](./docs/progressive-loading.md)。
+~~~powershell
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add "G:\dsh_agents"
+dsh --profile web
+~~~
+
+目录安装会保存 `link:` 依赖，不要移动或删除该目录。修改代码后运行 `pnpm build`，重启 Harness 并刷新浏览器；依赖有变化时还需 `pnpm install --frozen-lockfile`。tgz 安装则需重新打包和安装。macOS/Linux 使用相同 DSH 命令，替换为对应的绝对路径。
+
+### 确认来源、更新与卸载
+
+~~~sh
+dsh plugin --profile web list @nanmicoder/dsh-agent-teams --depth 0
+~~~
+
+也可查看实际 profile 的 `package.json`：依赖应指向 `github:yogurtss/...`、你的 `file:...tgz` 或 `link:...源码目录`；若仍是 npm 版本号，则不是本分支。界面应有编排画布、讨论资料和人工检查入口。`http://127.0.0.1:8371/` 是开发预览，不代表已安装到 DSH。
+
+更新 Git 安装时，在同一 profile 中重新 remove / add 并重启。需要复现固定版本时，将 `#main` 换为本仓库的完整 commit SHA。同版本、同路径 tgz 若被缓存，可重新打包为不同文件名再安装，并核对来源。
+
+仅卸载：
+
+~~~sh
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+~~~
+
+回到上游时，卸载后安装 `@nanmicoder/dsh-agent-teams@0.1.27` 并重启。先备份团队状态；人工检查和原生讨论状态未验证过向上游降级，不要用上游版继续执行这些团队。
+
+## 使用流程与边界
+
+提出目标 → 讨论初步团队 → 查看成员和任务 → 调整画布 → 确认启动 → 在人工检查处讨论并验收。
+
+提案由用户确认后生效。运行中的任务先「停止任务以编辑」，之后「继续执行」；已完成任务通过返工新建轮次。独立配置和验收 Agent 只能读取上下文、提交提案，不能执行任务或代替用户批准。验收使用 Agent 提交结果及宿主读取的文件摘要，不等于独立重跑测试；角色提示词快照也不等于完整模型请求。跨越其他人工检查的返工需分段处理。
+
+原活动面板、Slash 命令和配置方式继续保留，下面是这些基础能力的说明。
 
 ## 在工作区查看团队
 
@@ -228,7 +207,7 @@ dsh plugin --profile web add github:NanmiCoder/dsh-agent-teams
 另提供开放 Agent Skills 包 [`dsh-plugin-development`](./skills/dsh-plugin-development/SKILL.md)：
 
 ```sh
-npx skills add NanmiCoder/dsh-agent-teams --skill dsh-plugin-development
+npx skills add yogurtss/dsh-agent-teams --skill dsh-plugin-development
 ```
 
 ## 文档

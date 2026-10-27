@@ -1,128 +1,125 @@
-<p align="right">
-  <strong>English</strong> · <a href="./README_ZH.md">简体中文</a>
-</p>
+English · [简体中文](./README_ZH.md)
 
-<p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="dsh-agent-teams turns one DeepSeek Harness session into a coordinated multi-agent team">
-</p>
+# AgentTeams · Human-reviewed workflows
 
-<div align="center">
+This is the [yogurtss/dsh-agent-teams](https://github.com/yogurtss/dsh-agent-teams) development fork of [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams). Discuss a goal, form an initial team, then adjust member instructions, task handoffs and human checkpoints.
 
-[![AtomGit](https://atomgit.com/NanmiCoder/dsh-agent-teams/star/new_badge.svg)](https://atomgit.com/NanmiCoder/dsh-agent-teams)
+**Install this fork from GitHub or a local build.** Its package name remains `@nanmicoder/dsh-agent-teams` and its version remains `0.1.27`. These changes are not published to npm; the npm package installs upstream.
 
-</div>
+## What this fork adds
 
-<p align="center">
-  <a href="https://dshfind.com/en/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://img.shields.io/badge/recommended%20by-dshfind-FFD700?style=flat-square" alt="Recommended by dshfind"></a>
-  <a href="https://dshfind.com/en/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://dshfind.com/api/badge/NanmiCoder/dsh-agent-teams?lang=en" alt="dshfind score"></a>
-  <a href="https://dshfind.com/en/plugins/NanmiCoder/dsh-agent-teams?ref=badge"><img src="https://dshfind.com/api/badge/NanmiCoder/dsh-agent-teams?metric=downloads&amp;lang=en" alt="dshfind downloads"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@nanmicoder/dsh-agent-teams"><img src="https://img.shields.io/npm/v/@nanmicoder/dsh-agent-teams?style=flat-square&amp;color=5B4CF0" alt="npm version"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B7285?style=flat-square" alt="MIT license"></a>
-  <a href="./cordis.patch.yml"><img src="https://img.shields.io/badge/DSH-Web%20%2B%20Headless-5B4CF0?style=flat-square" alt="DSH Web and Headless"></a>
-</p>
-
-## One prompt. A working team.
-
-`dsh-agent-teams` turns the current DeepSeek Harness session into a captain that can assemble durable sub-agents, split a goal into dependency-aware tasks, and coordinate work through direct messages.
-
-Ask in natural language. The plugin provides the team protocol, 14 coordination tools, persistent state, an automatic shared-task scheduler, and a live Web UI—without requiring a separate workflow engine.
-
-<p align="center">
-  <img src="./assets/readme/workspace.png" width="100%" alt="AgentTeams native workspace with members, task dependencies, and progress">
-</p>
-
-## Releases
-
-[Latest release](https://github.com/NanmiCoder/dsh-agent-teams/releases/latest) adds Harness `0.2.1-rc.3` support, fixes Windows packaging and runtime verification, and prevents missing installation checks when adding future hosts. npm installs use `latest`; Git installs use the default branch. The recommended Harness host remains `0.2.1-rc.2`. See the exact [support matrix](./compatibility.json) and [release notes](./release-notes/v0.1.27.md).
-
-## Why AgentTeams?
-
-| Capability | What it changes |
+| Feature | Behavior |
 | --- | --- |
-| **Captain-led delegation** | The current session creates the team, assigns roles, and consolidates the final result. |
-| **Durable members** | Members are continuable DSH sub-agents that can be woken for focused follow-up turns. |
-| **Dependency-aware tasks** | Tasks move through explicit states and cannot be claimed before their dependencies finish. |
-| **Automatic reuse and safe takeover** | Idle members claim the next ready task; reassignment revokes stale attempts before new work starts, and cold recovery retries stranded open attempts. |
-| **Direct messaging** | Members send durable mailbox messages directly to teammates or the captain—no relay required. |
-| **Live activity panel** | The Web UI combines segmented progress, a collapsible roster, and an interactive task DAG; running tasks show the member's model, and completed archives retain their full member and task history. |
-| **Plan before execution** | Normal `/agent-teams` runs stage an unspawned roster and DAG first. The Web panel uses the host model catalog for member routes. Returning to chat stops the planning turn, asks what should change, and revises the same draft; discarding archives the draft, aborts the turn, and explicitly prevents automatic recreation. Only **Approve & Run** enables scheduling; each member starts with its first ready task. |
-| **Quality gates** | Opt-in quality tasks support requirements → implementation → verification → review → integration contracts, automatic repair/re-review, and explicit resume. Scope control is a completion-time audit, not host write interception. See [docs/quality-gates.md](./docs/quality-gates.md). |
+| Member summaries, roles and PE | Inspect responsibilities and execution instructions, edit directly or discuss changes in an isolated configuration conversation. |
+| One editable workflow | Discuss an initial team, then adjust the canvas. No separate automatic/manual modes. A member can own multiple tasks. |
+| Drag-to-connect handoffs | Snap to target nodes. Keep the graph visible while adding tasks/checkpoints, select upstream/downstream nodes and preview dashed links before applying. |
+| Native DSH discussions | All model interaction uses the central native conversation. Configuration and review sessions stay isolated from execution. |
+| Discussion context | Inspect saved prompts, requirements, submitted results and verification records beside the conversation. Missing information is labeled. |
+| Human approval and rework | Discuss evidence with a dedicated reviewer, then approve or reject yourself. Rework creates new rounds and preserves earlier results. |
+| Simple role portraits | Equal roles share an icon; controls follow the existing panel's theme. |
 
-The conversation card and activity panel use Harness's official locale service. They follow live language changes between English and Simplified Chinese—including status labels, dynamic summaries, controls, archive markers, and accessibility text—without a page reload or a separate plugin setting.
+Edges mean execution order: B waits for A. Inserting a checkpoint replaces A → B with A → checkpoint → B, preserving B's other dependencies. Rejected checkpoints block their dependents while unrelated branches continue.
 
-## Install and choose versions
+<img src="./assets/readme/workflow-editor.png" width="620" alt="Original graph stays visible while editing a checkpoint">
 
-**Recommended pair: DeepSeek Harness `0.2.1-rc.2` + AgentTeams `0.1.27`. The host remains an RC.**
+*Actual UI preview with simulated data. Narrow windows stack graph and editor; wide windows place them side by side. New workbench labels are currently Chinese; the inherited activity panel retains its localization.*
 
-| Use case | DeepSeek Harness | AgentTeams plugin |
-| --- | --- | --- |
-| **Recommended** | **`0.2.1-rc.2`** | **`0.1.27`** |
-| Preview host | `0.2.1-rc.3` | `0.1.27` |
-| Previous recommended RC | `0.2.1-rc.1`, `0.2.0-rc.2`, `0.1.7-rc.2` | `0.1.27` |
-| Legacy RC | `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.5-rc.3` | `0.1.27` |
-| Retaining an older RC | `0.1.2-rc.1` | `0.1.27` |
-| Developer Alpha testing | `0.1.2-alpha.5` | `0.1.27` |
-| Retaining an older Alpha | `0.1.2-alpha.2` | `0.1.27` |
+<details><summary>Discussion context panel</summary>
 
-### Desktop app
+<img src="./assets/readme/discussion-context.png" width="620" alt="Member instructions, saved prompt and submitted results">
 
-In the app sidebar, open **Plugins → Add plugin**. You can install directly from GitHub by pasting this repository URL into the plugin input, without a version, tag, or commit suffix:
+</details>
 
-```text
-https://github.com/NanmiCoder/dsh-agent-teams
-```
+## Validation scope
 
-This installs from the default branch and is available immediately after release. The equivalent shorthand is also supported:
+The new workflow has passed isolated **Harness `0.2.1-rc.2`** installation, native discussion, approval, member dispatch and cold-recovery checks using deterministic model fixtures. All 23 workflow tests, the full `pnpm verify` suite and browser checks passed. Live-model acceptance in the user's daily Desktop installation is still pending.
 
-```text
-github:NanmiCoder/dsh-agent-teams
-```
+The [compatibility matrix](./compatibility.json) and [upstream release notes](./release-notes/v0.1.27.md) describe the inherited baseline, not validation of every new feature on every listed host. The unchanged version number alone does not identify the installed source.
 
-For npm installation, enter the versioned spec `@nanmicoder/dsh-agent-teams@0.1.27`. Desktop's pnpm 11 defaults to a 24-hour minimum release age: for 24 hours after a release, a bare package name or `@latest` installs the previous version even when the preview shows the newest one, and the installation fails if that version is incompatible with your host. An exact version installs immediately. Changing registry mirrors does not remove this policy. GitHub access is required for the Git route; it may contain newer code than npm.
+## Replace an existing installation
 
-Install it, then choose **Enable now**. If the host asks for a restart, restart the desktop app. Do not disable compatibility checks or the global release-age policy to install the plugin.
+Stop or pause active teams and save plugin settings you need. Upstream and this fork share a package name: replace them in the **same profile**. Removing the package does not require deleting workspace `.agent-teams/` records.
 
-The desktop app supplies its own Harness core and package manager. Upgrading the global CLI does not upgrade that core, and an ordinary standalone CLI cannot manage its desktop profile. The CLI carrier installed by the desktop app can manage that profile in `0.2.1-rc.2`. Check the embedded core against the compatibility list. Harness `0.2.1-rc.2` is now the exact published target; its RC status is unchanged. The earlier source-only `0.2.0` prediction is no longer a support declaration. See the [release migration evidence](./docs/harness-0.2.1-rc.2/README.md).
+### Desktop: install from GitHub
 
-### CLI / Web: 1. Install DeepSeek Harness
+1. Find AgentTeams (`@nanmicoder/dsh-agent-teams`) in DSH's plugin manager and uninstall the previous installation.
+2. Open **Add plugin** and enter:
 
-```sh
-npm install --global @deepseek-ai/dsh
-dsh --version
-```
+~~~text
+https://github.com/yogurtss/dsh-agent-teams
+~~~
 
-The command selects the host's npm `latest`; check `dsh --version` against the support matrix after upgrading. Alpha is opt-in: select an exact Alpha version from the table and lock all host dependencies as described in the [maintenance guide](./docs/maintenance-workflow.md).
+3. Install, enable and restart DSH Desktop. The AgentTeams workspace should expose the workflow canvas and discussion context.
 
-### CLI / Web: 2. Install the AgentTeams plugin
+**Desktop has its own core and profile. Standalone CLI `--profile web` does not replace Desktop plugins.** Prefer Desktop's plugin manager. Local packages require Desktop's CLI carrier and its actual profile, rather than an assumed standalone profile name. Upgrading a global CLI does not upgrade Desktop's embedded core.
 
-Install or upgrade from npm with an exact version (currently `0.1.27`):
+### CLI / Web: install from GitHub
 
-```sh
-dsh plugin --profile web add --save-exact @nanmicoder/dsh-agent-teams@0.1.27
-```
+Check `dsh --version`. Replace `web` with your actual profile and stop that Harness process. Skip remove for a first installation.
 
-For a CLI-managed installation, replace `web` with your active CLI profile. **Stop and restart that profile's Harness process, then refresh the browser.** Installing the plugin does not upgrade Harness; the host and plugin have independent `latest` channels.
+~~~sh
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add github:yogurtss/dsh-agent-teams#main
+dsh --profile web
+~~~
 
-Alternatively, install or update from the latest GitHub default branch without a tag or commit suffix:
+Refresh the browser after restarting. The Git branch includes built `lib/` artifacts; direct Git installs need GitHub access but no manual build.
 
-```sh
-dsh plugin --profile web add github:NanmiCoder/dsh-agent-teams
-```
+### Install cloned or downloaded source (Windows PowerShell)
 
-To update, run the command again with the new version, then restart the profile; a bare package name can retain an already installed exact version. For 24 hours after a release, a bare package name or `@latest` installs the previous version. If a registry mirror has not synced the release, append `--registry=https://registry.npmjs.org` to the npm command. GitHub default-branch code may be newer than npm `latest`. The default branch includes the verified server, client, and type build outputs in `lib/`. The repository distributes these outputs so installation does not need a `prepare` hook or build-script approval. Source maintainers must run `pnpm build` and update the committed outputs whenever the source changes. Existing npm releases remain immutable.
+Clone with `git clone https://github.com/yogurtss/dsh-agent-teams.git`, or extract **Code → Download ZIP**. These examples assume `G:\dsh_agents`; substitute your path. Use Node.js `^22.19.0 || >=24` and pnpm.
 
-For a manually cloned checkout, run `pnpm install --frozen-lockfile` and `pnpm build` after pulling, then restart the corresponding Harness process. Updating Git alone does not update local build output. See the [maintenance guide](./docs/maintenance-workflow.md).
+**Option A: build a tarball for regular use or another machine.**
 
-> For older `0.1.0-*` / `0.1.1-*` or unlisted hosts, keep a working pair and follow the [older-version and diagnostic guide](./docs/maintenance-workflow.md).
+~~~powershell
+Set-Location G:\dsh_agents
+pnpm install --frozen-lockfile
+pnpm build
+pnpm pack --out "$env:TEMP\agent-teams-fork.tgz"
 
-See the full [compatibility matrix](./compatibility.json), [source installation and Alpha testing guide](./docs/maintenance-workflow.md), and [verification coverage and platform limits](./docs/maintenance-2026-09-06/release/README.md).
+# Stop the target Harness profile; skip remove on first installation
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add --save-exact "$env:TEMP\agent-teams-fork.tgz"
+dsh --profile web
+~~~
 
-Then ask for a team directly:
+For an already built `.tgz`, install its absolute path directly. A GitHub source ZIP must be extracted first; it is not a plugin tarball.
 
-> Use AgentTeams to review the commits after v0.5.3 from performance, security, and product perspectives. Return one consolidated report.
+**Option B: link a local directory for development.** After installing dependencies and building as above, stop Harness and run:
+
+~~~powershell
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web add "G:\dsh_agents"
+dsh --profile web
+~~~
+
+Directory installation saves a `link:` dependency. Keep that directory in place. After source changes, run `pnpm build`, restart Harness and refresh the browser; reinstall dependencies with `pnpm install --frozen-lockfile` when needed. Tarball installations require repacking and reinstalling. On macOS/Linux use the same DSH commands with your platform's absolute paths.
+
+### Verify the source, update or uninstall
+
+~~~sh
+dsh plugin --profile web list @nanmicoder/dsh-agent-teams --depth 0
+~~~
+
+Inspect the actual profile's `package.json` if needed: the dependency must point to `github:yogurtss/...`, your `file:...tgz` or your `link:...directory`. A plain npm version identifies upstream. Check for workflow, discussion-context and human-checkpoint controls. The preview at `http://127.0.0.1:8371/` does not prove installation in DSH.
+
+To update Git installs, remove/add in the same profile and restart. For reproducibility, replace `#main` with a full commit SHA from this fork. If a same-version tarball at the same path is cached, repack to a new filename and verify the installed source.
+
+To uninstall:
+
+~~~sh
+dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+~~~
+
+To return to upstream, uninstall and install `@nanmicoder/dsh-agent-teams@0.1.27`, then restart. Back up team state: downgrading fork-specific checkpoint/discussion state has not been verified. Do not resume those teams with upstream.
+
+## Workflow and boundaries
+
+Describe a goal → discuss the initial team → inspect members/tasks → edit the canvas → confirm execution → discuss and decide at checkpoints.
+
+Proposals require human confirmation. Stop running tasks before editing, then resume; completed tasks use new rework rounds. Configuration/review agents can only read context and propose, not execute or approve. Review uses agent-submitted results and host-computed file digests, not independent test execution. Role-prompt snapshots are not complete model requests. Rework crossing another human checkpoint must be handled in segments.
+
+The inherited activity panel, slash command and configuration remain available, as described below.
 
 ## View teams in the workspace
 
@@ -221,7 +218,7 @@ Community upgrade, audit, benchmark, testing and release skills are vendored wit
 The repository also ships the open Agent Skills package [`dsh-plugin-development`](./skills/dsh-plugin-development/SKILL.md):
 
 ```sh
-npx skills add NanmiCoder/dsh-agent-teams --skill dsh-plugin-development
+npx skills add yogurtss/dsh-agent-teams --skill dsh-plugin-development
 ```
 
 ## Documentation
