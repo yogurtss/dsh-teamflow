@@ -36,6 +36,8 @@ The workflow previously passed isolated **Harness `0.2.1-rc.2`** runtime checks 
 
 See the **[Desktop walkthrough with 15 real screenshots](./docs/desktop-live-test-2026-10-27/README.md)** (Chinese). The downstream reviewer returned `needs_revision`: the workflow was exercised successfully, but the sample content did not receive an all-pass result. The report records the remaining coverage limits.
 
+Also see the **[Live DSH Web screenshots and instructions](./docs/web-live-test-2026-10-27/README.md)** (Chinese): Web startup, real-model team creation, the workflow canvas and drag-to-connect were exercised. Testing stopped at the user's request; the Web approval flow was not completed.
+
 The [compatibility matrix](./compatibility.json) and [upstream release notes](./release-notes/v0.1.27.md) describe the inherited baseline, not validation of every new feature on every listed host. The unchanged version number alone does not identify the installed source.
 
 ## Replace an existing installation
