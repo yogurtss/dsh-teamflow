@@ -218,10 +218,17 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     selectDiscussion(`check:${id}`); setSelectedTask(id)
     if (await perform('materials', { discussion: `check:${id}` })) await openDiscussion(`check:${id}`)
   }
+  const pendingCount = Object.values(team?.workflow?.discussions ?? {}).filter(item => item.proposal?.status === 'pending').length
+  const reviewCount = data?.ready.length ?? waitingCount
   if (nativeOnly && !data?.currentDiscussion) return null
   return <>
     {data?.currentDiscussion && team && <div className={css.nativeBanner}><span>{data.currentDiscussion.startsWith('check:') ? '独立验收对话' : '独立配置对话'} · {team.name}</span><button className={css.entry} onClick={() => void openExecution?.(team.captainSessionId, team.captainSessionId)}>返回队长对话 ↗</button></div>}
-    <button className={`${css.entry} ${nativeOnly ? css.compact : ''}`} onClick={() => setOpened(true)}>{activeId ? '打开编排画布' : '讨论创建团队'}{proposal ? ' · 有待确认修改' : ''}{waitingCount > 0 ? ` · ${waitingCount} 项等待人工验收` : ''}</button>
+    <button type="button" className={`${css.entry} ${nativeOnly ? css.compact : css.launcher}`} aria-haspopup="dialog" onClick={() => setOpened(true)}>
+      <strong>团队与流程 <span aria-hidden>↗</span></strong>
+      {!nativeOnly && <span>{team?.name ?? (activeId ? '查看成员、任务交接与人工检查' : '讨论目标，创建初步团队')}</span>}
+      {pendingCount > 0 && <span>{pendingCount} 项修改待确认</span>}
+      {reviewCount > 0 && <span>{reviewCount} 项等待人工验收</span>}
+    </button>
     {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>讨论资料 ↗</button>}
     {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => setDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label><WorkflowContext team={team} discussion={discussion} onSelect={setDiscussion} openExecution={openExecution} />
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}

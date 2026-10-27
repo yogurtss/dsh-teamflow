@@ -5,6 +5,7 @@
 :global(html) {
   --agent-teams-panel-shift: 420px;
 }
+.workflowLaunchers { position: sticky; top: 0; z-index: 3; background: var(--dsw-alias-bg-layer-1, light-dark(#fff, #202226)); }
 
 /* The panel lives in shell.overlay. Only its wide docked mode marks the page,
    allowing the center conversation to concede the exact measured width while

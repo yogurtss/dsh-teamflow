@@ -13,6 +13,15 @@
 }
 .entry { margin: 8px 0 16px; padding: 9px 13px; border: 1px solid var(--wb-border); border-radius: 9px; background: var(--wb-bg); font-size: 12px; cursor: pointer; }
 .entry:hover { border-color: var(--wb-accent); }
+.launcher { position: sticky; top: 0; z-index: 3; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; box-sizing: border-box; padding: 13px 16px; text-align: left; color: var(--wb-accent); border-color: color-mix(in srgb, var(--wb-accent) 45%, var(--wb-border)); background: color-mix(in srgb, var(--wb-accent) 9%, var(--wb-bg)); box-shadow: 0 2px 6px color-mix(in srgb, var(--wb-text) 5%, transparent); }
+.launcher strong { display: flex; justify-content: space-between; gap: 12px; width: 100%; font-size: 15px; }
+.launcher>span { font-size: 12px; overflow-wrap: anywhere; }
+.launcher:hover { background: color-mix(in srgb, var(--wb-accent) 15%, var(--wb-bg)); }
+.historyDialog { position: fixed; margin: auto; width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 48px); box-sizing: border-box; overflow: auto; padding: 20px; cursor: auto; }
+.historyDialog::backdrop { background: #0006; }
+.historyDialog>header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.historyDialog>header p { color: var(--wb-muted); margin: 4px 0 0; }
+.historyDialog>header button { color: var(--wb-text); background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
 .workbench { position: fixed; inset: 24px; z-index: 1000; display: flex; flex-direction: column; overflow: hidden; background: var(--wb-base); border: 1px solid var(--wb-border); border-radius: 16px; box-shadow: 0 16px 64px color-mix(in srgb, var(--dsw-alias-bg-mask-3, #000) 20%, transparent); font-size: 13px; line-height: 1.65; }
 .workbench * { box-sizing: border-box; }
 .workbench button { font: inherit; font-size: 12px; line-height: 20px; color: inherit; background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 8px; padding: 6px 10px; cursor: pointer; transition: background-color 140ms, border-color 140ms; }

@@ -10,6 +10,7 @@ import { getActivityMonitorTargetsSnapshot, getActivitySnapshotsSnapshot, startA
 import { createTeamDiscovery, type WorkspaceActivityState } from './workspace-state.ts'
 import { LEAD_ART } from './artwork.ts'
 import css from './WorkspaceActivity.module.css'
+import { WorkflowHistory } from './WorkflowHistory.tsx'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 
 export const TEAM_TAB_KIND = 'agent-teams'
@@ -120,6 +121,7 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
           <h2>AgentTeams</h2>
           <span>{t('workspace.title')}</span>
         </header>
+        {history && selected && <WorkflowHistory name={selected.name}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}
         {!history && <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={selected?.teamId} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext}
           waitingCount={selected?.phase !== 'staged' && !selected?.halted ? selected?.tasks.filter(task => task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && task.dependencies.every(id => selected.tasks.some(t => t.id === id && t.status === 'completed'))).length : 0}
           openConversation={id => openMember(id as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)}

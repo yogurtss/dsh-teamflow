@@ -17,6 +17,8 @@
  * @module dsh-agent-teams/client/activity
  */
 
+import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
+import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type PointerEvent as ReactPointerEvent,
@@ -1323,6 +1325,20 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
             </span>
           </header>
           <div className={css.teams}>
+            <div className={css.workflowLaunchers}>
+              {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current}
+                openConversation={id => navigateToSession(current, id as SessionId)}
+                openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
+              {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId}
+                openConversation={id => navigateToSession(team.captainSessionId as SessionId, id as SessionId)}
+                openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
+              {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name}>
+                <TeamSection team={team} workspace historic onNavigate={navigateToSession} t={t} />
+              </WorkflowHistory>)}
+              {visibleHistoric.map(({ data, owner }) => <WorkflowHistory key={data.teamId} name={data.teamName}>
+                <TeamSection team={historicCardTeam(data, owner)} workspace historic onNavigate={navigateToSession} t={t} />
+              </WorkflowHistory>)}
+            </div>
             {visibleCount === 0
               ? <span className={css.emptyHint}>{t('activity.empty')}</span>
               : (

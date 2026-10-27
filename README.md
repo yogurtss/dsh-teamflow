@@ -6,6 +6,8 @@ This is the [yogurtss/dsh-agent-teams](https://github.com/yogurtss/dsh-agent-tea
 
 **Install this fork from GitHub or a local build.** Its package name remains `@nanmicoder/dsh-agent-teams` and its version remains `0.1.27`. These changes are not published to npm; the npm package installs upstream.
 
+Click **团队与流程** at the top of the AgentTeams activity panel or team page to open the workbench. The button shows pending changes and human reviews; archived teams open read-only records.
+
 ## What this fork adds
 
 | Feature | Behavior |
