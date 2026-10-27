@@ -31,6 +31,7 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 50) throw new Error('每次提案需要 1–50 个修改')
   return value.map(raw => {
     const op = object(raw), action = op['action']
+    if (typeof action !== 'string' || !action.trim()) throw new Error('每个修改对象必须包含 action 字段，例如 {"action":"update_member","name":"planner","summary":"职责说明"}；参数与 action 同层，不使用 type、op 或嵌套 payload')
     const fields = (names: string[]) => Object.fromEntries(names.flatMap(name => op[name] === undefined ? [] : [[name, text(op[name], name)]]))
     switch (action) {
       case 'add_member': return { action, name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'provider', 'model']) }

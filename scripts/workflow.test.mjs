@@ -19,6 +19,13 @@ const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', 
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
 
+test('malformed model operations explain the required action discriminator', () => {
+  for (const operation of [{ type: 'update_member', name: 'worker' }, { op: 'update_member' }, { update_member: { name: 'worker' } }]) {
+    assert.throws(() => parseWorkflowOperations([operation]), /action.*update_member/)
+  }
+  assert.deepEqual(parseWorkflowOperations([{ action: 'update_member', name: 'worker', summary: 'Three items' }]), [{ action: 'update_member', name: 'worker', summary: 'Three items' }])
+})
+
 test('manual numeric IDs advance the sequence used by original task tools', () => {
   const result = applyWorkflowOperations(team(), [{ action: 'add_task', id: 't20', subject: 'Manual', dependencies: [] }])
   assert.equal(result.taskSeq, 20)

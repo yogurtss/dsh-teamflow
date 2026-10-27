@@ -32,7 +32,9 @@ Edges mean execution order: B waits for A. Inserting a checkpoint replaces A →
 
 ## Validation scope
 
-The new workflow has passed isolated **Harness `0.2.1-rc.2`** installation, native discussion, approval, member dispatch and cold-recovery checks using deterministic model fixtures. All 23 workflow tests, the full `pnpm verify` suite and browser checks passed. Live-model acceptance in the user's daily Desktop installation is still pending.
+The workflow previously passed isolated **Harness `0.2.1-rc.2`** runtime checks with deterministic model fixtures and the full `pnpm verify` suite. On 2026-10-27, a live test in **Desktop `0.2.1-rc.3` with a real DeepSeek model** exercised team creation, instruction changes, checkpoint insertion, rejection, rework, second-round approval, downstream execution and restart recovery. Two issues found during that test were fixed; all 24 workflow tests and core checks pass.
+
+See the **[Desktop walkthrough with 15 real screenshots](./docs/desktop-live-test-2026-10-27/README.md)** (Chinese). The downstream reviewer returned `needs_revision`: the workflow was exercised successfully, but the sample content did not receive an all-pass result. The report records the remaining coverage limits.
 
 The [compatibility matrix](./compatibility.json) and [upstream release notes](./release-notes/v0.1.27.md) describe the inherited baseline, not validation of every new feature on every listed host. The unchanged version number alone does not identify the installed source.
 

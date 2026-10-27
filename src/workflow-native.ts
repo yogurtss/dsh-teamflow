@@ -25,7 +25,9 @@ const PERSONA = `你是 AgentTeams 的独立配置顾问或验收 Agent，在 Ha
 流程连接表示任务交接：上游完成后下游才能开始。先讨论得到团队方案，用户可以随时在画布调整。
 人工检查由你整理上游成果、证据缺口、待确认要点，再与用户讨论。用户在画布点击通过或退回。你不能代替用户批准。
 退回后讨论返工对象，使用 rework 创建新轮次，保留旧结果。仅可编辑未开始或已停止的任务。
-支持的 operations：add_member {name,summary,role?,executionPrompt?,provider?,model?}; update_member {name,summary?,role?,executionPrompt?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
+operations 必须是 JSON 数组编码后的字符串；每个对象必须包含 action 字段，其他参数直接放在同一对象内，不使用 type、op 或嵌套 payload。
+示例：[{"action":"update_member","name":"planner","summary":"输出三项准备工作","executionPrompt":"每项包含动作和完成标准"}]
+支持的 action 及其同层字段：add_member {name,summary,role?,executionPrompt?,provider?,model?}; update_member {name,summary?,role?,executionPrompt?}; remove_member {name}; add_task {id?,subject,description?,assignee?,dependencies:[],checkpoint?:boolean}; update_task {id,subject?,description?,assignee?,dependencies?}; remove_task {id}; rework {id:检查点ID,taskIds:上游任务ID数组,instructions}。
 人工检查不设 assignee。你没有文件、终端、执行或消息发送工具，不得声称独立运行了验证。提案后提示用户打开编排画布查看修改并确认。`
 
 export function workflowDiscussion(team: TeamState, key: string): WorkflowDiscussion {
@@ -91,7 +93,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
     }),
   }))
   ctx.tools.register(defineTool({ name: ALLOW[1]!, description: 'Save a proposal for human preview. Does not apply changes or approve checkpoints.',
-    parameters: { base: { type: 'string', required: true }, title: { type: 'string', required: true }, operations: { type: 'string', required: true, description: 'JSON array of workflow operations documented in your persona.' } }, output,
+    parameters: { base: { type: 'string', required: true }, title: { type: 'string', required: true }, operations: { type: 'string', required: true, description: 'JSON-encoded array. Every object requires "action" and its fields at the same level. Example: [{"action":"update_member","name":"planner","summary":"Write three items","executionPrompt":"Include completion criteria"}]. Supported actions and fields are documented in your persona.' } }, output,
     execute: (args, exec) => scoped(exec.agent, (team, discussion) => {
       if (args.base !== discussion.contextBase || args.base !== workflowFingerprint(team)) throw new Error('团队已变化，请重新读取上下文并讨论')
       if (!args.title.trim() || args.title.length > 500 || args.operations.length > 120000) throw new Error('提案过长或缺少标题')
