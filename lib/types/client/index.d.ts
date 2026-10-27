@@ -1,4 +1,4 @@
-/** Browser plugin for the AgentTeams activity floater and conversation card. */
+/** Browser plugin for the TeamFlow activity floater and conversation card. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis';
 import { type AgentTeamsLocaleKey } from './locales.ts';
 declare module '@deepseek-ai/dsh-client-ui-slots' {

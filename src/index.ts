@@ -1,17 +1,17 @@
 /**
- * AgentTeams for DeepSeek Harness.
+ * TeamFlow for DeepSeek Harness.
  *
  * A host-plane plugin that registers the `agent_teams_*` tools and one usage
  * agent-scoped usage section. Each session keeps a stable tool set and core
  * instructions. Existing business tools cover the complete team lifecycle.
  * After installation any session can
- * run multi-agent teamwork through natural language (e.g. "use AgentTeams to research X"):
+ * run multi-agent teamwork through natural language (e.g. "use TeamFlow to research X"):
  * the model creates a team (it becomes the captain), spawns members as
  * durable continuable subagents, breaks the goal into tasks with
  * dependencies, wakes members with messages, relays reports, and collects
  * results.
  *
- * Installation (bundle): `dsh plugin --profile <name> add @nanmicoder/dsh-agent-teams`
+ * Installation (bundle): `dsh plugin --profile <name> add @yogurtss/dsh-teamflow`
  * (or a local path). The bundle patch mounts this plugin row into the host
  * composition; the tools register into the shared `tools` registry and the
  * usage section into the global system prompt, so the plugin needs no realm.
@@ -55,7 +55,7 @@ const WEB_SERVER_KEYS = ['webServer', 'httpServer'] as const
 /** Workspace registry service key candidates, newest first. */
 const WORKSPACE_KEYS = ['workspaceRegistry', 'workspace'] as const
 
-export const name = 'agent-teams'
+export const name = 'teamflow'
 export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents', 'sessions']
 
 /** Plugin configuration. */
@@ -178,9 +178,9 @@ export const Config: z<Config> = z.object({
   slashCommand: z.boolean().default(true),
 })
 
-/** The model-facing usage policy: when and how to drive AgentTeams. */
+/** The model-facing usage policy: when and how to drive TeamFlow. */
 export function usageSectionText(toolNames: string, profilesText = ''): string {
-  return `AgentTeams captain protocol:
+  return `TeamFlow captain protocol:
 1. Inspect current team state when needed, using agent_teams_status. Continue existing work without duplicating its roster/tasks. Create only when no current team exists, with the user's goal as description and approval="required"; automatic approval requires an explicit request to run immediately. Staged plans never spawn or schedule work.
 2. Add each needed role once; members inherit your model route unless another is requested/needed. A requested profile goes to create({profile}); it supplies its roster. Seed profiles also supply tasks; captain-planning profiles require your DAG. Do not duplicate either. A member may also select one owner-declared tool policy by id (tool_policy on add_member, a plan member, or a profile member): it is the only way to change which global tools that member sees and may invoke, and you can never pass raw allow/deny lists.
 3. Build the complete smallest useful DAG while staged. For an ordinary research/audit plan, pass the roster and dependency graph together in create({plan:{members,tasks}}) to avoid repeated setup rounds. Every task needs a subject; pass kind and assignee explicitly when the plan specifies them. Titles, descriptions and member roles do not set these fields. Dependencies represent prerequisites. Give every required contributor a task or explicit message. Present the plan and end your turn for review; never approve in that planning turn. Approve only after a later explicit user approval or the Web action.

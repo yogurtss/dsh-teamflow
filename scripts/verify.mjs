@@ -222,7 +222,8 @@ check(
 check(
   'slash command transcript hides the duplicate pre-message result row',
   clientIndexSource.includes('HiddenAgentTeamsCommand')
-    && /name:\s*'conversation\.chat\.commandview',\s*key:\s*'agent-teams'/u.test(clientIndexSource),
+    && clientIndexSource.includes("for (const command of ['teamflow', 'agent-teams'])")
+    && /name:\s*'conversation\.chat\.commandview',\s*key:\s*command/u.test(clientIndexSource),
 )
 check(
   'stop-team control lives in the team panel and requires confirmation',

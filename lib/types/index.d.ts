@@ -1,17 +1,17 @@
 /**
- * AgentTeams for DeepSeek Harness.
+ * TeamFlow for DeepSeek Harness.
  *
  * A host-plane plugin that registers the `agent_teams_*` tools and one usage
  * agent-scoped usage section. Each session keeps a stable tool set and core
  * instructions. Existing business tools cover the complete team lifecycle.
  * After installation any session can
- * run multi-agent teamwork through natural language (e.g. "use AgentTeams to research X"):
+ * run multi-agent teamwork through natural language (e.g. "use TeamFlow to research X"):
  * the model creates a team (it becomes the captain), spawns members as
  * durable continuable subagents, breaks the goal into tasks with
  * dependencies, wakes members with messages, relays reports, and collects
  * results.
  *
- * Installation (bundle): `dsh plugin --profile <name> add @nanmicoder/dsh-agent-teams`
+ * Installation (bundle): `dsh plugin --profile <name> add @yogurtss/dsh-teamflow`
  * (or a local path). The bundle patch mounts this plugin row into the host
  * composition; the tools register into the shared `tools` registry and the
  * usage section into the global system prompt, so the plugin needs no realm.
@@ -22,7 +22,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { type TeamProfileConfig } from './profiles.ts';
 import { type MemberToolPolicy } from './tool-policies.ts';
-export declare const name = "agent-teams";
+export declare const name = "teamflow";
 export declare const inject: string[];
 /** Plugin configuration. */
 export interface Config {
@@ -79,6 +79,6 @@ export interface Config {
     slashCommand?: boolean;
 }
 export declare const Config: z<Config>;
-/** The model-facing usage policy: when and how to drive AgentTeams. */
+/** The model-facing usage policy: when and how to drive TeamFlow. */
 export declare function usageSectionText(toolNames: string, profilesText?: string): string;
 export declare function apply(ctx: Context, config: Config): void;

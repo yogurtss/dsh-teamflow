@@ -85,7 +85,7 @@ class ProtocolAdapter extends LlmAdapter {
         }
         if (scenario.ptc && scenario.step === 2) {
             assert.match(resultText, /STATUS_OUTPUT_DISCARDED/);
-            assert.doesNotMatch(resultText, /AgentTeams captain protocol|Tasks carry attempt_id/);
+            assert.doesNotMatch(resultText, /TeamFlow captain protocol|Tasks carry attempt_id/);
             record({ event: 'protocol-ptc-output-discarded', tool: 'agent_teams_status', sessionId: options.sessionId, systemRulesPresent: true });
         }
         const rawStep = scenario.step++;

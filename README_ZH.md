@@ -1,10 +1,12 @@
 简体中文 · [English](./README.md)
 
-# AgentTeams · 人机协作编排
+# DSH TeamFlow · 人机协作编排
 
-这是 [yogurtss/dsh-agent-teams](https://github.com/yogurtss/dsh-agent-teams) 开发分支，基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 扩展。让模型先讨论并建立团队，再由你调整成员职责、任务交接和人工验收节点。
+这是 [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) 开发分支，基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 扩展。让模型先讨论并建立团队，再由你调整成员职责、任务交接和人工验收节点。
 
-**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 包名仍为 `@nanmicoder/dsh-agent-teams`，版本仍为 `0.1.27`；这些改动尚未发布到 npm，安装 npm 同名包会得到上游版本。
+**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，版本暂保留 `0.1.27`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
+
+使用 `/teamflow` 开始讨论，旧 `/agent-teams` 及其 profile 命令继续兼容。为读取原团队记录，`.agent-teams/` 数据目录、内部 `agent_teams_*` 工具和会话事件协议保持不变。历史报告中的旧名称及截图是当时的实测记录。
 
 ## 本分支新增功能
 
@@ -42,28 +44,28 @@
 
 ## 卸载旧版并安装本分支
 
-先结束或暂停正在执行的团队，保存需要保留的插件配置。上游与本分支使用同一包名，应在**同一个 profile** 中替换。卸载插件包不需要删除项目中的 `.agent-teams/` 团队记录。
+先结束或暂停正在执行的团队，保存需要保留的插件配置。改名前使用 `@nanmicoder/dsh-agent-teams`，现在使用 `@yogurtss/dsh-teamflow`。应在**同一个 profile** 中卸载旧包再安装新包，不能同时启用两者。卸载插件包不需要删除项目中的 `.agent-teams/` 团队记录。
 
 ### 桌面端：推荐从 GitHub 安装
 
-1. 在 DSH 插件管理页找到 AgentTeams（`@nanmicoder/dsh-agent-teams`），卸载旧插件。
+1. 在 DSH 插件管理页卸载旧 AgentTeams（`@nanmicoder/dsh-agent-teams`）；如果已安装 TeamFlow，更新时卸载 TeamFlow（`@yogurtss/dsh-teamflow`）。
 2. 打开「添加插件」，粘贴：
 
 ~~~text
-https://github.com/yogurtss/dsh-agent-teams
+https://github.com/yogurtss/dsh-teamflow
 ~~~
 
-3. 安装并启用，重启 DSH 桌面应用。AgentTeams 工作区应出现顶部醒目的「团队与流程」按钮和「讨论资料」。
+3. 安装并启用，重启 DSH 桌面应用。TeamFlow 工作区应出现顶部醒目的「团队与流程」按钮和「讨论资料」。
 
 **桌面端拥有自己的内核和 profile，普通 CLI 的 `--profile web` 不会替换桌面端插件。** 优先使用桌面端自身插件管理页；本地包安装需使用桌面端提供的 CLI carrier，并确认实际 profile，不能套用独立 CLI 的 profile 名称。升级全局 CLI 不会升级桌面内核。
 
 ### CLI / Web：从 GitHub 安装
 
-先运行 `dsh --version` 确认宿主。将 `web` 换成实际使用的 profile，停止对应的 Harness 进程。首次安装跳过 remove。
+先运行 `dsh --version` 确认宿主。将 `web` 换成实际使用的 profile，停止对应的 Harness 进程。首次安装跳过 remove；从 AgentTeams 迁移时先执行 `dsh plugin --profile web remove @nanmicoder/dsh-agent-teams`，尚未安装 TeamFlow 则跳过下面的新包 remove。
 
 ~~~sh
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
-dsh plugin --profile web add github:yogurtss/dsh-agent-teams#main
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
+dsh plugin --profile web add github:yogurtss/dsh-teamflow#main
 dsh --profile web
 ~~~
 
@@ -71,7 +73,7 @@ dsh --profile web
 
 ### 从克隆或下载的源码安装（Windows PowerShell）
 
-使用 `git clone https://github.com/yogurtss/dsh-agent-teams.git`，或 Code → Download ZIP 后解压。下面以源码位于 `G:\dsh_agents` 为例，请替换成实际路径。需要 Node.js `^22.19.0 || >=24` 和 pnpm。
+使用 `git clone https://github.com/yogurtss/dsh-teamflow.git`，或 Code → Download ZIP 后解压。下面以源码位于 `G:\dsh_agents` 为例，请替换成实际路径。需要 Node.js `^22.19.0 || >=24` 和 pnpm。
 
 **方式 A：打包成 tgz，适合稳定使用或复制到其他机器。**
 
@@ -82,7 +84,7 @@ pnpm build
 pnpm pack --out "$env:TEMP\agent-teams-fork.tgz"
 
 # 停止对应 profile 的 DSH；首次安装跳过 remove
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 dsh plugin --profile web add --save-exact "$env:TEMP\agent-teams-fork.tgz"
 dsh --profile web
 ~~~
@@ -92,7 +94,7 @@ dsh --profile web
 **方式 B：链接本地源码目录，适合继续开发。** 完成依赖安装和构建后，停止 DSH，再执行：
 
 ~~~powershell
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 dsh plugin --profile web add "G:\dsh_agents"
 dsh --profile web
 ~~~
@@ -102,7 +104,7 @@ dsh --profile web
 ### 确认来源、更新与卸载
 
 ~~~sh
-dsh plugin --profile web list @nanmicoder/dsh-agent-teams --depth 0
+dsh plugin --profile web list @yogurtss/dsh-teamflow --depth 0
 ~~~
 
 也可查看实际 profile 的 `package.json`：依赖应指向 `github:yogurtss/...`、你的 `file:...tgz` 或 `link:...源码目录`；若仍是 npm 版本号，则不是本分支。界面应有编排画布、讨论资料和人工检查入口。`http://127.0.0.1:8371/` 是开发预览，不代表已安装到 DSH。
@@ -112,10 +114,10 @@ dsh plugin --profile web list @nanmicoder/dsh-agent-teams --depth 0
 仅卸载：
 
 ~~~sh
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 ~~~
 
-回到上游时，卸载后安装 `@nanmicoder/dsh-agent-teams@0.1.27` 并重启。先备份团队状态；人工检查和原生讨论状态未验证过向上游降级，不要用上游版继续执行这些团队。
+回到上游时，卸载 TeamFlow 后安装 `@nanmicoder/dsh-agent-teams@0.1.27` 并重启。先备份团队状态；人工检查和原生讨论状态未验证过向上游降级，不要用上游版继续执行这些团队。
 
 ## 使用流程与边界
 
@@ -127,7 +129,7 @@ dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
 
 ## 在工作区查看团队
 
-在 AgentTeams 活动面板或团队页面顶部点击 **「团队与流程」**，即可打开编排工作台；没有团队时可讨论创建，历史团队打开只读记录。按钮显示待确认修改及待人工验收数量。旧式浮动活动面板也提供此入口。
+在 TeamFlow 活动面板或团队页面顶部点击 **「团队与流程」**，即可打开编排工作台；没有团队时可讨论创建，历史团队打开只读记录。按钮显示待确认修改及待人工验收数量。旧式浮动活动面板也提供此入口。
 
 入口位置及真实 Web 截图见 [「团队与流程」入口更新](./docs/team-entry-2026-10-27/README.md)。
 
@@ -150,22 +152,22 @@ dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
 
 ## Slash 命令
 
-无需再说“用 AgentTeams”。插件注册了封闭命名空间的 `/agent-teams` 宿主命令，Web GUI 的 slash 菜单会显示 `agent-teams` 占位项与输入提示：选中它（或直接输入命令）、描述目标、回车即可。
+无需再说“用 TeamFlow”。插件注册了封闭命名空间的 `/teamflow` 宿主命令，Web GUI 的 slash 菜单会显示 `teamflow` 占位项与输入提示：选中它（或直接输入命令）、描述目标、回车即可。
 
 ```
-/agent-teams 调研三家竞品的定价页
+/teamflow 调研三家竞品的定价页
 ```
 
-这一行被命令管线认领后，会按用户提交的原文作为普通用户消息送入主会话，因此聊天记录中仍能看到完整的 `/agent-teams …`。手势边界会在 pre-step 注入确定性激活指令，队长协议仍会立即启动。调用也会持久化记录（`command/run` / `command/done`）。
+这一行被命令管线认领后，会按用户提交的原文作为普通用户消息送入主会话，因此聊天记录中仍能看到完整的 `/teamflow …`。手势边界会在 pre-step 注入确定性激活指令，队长协议仍会立即启动。调用也会持久化记录（`command/run` / `command/done`）。
 
-没有命令裁决的表面（例如 headless CLI）也享有同等的确定性激活：任何以 `/agent-teams` 开头的真实用户消息，都会为其余文本激活该协议；句子中间出现的字样仍是普通文本。
+没有命令裁决的表面（例如 headless CLI）也享有同等的确定性激活：任何以 `/teamflow` 开头的真实用户消息，都会为其余文本激活该协议；句子中间出现的字样仍是普通文本。
 
 ## 配置
 
 默认配置可以直接使用。受信任的 Profile 可以覆盖成员行为：
 
 ```yaml
-- id: agent-teams
+- id: teamflow
   config:
     stateDir: .agent-teams
     memberProvider: spawn
@@ -196,7 +198,7 @@ dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
 
 这里的 `memberProvider` 指子 Agent 的运行后端（`spawn` / `fork`），不是 LLM provider。跨 LLM provider 由 `agent_teams_add_member` 的可选 `provider` + `model` 参数表达；`memberModel` 只是所有成员的模型默认覆盖。成员沿用队长当前 provider/model 时会继承队长的思考强度；provider 或 model 任一改变时会自动使用目标模型的默认档。需要指定特定强度时，可传入可选的 `reasoning_effort` 参数（目标模型支持的档位 id，或 `"default"` 表示强制使用模型自身默认档）。
 
-`slashCommand: false` 可关闭确定性的 `/agent-teams` 激活面（slash 命令与手势边界），仅保留自然语言触发。
+`slashCommand: false` 可关闭确定性的 `/teamflow` 激活面（slash 命令与手势边界），仅保留自然语言触发。
 
 ## 使用边界
 
@@ -215,7 +217,7 @@ dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
 另提供开放 Agent Skills 包 [`dsh-plugin-development`](./skills/dsh-plugin-development/SKILL.md)：
 
 ```sh
-npx skills add yogurtss/dsh-agent-teams --skill dsh-plugin-development
+npx skills add yogurtss/dsh-teamflow --skill dsh-plugin-development
 ```
 
 ## 文档
@@ -237,9 +239,9 @@ pnpm verify
 
 ## 命名多角色团队配置
 
-在 `cordis.patch.yml` 的 `profiles` 中配置完整团队模板。每个 profile 都提供成员阵容，可独立指定 provider、model、role、reasoning_effort。`taskPlanning: captain` 表示只提供阵容和约束，由 Captain 根据用户目标设计 DAG；省略该字段或设为 `seed` 时，展开模板中的固定任务图。使用 `/agent-teams --profile <名称> <目标>` 显式激活；不会把首个普通 token 隐式识别为 profile。
+在 `cordis.patch.yml` 的 `profiles` 中配置完整团队模板。每个 profile 都提供成员阵容，可独立指定 provider、model、role、reasoning_effort。`taskPlanning: captain` 表示只提供阵容和约束，由 Captain 根据用户目标设计 DAG；省略该字段或设为 `seed` 时，展开模板中的固定任务图。使用 `/teamflow --profile <名称> <目标>` 显式激活；不会把首个普通 token 隐式识别为 profile。
 
-普通 `/agent-teams` 流程继续已有团队，按需调用 `agent_teams_status` 确认状态；仅在没有当前团队时调用 `agent_teams_create({ profile, approval: "required" })`：只落盘可编辑的成员占位和 DAG，不创建子会话、不领取任务。成员模型和推理等级直接读取 Harness 的模型目录。「返回对话修改」会终止仍在运行的规划轮次，让队长先追问修改方向，再用一次原子操作更新同一份草案；「放弃本次计划」经二次确认后会归档草案、中止轮次，并向模型注入不得自动重建团队的控制上下文。只有点击「确认并启动团队」才会提交最终配置并调度就绪任务；成员有就绪任务时才创建会话。运行中团队的停止入口位于该团队的面板标题，点击后需要二次确认，不再占用输入区域。直接工具调用方可显式传 `approval: "automatic"` 保留旧的立即执行路径。审查或测试失败不会解锁下游；自动 repair/review 不依赖 failed review。
+普通 `/teamflow` 流程继续已有团队，按需调用 `agent_teams_status` 确认状态；仅在没有当前团队时调用 `agent_teams_create({ profile, approval: "required" })`：只落盘可编辑的成员占位和 DAG，不创建子会话、不领取任务。成员模型和推理等级直接读取 Harness 的模型目录。「返回对话修改」会终止仍在运行的规划轮次，让队长先追问修改方向，再用一次原子操作更新同一份草案；「放弃本次计划」经二次确认后会归档草案、中止轮次，并向模型注入不得自动重建团队的控制上下文。只有点击「确认并启动团队」才会提交最终配置并调度就绪任务；成员有就绪任务时才创建会话。运行中团队的停止入口位于该团队的面板标题，点击后需要二次确认，不再占用输入区域。直接工具调用方可显式传 `approval: "automatic"` 保留旧的立即执行路径。审查或测试失败不会解锁下游；自动 repair/review 不依赖 failed review。
 
 ## 许可证
 

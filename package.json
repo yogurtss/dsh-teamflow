@@ -1,7 +1,7 @@
 {
-  "name": "@nanmicoder/dsh-agent-teams",
+  "name": "@yogurtss/dsh-teamflow",
   "version": "0.1.27",
-  "description": "AgentTeams for DeepSeek Harness: multi-agent team collaboration (captain, members, tasks with dependencies, messaging) driven by natural language, with a tree monitor in the web GUI",
+  "description": "DSH TeamFlow: editable agent workflows with native discussions and human approval checkpoints",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -34,17 +34,17 @@
   ],
   "license": "MIT",
   "author": {
-    "name": "\u7a0b\u5e8f\u5458\u963f\u6c5f (Relakkes)",
+    "name": "程序员阿江 (Relakkes)",
     "email": "relakkes@gmail.com",
     "url": "https://github.com/NanmiCoder"
   },
-  "homepage": "https://github.com/NanmiCoder/dsh-agent-teams#readme",
+  "homepage": "https://github.com/yogurtss/dsh-teamflow#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NanmiCoder/dsh-agent-teams.git"
+    "url": "git+https://github.com/yogurtss/dsh-teamflow.git"
   },
   "bugs": {
-    "url": "https://github.com/NanmiCoder/dsh-agent-teams/issues"
+    "url": "https://github.com/yogurtss/dsh-teamflow/issues"
   },
   "keywords": [
     "dsh",
@@ -251,6 +251,6 @@
     "typescript": "^5.9.3"
   },
   "bin": {
-    "dsh-agent-teams-doctor": "scripts/doctor.mjs"
+    "dsh-teamflow-doctor": "scripts/doctor.mjs"
   }
 }

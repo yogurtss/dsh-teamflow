@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { type UserMessage } from '@deepseek-ai/dsh-llm';
 import { type TeamProfileConfig, type AgentTeamsInvocation } from './profiles.ts';
 export declare const AGENT_TEAMS_COMMAND = "agent-teams";
+export declare const TEAMFLOW_COMMAND = "teamflow";
 declare module '@deepseek-ai/dsh-llm' {
     interface MessageSourceMap {
         'agent-teams-command': {

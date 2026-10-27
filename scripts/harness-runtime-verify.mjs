@@ -143,7 +143,7 @@ if (flags.has('--artifact')) {
     artifactSha = hash(artifact);
     const ownArtifact = join(report, 'artifact-' + artifactSha + '.tgz');
     copyFileSync(artifact, ownArtifact);
-    manifest.dependencies['@nanmicoder/dsh-agent-teams'] = 'file:' + ownArtifact;
+    manifest.dependencies['@yogurtss/dsh-teamflow'] = 'file:' + ownArtifact;
 }
 else if (!flags.has('--prepare-only'))
     throw Error('--artifact required unless --prepare-only');
@@ -157,8 +157,8 @@ if (flags.has('--prepare-only')) {
     console.log('Prepared ' + version + ' with ' + cohort.count + ' exact DSH packages');
     process.exit(0);
 }
-const plugin = JSON.parse(readFileSync(join(runtime, 'node_modules/@nanmicoder/dsh-agent-teams/package.json'), 'utf8'));
-if (plugin.name !== '@nanmicoder/dsh-agent-teams') throw Error('Artifact package identity does not match AgentTeams');
+const plugin = JSON.parse(readFileSync(join(runtime, 'node_modules/@yogurtss/dsh-teamflow/package.json'), 'utf8'));
+if (plugin.name !== '@yogurtss/dsh-teamflow') throw Error('Artifact package identity does not match AgentTeams');
 const runs = await runRuntimeScenarios({ report, runtime, command, environment, selectedScenarios: flags.has('--scenario') ? [flags.get('--scenario')] : scenarios });
 // Exercise the same compatibility gate used by the plugin settings UI. Runtime
 // fixtures alone link the package directly and cannot prove installation works.

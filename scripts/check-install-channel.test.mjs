@@ -11,7 +11,7 @@ assert.ok(pnpmCli, 'DESKTOP_PNPM_CLI must point at pnpm 11.28.5/bin/pnpm.mjs')
 
 test('desktop pnpm latest is not ready until the release ages; no policy exemption is added', async () => {
   let matured = false, unavailable = false
-  const name = '@nanmicoder/dsh-agent-teams'
+  const name = '@yogurtss/dsh-teamflow'
   const server = createServer((request, response) => {
     if (unavailable) { response.writeHead(503).end('unavailable'); return }
     if (decodeURIComponent(request.url).split('?')[0] !== `/${name}`) { response.writeHead(404).end(); return }

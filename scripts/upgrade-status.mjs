@@ -8,7 +8,7 @@ export function inspectUpgradeStatus({ hostTags, pluginManifest }, support = pol
   const supported = validatePolicy(support)
   if (!hostTags || !exactVersion(hostTags.latest)
       || !exactVersion(hostTags.next)) throw new Error('Registry must return exact latest/next host identities')
-  if (pluginManifest?.name !== '@nanmicoder/dsh-agent-teams' || !exactVersion(pluginManifest.version)) throw new Error('Registry plugin identity mismatch')
+  if (pluginManifest?.name !== '@yogurtss/dsh-teamflow' || !exactVersion(pluginManifest.version)) throw new Error('Registry plugin identity mismatch')
   const channels = Object.fromEntries(['latest', 'next'].filter(tag => hostTags[tag]).map(tag => [tag, hostTags[tag]]))
   const unverifiedChannels = Object.entries(channels).filter(([, version]) => !supported.includes(version)).map(([channel, version]) => ({ channel, version }))
   // This project publishes exact enumerations. An unfamiliar/wide declaration
@@ -39,7 +39,7 @@ export async function fetchUpgradeStatus(fetcher = fetch, support = policy) {
   }
   const [hostTags, pluginManifest] = await Promise.all([
     read('-/package/@deepseek-ai%2Fdsh/dist-tags'),
-    read('@nanmicoder%2Fdsh-agent-teams/latest'),
+    read('@yogurtss%2Fdsh-teamflow/latest'),
   ])
   return inspectUpgradeStatus({ hostTags, pluginManifest }, support)
 }

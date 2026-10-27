@@ -356,6 +356,10 @@ const liveProfiles = {
 registerAgentTeamsCommand(ctx, () => liveProfiles)
 installAgentTeamsGestureBoundary(ctx, () => liveProfiles)
 
+check('TeamFlow commands and legacy aliases both register',
+  commandDefinitions.has('teamflow') && commandDefinitions.has('teamflow-demo-delivery')
+    && commandDefinitions.has('agent-teams') && commandDefinitions.has('agent-teams-demo-delivery'))
+
 const command = commandDefinitions.get('agent-teams')
 const profileCommand = commandDefinitions.get('agent-teams-demo-delivery')
 check('slash command registers as /agent-teams',
@@ -388,7 +392,7 @@ check('slash command preserves the exact submitted line as user-authored chat',
       && block.text === `/agent-teams  ${goal}  `))
 check('preserved slash command still activates through the gesture boundary',
   invokedAgentTeamsGoal([submittedCommand]) === goal)
-check('activation directive names the protocol', buildActivationDirective(goal).includes('AgentTeams protocol'))
+check('activation directive names the protocol', buildActivationDirective(goal).includes('TeamFlow protocol'))
 const profileGoal = 'ship the prepared release'
 const profileActivated = profileCommand.handler({
   agent: captain, rawInput: ` ${profileGoal}`, signal: new AbortController().signal, commandId: 'cmd-profile-alias',
@@ -398,6 +402,10 @@ check('profile command queues a visible profile-specific user turn',
     && captain.followups[1]?.content.some(block => block.type === 'text' && block.text === `/agent-teams-demo-delivery ${profileGoal}`))
 
 const userMessage = text => ({ id: 'm', role: 'user', content: [{ type: 'text', text }], source: { kind: 'user' } })
+check('TeamFlow text gestures preserve generic and profile invocation',
+  invokedAgentTeamsInvocation([userMessage('/teamflow plan a migration')])?.goal === 'plan a migration'
+    && invokedAgentTeamsInvocation([userMessage('/teamflow-demo-delivery ship a CLI')], () => liveProfiles)?.profile === 'demo-delivery'
+    && invokedAgentTeamsInvocation([userMessage('/teamflower unrelated')]) === undefined)
 check('gesture recognizes a leading /agent-teams token',
   invokedAgentTeamsGoal([userMessage('/agent-teams ship a CLI')]) === 'ship a CLI')
 check('profile command gesture selects its configured profile and goal',

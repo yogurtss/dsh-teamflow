@@ -6,6 +6,7 @@ import { agentTeamsSource, observedSessionFormatVersion } from './harness-compat
 import { parseProfileInvocation, resolveProfileTaskPlanning, type TeamProfileConfig, type AgentTeamsInvocation } from './profiles.ts'
 
 export const AGENT_TEAMS_COMMAND = 'agent-teams'
+export const TEAMFLOW_COMMAND = 'teamflow'
 const PROFILE_COMMAND_PREFIX = `${AGENT_TEAMS_COMMAND}-`
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -36,7 +37,7 @@ function profileForCommand(commandName: string, profiles: Record<string, TeamPro
 
 /** Parse either the generic command or one generated profile alias. */
 function parseCommandText(text: string, profiles: Record<string, TeamProfileConfig>): AgentTeamsInvocation | undefined {
-  const trimmed = text.trimStart()
+  const trimmed = text.trimStart().replace(/^\/teamflow(?=$|[-\t\n\r ])/u, '/agent-teams')
   if (GESTURE.test(trimmed)) return parseProfileInvocation(trimmed.slice(AGENT_TEAMS_COMMAND.length + 1).trim())
   if (!trimmed.startsWith(`/${PROFILE_COMMAND_PREFIX}`)) return undefined
   const tokenEnd = trimmed.search(/[\t\n\r ]/u)
@@ -65,7 +66,7 @@ export function invokedAgentTeamsGoal(messages: readonly UserMessage[]): string 
 
 export function buildActivationDirective(goal: string, profile?: string, taskPlanning: 'captain' | 'seed' = 'seed'): string {
   const lines = [
-    'The user invoked an AgentTeams slash command. Follow the AgentTeams protocol already in your system instructions. Inspect existing team state with agent_teams_status when needed.',
+    'The user invoked an TeamFlow slash command. Follow the TeamFlow protocol already in your system instructions. Inspect existing team state with agent_teams_status when needed.',
     'Respect the current team state. Continue an existing plan or team without recreating it. Only when no current team exists, call agent_teams_create with approval="required". Build the complete staged roster and DAG, then stop and ask the user to review the Web plan. Do not approve or start it in this same turn.',
   ]
   if (profile !== undefined) {
@@ -87,31 +88,31 @@ export function buildActivationDirective(goal: string, profile?: string, taskPla
 export function registerAgentTeamsCommand(ctx: Context, getProfiles: () => Record<string, TeamProfileConfig> = () => ({})): void {
   ctx.effect(() => {
     const dispose: Array<() => void> = []
-    dispose.push(ctx.commands.register({
-      name: AGENT_TEAMS_COMMAND,
-      description: 'run a goal with a multi-agent team (you become the captain)',
+    for (const name of [TEAMFLOW_COMMAND, AGENT_TEAMS_COMMAND]) dispose.push(ctx.commands.register({
+      name,
+      description: 'TeamFlow: plan a team workflow with human review (you become the captain)',
       input: { hint: '[--profile <name>] <goal>' },
       handler(invocation: CommandInvocation): CommandResult {
         let parsed: AgentTeamsInvocation
         try { parsed = parseProfileInvocation(invocation.rawInput.trim()) } catch (error: unknown) { return { kind: 'error', text: String(error) } }
-        if (parsed.profile !== undefined && !Object.keys(getProfiles()).some(key => key.trim() === parsed.profile)) return { kind: 'error', text: `unknown AgentTeams profile "${parsed.profile}"` }
-        if (parsed.profile === undefined && parsed.goal === '') return { kind: 'error', text: `Usage: /${AGENT_TEAMS_COMMAND} [--profile <name>] <goal>` }
-        invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${AGENT_TEAMS_COMMAND}${invocation.rawInput}` }], source: { kind: 'user' } }))
-        return { kind: 'success', text: `AgentTeams activated${parsed.profile === undefined ? '' : ` with profile ${parsed.profile}`} — the captain will assemble the team.` }
+        if (parsed.profile !== undefined && !Object.keys(getProfiles()).some(key => key.trim() === parsed.profile)) return { kind: 'error', text: `unknown TeamFlow profile "${parsed.profile}"` }
+        if (parsed.profile === undefined && parsed.goal === '') return { kind: 'error', text: `Usage: /${name} [--profile <name>] <goal>` }
+        invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${name}${invocation.rawInput}` }], source: { kind: 'user' } }))
+        return { kind: 'success', text: `TeamFlow activated${parsed.profile === undefined ? '' : ` with profile ${parsed.profile}`} — the captain will assemble the team.` }
       },
     }))
     for (const profileName of Object.keys(getProfiles())) {
       const commandName = profileCommandName(profileName)
       if (commandName === undefined) continue
-      dispose.push(ctx.commands.register({
-        name: commandName,
-        description: `run a goal with the AgentTeams ${profileName} profile`,
+      for (const name of [commandName.replace(/^agent-teams/, TEAMFLOW_COMMAND), commandName]) dispose.push(ctx.commands.register({
+        name,
+        description: `run a goal with the TeamFlow ${profileName} profile`,
         input: { hint: '<goal>' },
         handler(invocation: CommandInvocation): CommandResult {
           const profile = profileForCommand(commandName, getProfiles())
-          if (profile === undefined) return { kind: 'error', text: `AgentTeams profile command "/${commandName}" is unavailable` }
-          invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${commandName}${invocation.rawInput}` }], source: { kind: 'user' } }))
-          return { kind: 'success', text: `AgentTeams activated with profile ${profile} — the captain will assemble the team.` }
+          if (profile === undefined) return { kind: 'error', text: `TeamFlow profile command "/${commandName}" is unavailable` }
+          invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${name}${invocation.rawInput}` }], source: { kind: 'user' } }))
+          return { kind: 'success', text: `TeamFlow activated with profile ${profile} — the captain will assemble the team.` }
         },
       }))
     }
@@ -129,7 +130,7 @@ export function installAgentTeamsGestureBoundary(ctx: Context, getProfiles: () =
     // resolved module constant can name another DSH line in the same profile (#236).
     const observed = observedSessionFormatVersion(agent)
     let invocation: AgentTeamsInvocation | undefined
-    try { invocation = invokedAgentTeamsInvocation(messages, getProfiles) } catch (error: unknown) { return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: `AgentTeams profile parsing failed: ${String(error)}` }], source: agentTeamsSource({ kind: 'agent-teams-command' }, observed) })] } }
+    try { invocation = invokedAgentTeamsInvocation(messages, getProfiles) } catch (error: unknown) { return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: `TeamFlow profile parsing failed: ${String(error)}` }], source: agentTeamsSource({ kind: 'agent-teams-command' }, observed) })] } }
     if (invocation === undefined) return decision
     signal.throwIfAborted()
     const profiles = getProfiles()
@@ -138,7 +139,7 @@ export function installAgentTeamsGestureBoundary(ctx: Context, getProfiles: () =
       : Object.entries(profiles).find(([key]) => key.trim() === invocation.profile)
     const known = invocation.profile === undefined || matched !== undefined
     const text = !known
-      ? `AgentTeams profile "${invocation.profile}" does not exist. Available profiles: ${Object.keys(profiles).join(', ') || '(none)'}. Do not create a team.`
+      ? `TeamFlow profile "${invocation.profile}" does not exist. Available profiles: ${Object.keys(profiles).join(', ') || '(none)'}. Do not create a team.`
       : buildActivationDirective(invocation.goal, invocation.profile, resolveProfileTaskPlanning(matched?.[1]))
     return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text }], source: agentTeamsSource({ kind: 'agent-teams-command', ...invocation.goal === '' ? {} : { goal: invocation.goal }, ...invocation.profile === undefined ? {} : { profile: invocation.profile } }, observed) })] }
   })

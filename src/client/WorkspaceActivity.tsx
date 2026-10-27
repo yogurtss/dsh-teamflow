@@ -14,7 +14,7 @@ import { WorkflowHistory } from './WorkflowHistory.tsx'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 
 export const TEAM_TAB_KIND = 'agent-teams'
-export const TEAM_TAB_ID = '@nanmicoder/dsh-agent-teams/activity'
+export const TEAM_TAB_ID = '@yogurtss/dsh-teamflow/activity'
 
 /** Optional host integration is observable so installing/removing it also switches the fallback. */
 export function createWorkspaceBridge() {
@@ -118,7 +118,7 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
       <div className={css.content}>
         <header className={css.heading}>
           <img src={LEAD_ART} alt="" aria-hidden />
-          <h2>AgentTeams</h2>
+          <h2>TeamFlow</h2>
           <span>{t('workspace.title')}</span>
         </header>
         {history && selected && <WorkflowHistory name={selected.name}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}

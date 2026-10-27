@@ -28,7 +28,7 @@ export async function runPluginInstallation({ version, pluginVersion, artifact, 
     if (!hostVerification(version).pluginManagerInstall) return [];
     const home = join(report, 'plugin-install-home');
     const install = await command([process.execPath, join(runtime, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), 'plugin', '--profile', 'web', 'add', '--save-exact', resolve(artifact)], runtime, environment({ DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' }), 'plugin-manager-install', 120000);
-    const installedPath = join(home, 'profiles/web/node_modules/@nanmicoder/dsh-agent-teams/package.json');
+    const installedPath = join(home, 'profiles/web/node_modules/@yogurtss/dsh-teamflow/package.json');
     const installed = existsSync(installedPath) ? JSON.parse(readFileSync(installedPath, 'utf8')) : undefined;
     const assertions = { exit0: install.code === 0 && !install.timedOut, exactPluginVersion: installed?.version === pluginVersion };
     return [{ scenario: 'plugin-manager-install', passed: Object.values(assertions).every(Boolean), assertions }];
@@ -41,10 +41,10 @@ for (const scenario of selectedScenarios) {
     const home = join(report, scenario, 'home'), profile = join(home, 'profiles', 'headless'), workspace = join(report, scenario, 'workspace');
     mkdirSync(profile, { recursive: true });
     mkdirSync(workspace, { recursive: true });
-    mkdirSync(join(profile, 'node_modules/@nanmicoder'), { recursive: true });
+    mkdirSync(join(profile, 'node_modules/@yogurtss'), { recursive: true });
     if (linkWorkspacePackages) linkDirectory(join(runtime, 'node_modules/@deepseek-ai'), join(profile, 'node_modules/@deepseek-ai'));
-    linkDirectory(join(runtime, 'node_modules/@nanmicoder/dsh-agent-teams'), join(profile, 'node_modules/@nanmicoder/dsh-agent-teams'));
-    json(join(profile, 'package.json'), { name: 'runtime-test-profile', version: '0.0.0', private: true, type: 'module', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless', '@nanmicoder/dsh-agent-teams'], patchReload: 'startup' } } });
+    linkDirectory(join(runtime, 'node_modules/@yogurtss/dsh-teamflow'), join(profile, 'node_modules/@yogurtss/dsh-teamflow'));
+    json(join(profile, 'package.json'), { name: 'runtime-test-profile', version: '0.0.0', private: true, type: 'module', dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless', '@yogurtss/dsh-teamflow'], patchReload: 'startup' } } });
     copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/harness-runtime-llm.mjs'), join(profile, 'fixture-llm.mjs'));
     writeFileSync(join(profile, 'cordis.patch.yml'), `- id: llm-deepseek\n  disabled: true\n- id: llm-pi-ai\n  disabled: true\n- id: agent-default-model\n  config:\n    provider: runtime-lab\n    model: fixture-model\n- insert:\n    - id: runtime-lab-fixture\n      name: './fixture-llm.mjs'\n`);
     if (scenario === 'lifecycle')

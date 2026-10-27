@@ -77,7 +77,7 @@ test('real installation entry is invoked for an unknown candidate and preserves 
       calls++
       assert.equal(label, 'plugin-manager-install')
       assert.deepEqual(argv.slice(2), ['plugin', '--profile', 'web', 'add', '--save-exact', options.artifact])
-      const installed = join(env.DSH_HOME, 'profiles/web/node_modules/@nanmicoder/dsh-agent-teams')
+      const installed = join(env.DSH_HOME, 'profiles/web/node_modules/@yogurtss/dsh-teamflow')
       mkdirSync(installed, { recursive: true })
       writeFileSync(join(installed, 'package.json'), JSON.stringify({ version: installedVersion }))
       return { code: exit, timedOut }

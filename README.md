@@ -1,12 +1,14 @@
 English · [简体中文](./README_ZH.md)
 
-# AgentTeams · Human-reviewed workflows
+# DSH TeamFlow · Human-reviewed workflows
 
-This is the [yogurtss/dsh-agent-teams](https://github.com/yogurtss/dsh-agent-teams) development fork of [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams). Discuss a goal, form an initial team, then adjust member instructions, task handoffs and human checkpoints.
+This is the [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) development fork of [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams). Discuss a goal, form an initial team, then adjust member instructions, task handoffs and human checkpoints.
 
-**Install this fork from GitHub or a local build.** Its package name remains `@nanmicoder/dsh-agent-teams` and its version remains `0.1.27`. These changes are not published to npm; the npm package installs upstream.
+**Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the version stays at `0.1.27` for now. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
 
-Click **团队与流程** at the top of the AgentTeams activity panel or team page to open the workbench. The button shows pending changes and human reviews; archived teams open read-only records.
+Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; archived teams open read-only records.
+
+Use `/teamflow` to start. Legacy `/agent-teams` and its profile commands remain supported. The `.agent-teams/` data directory, internal `agent_teams_*` tools and session event protocol remain unchanged to preserve existing records. Historical reports retain the names and screenshots captured at the time.
 
 ## What this fork adds
 
@@ -44,28 +46,28 @@ The [compatibility matrix](./compatibility.json) and [upstream release notes](./
 
 ## Replace an existing installation
 
-Stop or pause active teams and save plugin settings you need. Upstream and this fork share a package name: replace them in the **same profile**. Removing the package does not require deleting workspace `.agent-teams/` records.
+Stop or pause active teams and save plugin settings you need. The old package is `@nanmicoder/dsh-agent-teams`; the new package is `@yogurtss/dsh-teamflow`. Remove the old package in the **same profile** before installing TeamFlow. Do not enable both together. Removing the package does not require deleting workspace `.agent-teams/` records.
 
 ### Desktop: install from GitHub
 
-1. Find AgentTeams (`@nanmicoder/dsh-agent-teams`) in DSH's plugin manager and uninstall the previous installation.
+1. Uninstall AgentTeams (`@nanmicoder/dsh-agent-teams`) in DSH's plugin manager. If TeamFlow is already installed, uninstall TeamFlow (`@yogurtss/dsh-teamflow`) before updating.
 2. Open **Add plugin** and enter:
 
 ~~~text
-https://github.com/yogurtss/dsh-agent-teams
+https://github.com/yogurtss/dsh-teamflow
 ~~~
 
-3. Install, enable and restart DSH Desktop. The AgentTeams workspace should expose the workflow canvas and discussion context.
+3. Install, enable and restart DSH Desktop. The TeamFlow workspace should expose the workflow canvas and discussion context.
 
 **Desktop has its own core and profile. Standalone CLI `--profile web` does not replace Desktop plugins.** Prefer Desktop's plugin manager. Local packages require Desktop's CLI carrier and its actual profile, rather than an assumed standalone profile name. Upgrading a global CLI does not upgrade Desktop's embedded core.
 
 ### CLI / Web: install from GitHub
 
-Check `dsh --version`. Replace `web` with your actual profile and stop that Harness process. Skip remove for a first installation.
+Check `dsh --version`. Replace `web` with your actual profile and stop that Harness process. Skip remove for a first installation. When migrating from AgentTeams, first run `dsh plugin --profile web remove @nanmicoder/dsh-agent-teams`; skip the new-package remove below if TeamFlow is not installed.
 
 ~~~sh
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
-dsh plugin --profile web add github:yogurtss/dsh-agent-teams#main
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
+dsh plugin --profile web add github:yogurtss/dsh-teamflow#main
 dsh --profile web
 ~~~
 
@@ -73,7 +75,7 @@ Refresh the browser after restarting. The Git branch includes built `lib/` artif
 
 ### Install cloned or downloaded source (Windows PowerShell)
 
-Clone with `git clone https://github.com/yogurtss/dsh-agent-teams.git`, or extract **Code → Download ZIP**. These examples assume `G:\dsh_agents`; substitute your path. Use Node.js `^22.19.0 || >=24` and pnpm.
+Clone with `git clone https://github.com/yogurtss/dsh-teamflow.git`, or extract **Code → Download ZIP**. These examples assume `G:\dsh_agents`; substitute your path. Use Node.js `^22.19.0 || >=24` and pnpm.
 
 **Option A: build a tarball for regular use or another machine.**
 
@@ -84,7 +86,7 @@ pnpm build
 pnpm pack --out "$env:TEMP\agent-teams-fork.tgz"
 
 # Stop the target Harness profile; skip remove on first installation
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 dsh plugin --profile web add --save-exact "$env:TEMP\agent-teams-fork.tgz"
 dsh --profile web
 ~~~
@@ -94,7 +96,7 @@ For an already built `.tgz`, install its absolute path directly. A GitHub source
 **Option B: link a local directory for development.** After installing dependencies and building as above, stop Harness and run:
 
 ~~~powershell
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 dsh plugin --profile web add "G:\dsh_agents"
 dsh --profile web
 ~~~
@@ -104,7 +106,7 @@ Directory installation saves a `link:` dependency. Keep that directory in place.
 ### Verify the source, update or uninstall
 
 ~~~sh
-dsh plugin --profile web list @nanmicoder/dsh-agent-teams --depth 0
+dsh plugin --profile web list @yogurtss/dsh-teamflow --depth 0
 ~~~
 
 Inspect the actual profile's `package.json` if needed: the dependency must point to `github:yogurtss/...`, your `file:...tgz` or your `link:...directory`. A plain npm version identifies upstream. Check for workflow, discussion-context and human-checkpoint controls. The preview at `http://127.0.0.1:8371/` does not prove installation in DSH.
@@ -114,7 +116,7 @@ To update Git installs, remove/add in the same profile and restart. For reproduc
 To uninstall:
 
 ~~~sh
-dsh plugin --profile web remove @nanmicoder/dsh-agent-teams
+dsh plugin --profile web remove @yogurtss/dsh-teamflow
 ~~~
 
 To return to upstream, uninstall and install `@nanmicoder/dsh-agent-teams@0.1.27`, then restart. Back up team state: downgrading fork-specific checkpoint/discussion state has not been verified. Do not resume those teams with upstream.
@@ -135,7 +137,7 @@ Team and task content starts immediately: wide panes use columns and narrow pane
 
 ## How it works
 
-1. For a request to use AgentTeams, the captain follows the core protocol already in its system instructions. It continues an existing team and uses `agent_teams_status` when current state needs checking. When no team exists, the goal becomes a staged plan for review.
+1. For a request to use TeamFlow, the captain follows the core protocol already in its system instructions. It continues an existing team and uses `agent_teams_status` when current state needs checking. When no team exists, the goal becomes a staged plan for review.
 2. The captain adds role-specific members backed by continuable sub-agents.
 3. The goal becomes tasks with owners and explicit dependencies.
 4. The shared scheduler uses real `running / idle / ready` state to atomically claim one ready task per idle member and wake it. An interrupted resident attempt stays parked and can resume through a direct message without losing its capability; after a cold process restart, the scheduler retries stranded open work with a fresh attempt.
@@ -150,13 +152,13 @@ Captain sessions keep the concise core protocol and the original 14 native team 
 
 ## Slash command
 
-No “use AgentTeams” phrasing required. The plugin registers the
-closed-namespace `/agent-teams` host command, so the Web GUI slash menu shows
-an `agent-teams` placeholder with an input hint: pick it (or type the
+No “use TeamFlow” phrasing required. The plugin registers the
+closed-namespace `/teamflow` host command, so the Web GUI slash menu shows
+an `teamflow` placeholder with an input hint: pick it (or type the
 command), describe the goal, and press Enter.
 
 ```
-/agent-teams research the pricing pages of three competitors
+/teamflow research the pricing pages of three competitors
 ```
 
 The command pipeline claims the line, then preserves that exact input as an
@@ -167,7 +169,7 @@ logged (`command/run` / `command/done`).
 
 Surfaces without command adjudication (for example the headless CLI) get the
 same deterministic activation through a gesture boundary: any genuine user
-message starting with `/agent-teams` activates the protocol for the rest of
+message starting with `/teamflow` activates the protocol for the rest of
 the text. Mid-sentence mentions stay ordinary prose.
 
 Historical panels require saved team state or archives. Sessions from early versions that deleted teams without retaining archives do not yet support reconstructing the full panel from logs.
@@ -177,7 +179,7 @@ Historical panels require saved team state or archives. Sessions from early vers
 Defaults work without extra setup. A trusted profile can override member behavior:
 
 ```yaml
-- id: agent-teams
+- id: teamflow
   config:
     stateDir: .agent-teams
     memberProvider: spawn
@@ -206,7 +208,7 @@ This is model tool visibility and invocation policy for global tools, not an OS 
 
 `memberProvider` is the sub-agent runtime backend (`spawn` / `fork`), not an LLM provider. Cross-LLM-provider routing uses the optional `provider` + `model` fields of `agent_teams_add_member`; `memberModel` is only a model default for all members. A member on the captain's current provider/model inherits the captain's reasoning effort, while a changed provider or model automatically uses the target model's default. To request a particular effort, pass the optional `reasoning_effort` field — one of the target model's supported effort ids, or `"default"` to force the model's own default.
 
-`slashCommand: false` disables the deterministic `/agent-teams` activation surfaces (slash command and gesture boundary), leaving the natural-language trigger as the only entry point.
+`slashCommand: false` disables the deterministic `/teamflow` activation surfaces (slash command and gesture boundary), leaving the natural-language trigger as the only entry point.
 
 ## Boundaries
 
@@ -224,7 +226,7 @@ Community upgrade, audit, benchmark, testing and release skills are vendored wit
 The repository also ships the open Agent Skills package [`dsh-plugin-development`](./skills/dsh-plugin-development/SKILL.md):
 
 ```sh
-npx skills add yogurtss/dsh-agent-teams --skill dsh-plugin-development
+npx skills add yogurtss/dsh-teamflow --skill dsh-plugin-development
 ```
 
 ## Documentation
@@ -270,7 +272,7 @@ profiles:
         dependencies: [requirements]
 ```
 
-Use an explicit profile flag: `/agent-teams --profile demo-delivery implement the feature`. The first ordinary token is never treated as an implicit profile. Normal command runs call `agent_teams_create({ profile, approval: "required" })`: the roster and seed/Captain-designed DAG remain staged, no child session is created, and no task is claimed. Edit the plan in the activity panel using the host model catalog, return to chat so the Captain asks what to revise and then atomically updates the same draft, discard it, or click **Approve & Run**. Return/discard actions cancel any planning turn still running; discard also parks model-facing context that forbids silently creating a replacement team. Approval resolves the final provider/model/reasoning choices, commits the roster, and creates each member session only when its first task is ready. A running team is stopped from its own panel header through a confirmation dialog rather than from the composer. Direct tool clients may pass `approval: "automatic"` for the legacy immediate path. Failed review/test tasks do not unlock downstream work; automatic repair/review tasks do not depend on the failed review.
+Use an explicit profile flag: `/teamflow --profile demo-delivery implement the feature`. The first ordinary token is never treated as an implicit profile. Normal command runs call `agent_teams_create({ profile, approval: "required" })`: the roster and seed/Captain-designed DAG remain staged, no child session is created, and no task is claimed. Edit the plan in the activity panel using the host model catalog, return to chat so the Captain asks what to revise and then atomically updates the same draft, discard it, or click **Approve & Run**. Return/discard actions cancel any planning turn still running; discard also parks model-facing context that forbids silently creating a replacement team. Approval resolves the final provider/model/reasoning choices, commits the roster, and creates each member session only when its first task is ready. A running team is stopped from its own panel header through a confirmation dialog rather than from the composer. Direct tool clients may pass `approval: "automatic"` for the legacy immediate path. Failed review/test tasks do not unlock downstream work; automatic repair/review tasks do not depend on the failed review.
 
 ## License
 

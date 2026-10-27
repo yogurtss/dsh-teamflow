@@ -234,7 +234,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
       {proposal && <section className={css.contextProposal}><strong>待确认 · {proposal.title}</strong>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看并确认</button></section>}
     </section>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor} role="dialog" aria-modal="true" aria-label="AgentTeams 编排工作台" onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) setEditor(undefined); else setOpened(false) }
       if (event.key === 'Tab') {
         const scope = dialog.current

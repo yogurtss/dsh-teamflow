@@ -229,7 +229,7 @@ test('stable tool presentation uses real scoped registry and prompt assembly', a
       await fiber.dispose()
       assert.equal(host.tools.get('agent_teams_open', b), undefined)
       assert.equal((await names(b)).length, 14)
-      assert.doesNotMatch(renderPrompt(await assemble(b)), /AgentTeams captain protocol/)
+      assert.doesNotMatch(renderPrompt(await assemble(b)), /TeamFlow captain protocol/)
       fiber = host.plugin(plugin)
       await fiber.await()
       assert.equal((await names(a)).length, 14)

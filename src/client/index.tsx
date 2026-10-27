@@ -1,4 +1,4 @@
-/** Browser plugin for the AgentTeams activity floater and conversation card. */
+/** Browser plugin for the TeamFlow activity floater and conversation card. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -116,16 +116,16 @@ export function apply(ctx: ClientContext): void {
     name: 'shell.overlay',
     id: 'agent-teams-activity',
     order: 80,
-    label: 'AgentTeams activity',
+    label: 'TeamFlow activity',
     locale: AGENT_TEAMS_LOCALE_NAMESPACE,
   }, Panel))
 
   // The host command is only the slash-menu/admission surface. Its input is
   // replayed as the visible user message, so the generic result row would be
   // a duplicate placed before that message by command lifecycle ordering.
-  ctx.slots.inject('conversation.chat.commandview', () => ctx.slots.register({
+  for (const command of ['teamflow', 'agent-teams']) ctx.slots.inject('conversation.chat.commandview', () => ctx.slots.register({
     name: 'conversation.chat.commandview',
-    key: 'agent-teams',
+    key: command,
   }, HiddenAgentTeamsCommand))
 
   ctx.uiConversation.events.register(agentTeamsCardDefinition)
