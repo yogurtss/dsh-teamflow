@@ -2333,3 +2333,12 @@
   background: var(--dsw-alias-state-warn-primary);
   color: var(--dsw-alias-label-primary-inverted);
 }
+
+.quickMember { margin: 8px 0 8px 38px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2, #dce1e8); border-radius: 8px; display: grid; gap: 8px; font-size: 12px; }
+.quickMember label { display: grid; gap: 4px; }
+.quickMember textarea { box-sizing: border-box; width: 100%; min-height: 55px; resize: vertical; font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l2, #dce1e8); border-radius: 6px; padding: 6px; }
+.quickMember>div:last-child { display: flex; gap: 6px; }
+.quickMember>div:last-child button, .quickTranscript { font: inherit; padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2, #dce1e8); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.quickMember p[role=alert] { color: var(--dsw-alias-state-error-primary, #b94444); overflow-wrap: anywhere; }
+.quickTranscript { display: block; margin: 4px 0 4px 38px; font-size: 11px; }
+.memberBlock[data-selected-member] .memberRow { outline: 2px solid var(--dsw-alias-state-business-primary, #2866d7); outline-offset: 2px; }

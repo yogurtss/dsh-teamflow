@@ -18,6 +18,7 @@
  */
 
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
+import { QuickMemberEditor } from './QuickMemberEditor.tsx'
 import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
@@ -554,6 +555,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
   readonly workspace?: boolean
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [editingMember, setEditingMember] = useState<string>()
   const selectedAssignee = team.tasks.find(task => task.id === selectedTaskId)?.assignee
   const [membersOpen, setMembersOpen] = useState(workspace)
   const [stopOpen, setStopOpen] = useState(false)
@@ -706,14 +708,16 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
                   const owned = team.tasks.filter((task) => task.assignee === member.name)
                   const memberModel = memberRouteLabel(member)
                   return (
-              <div key={member.id || member.name} className={css.memberBlock} data-activity={member.activity} data-selected-member={workspace && selectedAssignee === member.name || undefined}>
+              <div key={member.id || member.name} className={css.memberBlock} data-activity={member.activity} data-selected-member={(editingMember === member.name || workspace && selectedAssignee === member.name) || undefined}>
                 <span className={css.memberBranch} aria-hidden><span /></span>
                 <button
                   type="button"
                   className={css.memberRow}
                   data-activity={member.activity}
                   onClick={() => {
-                    if (member.id !== '') {
+                    if (!historic && modelDirectory) {
+                      setEditingMember(value => value === member.name ? undefined : member.name)
+                    } else if (member.id !== '') {
                       onNavigate(team.captainSessionId as SessionId, member.id as SessionId)
                     }
                   }}
@@ -763,6 +767,8 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
                   </span>
                   <span className={css.memberCount}>{member.done}/{member.total}</span>
                 </button>
+                {editingMember === member.name && modelDirectory && !historic && <QuickMemberEditor key={member.name} team={team} member={member} directory={modelDirectory} t={t} close={() => setEditingMember(undefined)} />}
+                {!historic && modelDirectory && member.id !== '' && <button type="button" className={css.quickTranscript} onClick={() => onNavigate(team.captainSessionId as SessionId, member.id as SessionId)}>执行对话 ↗</button>}
                 <div className={css.assignmentLine}>
                   <span className={css.assignmentLabel}>{t(discarded
                     ? 'assignment.discarded'
@@ -1347,9 +1353,7 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
                     <TeamSection
                       key={team.teamId}
                       team={team}
-                      modelDirectory={team.phase === 'staged'
-                        ? modelDirectories.directoryFor(team.captainSessionId as SessionId)
-                        : undefined}
+                      modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)}
                       onContinuePlanning={returnToComposer}
                       onDiscarded={returnToComposer}
                       onNavigate={navigateToSession}

@@ -276,7 +276,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
         <label>团队目标<textarea required value={goal} onChange={e => setGoal(e.target.value)} /></label><button className={css.primary} disabled={working}>在 DSH 中讨论方案 ↗</button>
       </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
         <aside className={css.roster}><h3>成员 <button aria-label="添加成员" disabled={working} onClick={() => edit('member')}>＋ 添加</button></h3>
-          {team.members.filter(m => m.status !== 'removed').map(m => <article key={m.name} className={discussion === `member:${m.name}` ? css.selected : ''}>
+          {team.members.filter(m => m.status !== 'removed').map(m => <article key={m.name} className={editor?.type === 'member' && editor.id === m.name ? css.selected : ''} onClick={event => { if (!(event.target as HTMLElement).closest('button')) { selectDiscussion(`member:${m.name}`); setSelectedTask(undefined); edit('member', m.name) } }}>
             <button className={css.member} disabled={working} onClick={() => { selectDiscussion(`member:${m.name}`); setSelectedTask(undefined); edit('member', m.name) }}><img src={memberArtUrl(m.name, m.role ?? '')} alt="" /><span><strong>{m.name}</strong><span>{m.summary || m.role || '尚未填写职责概述'}</span></span></button>
             <small>{m.model || '继承队长模型'}</small><div><button disabled={working} onClick={() => prepareDiscussion(m.name)}>讨论调整 ↗</button>
               {m.id && openExecution && <button onClick={() => { openExecution(m.id, team.captainSessionId); setOpened(false) }}>执行对话 ↗</button>}
@@ -296,7 +296,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
                 </g> }))}
                 {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
               </svg>
-              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
+              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-member-match={!!editor?.id && editor.type === 'member' && task.assignee === editor.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
                 <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工验收' : '执行任务'} · {task.id}</div>
                 <button className={css.nodeBody} >
                   <strong>{task.subject}</strong><span className={css.taskOwner}><img src={task.checkpoint ? REVIEW_ART : memberArtUrl(task.assignee ?? '', team.members.find(m => m.name === task.assignee)?.role ?? '')} alt="" />{task.checkpoint ? '验收 Agent 与你' : task.assignee || '自动分配成员'}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
@@ -359,7 +359,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           {!member && !data.currentDiscussion && <button disabled={working || data.busy.includes(discussion)} onClick={() => void perform('new_discussion').then(ok => { if (ok) void openDiscussion() })}>新建独立讨论</button>}
         </aside>}
 
-      {editor && <form data-workflow-editor className={css.editor} onSubmit={event => {
+      {editor && <form key={`${editor.type}:${editor.id ?? 'new'}`} data-workflow-editor className={css.editor} onSubmit={event => {
         event.preventDefault()
         try {
           const route = draft['routeChanged'] ? { provider: draft['provider'], model: draft['model'], reasoningEffort: draft['reasoningEffort'] || 'default' } : {}
@@ -368,8 +368,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           void saveEdit(operations, editor.type === 'member' ? '调整团队成员' : '调整任务', true)
         } catch (error) { setError(String(error)) }
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'}</h3>
-        {editor.type === 'member' ? <>{field('name', '名称')}{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}
-          <div><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div></>
+        {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
             <p className={css.hint}>保存节点后，直接拖动画布中的连接柄建立关系。点击连线可查看两端并删除。</p></>}
         <footer><button className={css.primary} disabled={working}>保存</button>

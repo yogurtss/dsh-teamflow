@@ -56,6 +56,8 @@
 .roster article>div button { font-size: 11px; padding: 2px 6px; border-color: transparent; background: transparent; }
 .hint { font-size: 12px; color: var(--wb-muted); line-height: 1.8; }
 .selected { outline: 2px solid color-mix(in srgb, var(--wb-accent) 65%, transparent); outline-offset: -1px; }
+.node[data-member-match] { border-color: var(--wb-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wb-accent) 22%, transparent); }
+.memberModelSettings { padding: 10px; background: var(--wb-base); border: 1px solid var(--wb-border); border-radius: 8px; }
 .graphArea { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .toolbar { padding: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--wb-border); background: var(--wb-bg); }
 .toolbar span { font-size: 11px; color: var(--wb-muted); flex-basis: 100%; margin-top: 2px; }

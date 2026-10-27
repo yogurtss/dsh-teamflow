@@ -283,3 +283,5 @@ Use an explicit profile flag: `/teamflow --profile demo-delivery implement the f
 Human review gates have a distinct frame. When ready, the team panel and captain chat header show an actionable review notification. Opening it starts an independent review conversation with requirements and upstream results already listed; the review agent then summarizes evidence, gaps, and checks for the human decision. See the [walkthrough and UI screenshots](docs/human-review-2026-10-27/README.md).
 
 Select a member card in TeamFlow to edit its model and thinking level. For a staged team, the TeamFlow activity page includes a **Confirm and start team** button. See the [walkthrough](docs/model-start-2026-10-27/README.md).
+
+Select a member in the activity view to edit its model, thinking level and role inline. In the workbench, selecting a member highlights their tasks and brings model settings to the top. See the [walkthrough](docs/member-selection-2026-10-27/README.md).
