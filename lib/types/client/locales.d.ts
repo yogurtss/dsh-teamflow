@@ -49,6 +49,13 @@ export declare const zh: {
     'team.discarded': string;
     'format.listSeparator': string;
     'task.status.pending': string;
+    'task.status.reviewPassed': string;
+    'task.status.reviewPaused': string;
+    'task.status.reviewRejected': string;
+    'task.status.reviewWaiting': string;
+    'task.status.reviewReady': string;
+    'task.assignee.human': string;
+    'task.summary.review': string;
     'task.status.claimed': string;
     'task.status.inProgress': string;
     'task.status.completed': string;
@@ -271,6 +278,13 @@ export declare const en: {
     'team.discarded': string;
     'format.listSeparator': string;
     'task.status.pending': string;
+    'task.status.reviewPassed': string;
+    'task.status.reviewPaused': string;
+    'task.status.reviewRejected': string;
+    'task.status.reviewWaiting': string;
+    'task.status.reviewReady': string;
+    'task.assignee.human': string;
+    'task.summary.review': string;
     'task.status.claimed': string;
     'task.status.inProgress': string;
     'task.status.completed': string;

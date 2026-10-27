@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {createWorkspaceState,createTeamDiscovery} from '../lib/client/workspace-state.js'
-import {startActivityPolling} from '../lib/client/activity-monitor.js'
+import {startActivityPolling,publishWorkflowActivity,getActivitySnapshotsSnapshot,updateActivitySnapshots} from '../lib/client/activity-monitor.js'
 
 test('restored, closed, updated and newly created teams have distinct discovery semantics',()=>{
  const discover=createTeamDiscovery()
@@ -48,4 +48,17 @@ test('workspace DAG keeps real dependency endpoints aligned with enlarged nodes'
  assert.equal(layout.width,364)
  assert.equal(layout.nodes[1].x,200)
  assert.equal(layout.edges[0].path,'M164 38C178 38,186 38,200 38')
+})
+
+test('restoration and human approval publish live state without changing other team owners',()=>{
+ const own={workspace:'original project',teamId:'same',captainSessionId:'owner',tasks:[]},other={...own,captainSessionId:'other'}
+ updateActivitySnapshots({teams:[other],archivedTeams:[own]})
+ publishWorkflowActivity({...own,workspace:'',phase:'staged'})
+ assert.equal(getActivitySnapshotsSnapshot().teams.length,2)
+ assert.equal(getActivitySnapshotsSnapshot().teams.find(t=>t.captainSessionId==='owner').workspace,'original project')
+ assert.equal(getActivitySnapshotsSnapshot().archivedTeams[0],own,'archive remains available as evidence')
+ publishWorkflowActivity({...own,phase:'running',tasks:[{id:'gate',status:'completed',checkpoint:{decision:'approve'}}]})
+ assert.equal(getActivitySnapshotsSnapshot().teams.find(t=>t.captainSessionId==='owner').tasks[0].status,'completed')
+ assert.equal(getActivitySnapshotsSnapshot().teams.find(t=>t.captainSessionId==='other'),other)
+ updateActivitySnapshots({teams:[],archivedTeams:[]})
 })

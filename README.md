@@ -8,6 +8,8 @@ This is the [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) de
 
 Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; archived teams open read-only records.
 
+Human checkpoints require opening their evidence and clicking **通过验收** or **退回**; a chat message such as “review passed” does not write an approval. Completed workflows remain editable, and the archive tool rejects unfinished workflows. A TeamFlow archive can be restored from its history window with **恢复为待确认流程**: the archive and completed results remain intact, fresh member sessions are prepared, unfinished execution tasks stay paused, and the restored plan requires review before starting. Existing live teams are never overwritten. See the [recovery walkthrough](./docs/approval-recovery-2026-10-27/README.md).
+
 Use `/teamflow` to start. Only `/teamflow` and `/teamflow-<profile>` commands are registered; the old `/agent-teams` command and its profile aliases have been removed. Use `/teamflow --profile <name> <goal>` to select a profile explicitly. The `.agent-teams/` data directory, internal `agent_teams_*` tools and session event protocol remain unchanged to preserve existing records. Historical reports retain the names and screenshots captured at the time.
 
 ## What this fork adds

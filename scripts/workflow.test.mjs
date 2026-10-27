@@ -8,7 +8,9 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { cancelUnfinishedTask, createTeamDir, readTeam, writeTeam } from '../lib/state.js'
+import { cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
+import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
+import { registerAgentTeamsTools } from '../lib/tools.js'
 import { installWorkflowConversations } from '../lib/workflow-native.js'
 import { connectionIssue, connectionTarget } from '../lib/client/workflow-connections.js'
 import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
@@ -20,6 +22,66 @@ const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture',
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
+
+const sixOfSeven = () => {
+  const source=team();source.tasks=Array.from({length:6},(_,i)=>({...task(`t${i+1}`),status:'completed',output:`result ${i+1}`}));source.taskSeq=6
+  return applyWorkflowOperations(source,[{action:'add_task',id:'gate',subject:'人工检查',description:'核对全部六项成果',checkpoint:true,dependencies:source.tasks.map(t=>t.id)}])
+}
+
+test('archive tool refuses 6/7 workflows before modifying members or durable results', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-archive-guard-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const source=sixOfSeven(), stateRoot=join(root,'.agent-teams');await createTeamDir(stateRoot,source)
+  const captain={id:'captain-id',status:'idle',session:{header:{id:'captain-id',cwd:root},ownEvents:()=>[]}}
+  const definitions=new Map(), noop=()=>{}
+  const ctx={on:()=>noop,effect:fn=>fn(),logger:{warn:noop,debug:noop},tools:{register:value=>definitions.set(value.name,value)},agents:{get:id=>id===captain.id?captain:undefined},llm:{resolveCallConfig:async value=>value},subagents:{followup:async()=>{},registerContinuableSetup:()=>noop}}
+  registerAgentTeamsTools(ctx,{stateDir:'.agent-teams',memberProvider:'spawn',memberMaxDepth:1,maxMembers:8,profiles:{},toolPolicies:{}})
+  await assert.rejects(definitions.get('agent_teams_delete').execute({},{agent:captain,signal:new AbortController().signal}),/未完成节点.*不能归档/)
+  assert.deepEqual(await readTeam(stateRoot,'demo'),JSON.parse(JSON.stringify(source)),'guard runs before retiring or deleting any member')
+  assert.equal(await readArchivedTeam(stateRoot,'demo'),undefined)
+  const status=await definitions.get('agent_teams_status').execute({},{agent:captain,signal:new AbortController().signal})
+  const gate=status.tasks.find(t=>t.id==='gate');assert.equal(gate.human_checkpoint,true);assert.equal(gate.checkpoint_decision,'pending')
+  const text=definitions.get('agent_teams_status').output.render({},status)[0].text
+  assert.match(text,/HUMAN CHECKPOINT/);assert.match(text,/聊天文字不改变审批状态/)
+})
+
+test('restoring an archive preserves finished work and pauses unfinished execution with fresh members', () => {
+  const source=sixOfSeven();source.members[0].id='retired-child';source.members[0].status='removed'
+  source.tasks.push({...task('unfinished'),status:'claimed',attempt:2,attemptId:'old-capability',output:'partial output'})
+  const before=structuredClone(source), restored=prepareArchivedWorkflow(source)
+  assert.deepEqual(source,before);assert.equal(restored.phase,'staged');assert.equal(restored.planReviewState,'awaiting_review')
+  assert.deepEqual(restored.tasks.slice(0,6),source.tasks.slice(0,6));assert.equal(restored.tasks[6].status,'pending')
+  assert.equal(restored.members[0].status,'idle');assert.equal(restored.members[0].id,'');assert.ok(restored.members[0].previousSessionIds.includes('retired-child'))
+  const unfinished=restored.tasks.at(-1)
+  assert.equal(unfinished.status,'pending');assert.equal(unfinished.workflowPaused,true);assert.equal(unfinished.workflowRerunRequired,false)
+  assert.equal(unfinished.attempt,2);assert.equal(unfinished.attemptId,undefined);assert.equal(unfinished.stoppedAttempts[0].output,'partial output')
+  assert.equal(editorTarget(restored,{type:'task',id:'unfinished'}).type,'task')
+  assertWorkflowArchivable({...restored,tasks:restored.tasks.map(t=>({...t,status:'cancelled'}))})
+  const proposal=proposeWorkflow(sixOfSeven(),'old proposal',[{action:'update_member',name:'worker',summary:'old suggestion'}])
+  workflowState(source).discussions['discussion:graph']={key:'graph',messages:[],calls:[],proposal}
+  assert.equal(prepareArchivedWorkflow(source).workflow.discussions['discussion:graph'].proposal.status,'dismissed','stale proposals cannot block starting the restored plan')
+})
+
+test('archive recovery route is owner-bound, never starts work, and formal approval changes 6/7 into 7/7',async t=>{
+  const root=mkdtempSync(join(tmpdir(),'workflow-recover-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const stateRoot=join(root,'.agent-teams'), source=sixOfSeven();source.members[0].status='removed';source.members[0].id='retired-child'
+  await createTeamDir(join(stateRoot,'archive'),source)
+  const captain={id:'captain-id',status:'idle',session:{header:{id:'captain-id',cwd:root},ownEvents:()=>[]}}, stranger={...captain,id:'stranger'}
+  let handler,status,response,kicks=0
+  const ctx={agents:{get:id=>id===captain.id?captain:id===stranger.id?stranger:undefined},effect:fn=>fn(),logger:{warn(){}}}
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{kicks++}},{register:value=>{handler=value;return()=>{}}})
+  async function send(action,extra={}) {const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...extra})]);req.method='POST';req.headers={};await handler.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await send('restore_archive',{sessionId:stranger.id});assert.equal(status,409);assert.equal(await readTeam(stateRoot,'demo'),undefined)
+  await send('restore_archive');assert.equal(status,200,JSON.stringify(response));assert.equal(kicks,0);assert.equal(response.team.phase,'staged');assert.equal(response.activity.tasks.filter(t=>t.status==='completed').length,6)
+  assert.deepEqual(await readArchivedTeam(stateRoot,'demo'),JSON.parse(JSON.stringify(source)),'original archive remains intact')
+  await send('restore_archive');assert.equal(status,409,'cannot overwrite a live team')
+  const restored=await readTeam(stateRoot,'demo');restored.phase='running';await writeTeam(stateRoot,restored)
+  await send('materials',{discussion:'check:gate'});assert.equal(status,200,JSON.stringify(response))
+  const evidence=response.team.workflow.discussions['discussion:check:gate'].evidence
+  await send('review',{taskId:'gate',decision:'approve',note:'已核对六项成果',evidence})
+  assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks.filter(t=>t.status==='completed').length,7)
+  assert.equal(response.activity.tasks.filter(t=>t.status==='completed').length,7,'the main activity view receives the same approved state immediately')
+  assert.equal(response.team.tasks.find(t=>t.id==='gate').checkpoint.decision,'approve');assert.ok(await readTeam(stateRoot,'demo'),'approval does not archive the team')
+})
 
 test('member, task, checkpoint and discussion selection each own one property context', () => {
   const source=withGate(); let view=selectWorkbench(initialWorkbenchView(),{type:'task',id:'t1'},source)

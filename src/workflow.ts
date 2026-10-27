@@ -63,7 +63,7 @@ function nextTaskId(team: TeamState): string {
   return id
 }
 function editable(task: TeamTask): void {
-  if (task.status !== 'pending' || ((task.attempt ?? 0) !== 0 && !(task.workflowPaused && task.workflowRerunRequired)) || task.reassigning || task.checkpoint?.decision) {
+  if (task.status !== 'pending' || ((task.attempt ?? 0) !== 0 && !task.workflowPaused) || task.reassigning || task.checkpoint?.decision) {
     throw new Error(`任务 ${task.id} 已开始；请先停止该任务，完成的任务请通过返工创建新一轮`)
   }
 }

@@ -8,7 +8,9 @@ import type { TeamState } from './types.ts'
 import { boundDiscussion, discussionAddress, workflowDiscussion as discussionOf, type installWorkflowConversations } from './workflow-native.ts'
 import type { AgentTeamsRuntime, ToolsConfig } from './tools.ts'
 import { readJsonRequest, RequestBodyError, type WebRouteHost } from './web-routes.ts'
-import { createTeamDir, findTeamByCaptain, readTeam, recordRetiredMemberIds, sanitizeKey, withTeamLock, writeTeam } from './state.ts'
+import { createTeamDir, findTeamByCaptain, readArchivedTeam, readTeam, recordRetiredMemberIds, sanitizeKey, withTeamLock, writeTeam } from './state.ts'
+import { prepareArchivedWorkflow } from './workflow-lifecycle.ts'
+import { assembleTeamSnapshot } from './snapshot.ts'
 import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren } from './harness-compat.ts'
@@ -82,6 +84,19 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       }
       if (!teamId || sanitizeKey(teamId) !== teamId) throw new Error('无效团队 ID')
       const lock = `team:${root}:${teamId}`
+      if(action==='restore_archive') {
+        if(address) throw new Error('请返回原队长对话恢复流程')
+        const restored=await withTeamLock(`captain:${root}:${captain.id}`,()=>withTeamLock(lock,async()=>{
+          const archived=await readArchivedTeam(root,teamId)
+          if(!archived || !(await sessionLeadsTeamAsync(ctx,archived,captain.id))) throw new Error('当前会话不能恢复此归档')
+          if(await readTeam(root,teamId) || await findTeamByCaptain(root,captain.id,await leadIdentityOfAsync(ctx,captain.session))) throw new Error('当前对话已有可编辑团队，请先查看当前团队')
+          const copy=prepareArchivedWorkflow(archived)
+          await createTeamDir(root,copy)
+          return copy
+        }))
+        reply(200,{team:restored,base:workflowFingerprint(restored),ready:[],busy:[],activity:await assembleTeamSnapshot(ctx,root,'',restored)})
+        return
+      }
       const load = async (): Promise<TeamState> => {
         const team = await readTeam(root, teamId)
         if (!team || (address && !boundDiscussion(team, caller)) || !(await sessionLeadsTeamAsync(ctx, team, captain.id))) throw new Error('当前会话不能管理此团队')
@@ -246,7 +261,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       // A fresh discussion may archive the caller's old discussion after ownership was checked.
       const team = openedSessionId ? await readTeam(root, teamId) : await load()
       if (!team) throw new Error('团队不存在')
-      reply(200, { team, base: workflowFingerprint(team), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
+      reply(200, { team, base: workflowFingerprint(team), ...(action==='review'?{activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })
     } catch (error) {
       reply(error instanceof RequestBodyError ? error.status : 409, { error: error instanceof Error ? error.message : '操作失败' })

@@ -185,6 +185,13 @@ export function updateActivitySnapshots(update: Partial<ActivitySnapshots>): voi
   for (const listener of snapshotListeners) listener()
 }
 
+/** A confirmed workflow mutation updates the main activity view immediately. */
+export function publishWorkflowActivity(team: ActivityTeam): void {
+  const same=(item:ActivityTeam)=>item.teamId===team.teamId&&item.captainSessionId===team.captainSessionId
+  const previous=activitySnapshots.teams.find(same)??activitySnapshots.archivedTeams.find(same)
+  updateActivitySnapshots({teams:[...activitySnapshots.teams.filter(item=>!same(item)),{...team,workspace:previous?.workspace??team.workspace}]})
+}
+
 /** Poll cadence for the live host snapshot route. */
 export const ACTIVITY_POLL_MS = 1000
 /**

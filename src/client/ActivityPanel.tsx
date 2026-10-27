@@ -156,9 +156,15 @@ const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
   cancelled: 'task.status.cancelled',
 }
 
-function taskStatusLabel(status: string, t: AgentTeamsTranslate): string {
-  const key = TASK_STATUS_LABEL[status]
-  return key === undefined ? status : t(key)
+function taskStatusLabel(task: ActivityTask, t: AgentTeamsTranslate): string {
+  if(task.checkpoint && !['failed','cancelled'].includes(task.status)) {
+    if(task.status==='completed' && task.checkpoint.decision==='approve') return t('task.status.reviewPassed')
+    if(task.workflowPaused) return t('task.status.reviewPaused')
+    if(task.checkpoint.decision==='reject') return t('task.status.reviewRejected')
+    return t(task.state==='blocked'?'task.status.reviewWaiting':'task.status.reviewReady')
+  }
+  const key = TASK_STATUS_LABEL[task.status]
+  return key === undefined ? task.status : t(key)
 }
 
 function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
@@ -278,7 +284,8 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
   const running = team.tasks.filter((task) => task.state === 'running')
   const claimed = team.tasks.filter((task) => task.state === 'claimed')
   const blocked = team.tasks.filter((task) => task.state === 'blocked')
-  const ready = team.tasks.filter((task) => task.state === 'open' && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
+  const ready = team.tasks.filter((task) => !task.checkpoint && task.state === 'open' && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
+  const reviews = team.tasks.filter(task=>task.checkpoint && task.status==='pending' && !task.workflowPaused && !task.checkpoint.decision && task.dependencies.every(id=>team.tasks.some(item=>item.id===id&&item.status==='completed')))
   const failed = team.tasks.filter((task) => task.status === 'failed')
   if (discarded) return t('task.summary.discarded', { count: team.tasks.length })
   if (team.tasks.length === 0) return t('task.summary.waitingBreakdown')
@@ -291,7 +298,7 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
       failed: failed.length,
     })
   }
-  if (failed.length > 0 && running.length === 0 && claimed.length === 0 && ready.length === 0 && blocked.length === 0) {
+  if (failed.length > 0 && running.length === 0 && claimed.length === 0 && ready.length === 0 && reviews.length === 0 && blocked.length === 0) {
     return t('task.summary.failedSettled', { count: failed.length })
   }
   if (blocked.length > 0 && running.length > 0) {
@@ -302,6 +309,7 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
   }
   if (running.length > 0) return t('task.summary.running', { tasks: formatTaskIds(running.map((task) => task.id), t) })
   if (claimed.length > 0) return t('task.summary.claimed', { tasks: formatTaskIds(claimed.map((task) => task.id), t) })
+  if (reviews.length > 0) return t('task.summary.review', { tasks: formatTaskIds(reviews.map(task=>task.id),t) })
   if (ready.length > 0) return t('task.summary.ready', { tasks: formatTaskIds(ready.map((task) => task.id), t) })
   if (blocked.length > 0) return t('task.summary.blocked', { tasks: formatTaskIds(blocked.map((task) => task.id), t) })
   return t('task.summary.waitingSchedule')
@@ -362,7 +370,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
               <span className={css.completionDot} aria-hidden>{task.verdictStale !== undefined ? '!' : !discarded && task.status === 'completed' ? '✓' : '·'}</span>
               <span className={css.completionTaskId}>{task.id}</span>
               <span className={css.completionTaskSubject} title={task.subject}>{task.subject}</span>
-              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(task.status, t)}</span>
+              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(task, t)}</span>
             </li>)}
           </ul>}
         </div>
@@ -490,11 +498,11 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{workspace && <span className={css.dagOwner}>{task.checkpoint ? t('task.assignee.human') : task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
-                    {!discarded && task.state === 'claimed' && <span className={css.dagClaimedState}>{t('task.status.claimed')}</span>}
+                    {!discarded && !task.checkpoint && task.state === 'claimed' && <span className={css.dagClaimedState}>{t('task.status.claimed')}</span>}
                     {task.state === 'running' && (
                       <span className={css.dagRunningState} aria-label={t('task.runningAria')}>
                         <WorkGlyph active />
@@ -510,11 +518,11 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               <span className={css.taskDetailId}>{detailTask.id}</span>
               <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject.replace(/^开发\s*/u, '')}</span>
               <span className={css.taskDetailBadge} data-state={discarded ? 'cancelled' : taskTone(detailTask.state, detailTask.status)}>
-                {discarded ? t('task.status.notRun') : detailTask.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(detailTask.status, t)}
+                {discarded ? t('task.status.notRun') : detailTask.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(detailTask, t)}
               </span>
             </span>
             <span className={css.taskDetailLine}>
-              {detailTask.assignee || t('task.assignee.unclaimed')} · {discarded
+              {detailTask.checkpoint ? t('task.assignee.human') : detailTask.assignee || t('task.assignee.unclaimed')} · {discarded
                 ? t('task.detail.notRun')
                 : detailTask.status === 'completed'
                 ? t('task.detail.completed')
@@ -522,6 +530,8 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                   ? t('task.detail.cancelled')
                 : detailTask.status === 'failed'
                   ? t('task.detail.failed')
+                : detailTask.checkpoint
+                  ? taskStatusLabel(detailTask,t)
                 : detailTask.dependencies.length === 0
                 ? t('task.detail.noPrerequisite')
                 : waitingOn.length === 0
@@ -1338,7 +1348,7 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
               {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
                 openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
-              {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name}>
+              {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name} restore={team.workflowEnabled || team.tasks.some(task=>task.checkpoint) ? {sessionId:team.captainSessionId,teamId:team.teamId} : undefined}>
                 <TeamSection team={team} workspace historic onNavigate={navigateToSession} t={t} />
               </WorkflowHistory>)}
               {visibleHistoric.map(({ data, owner }) => <WorkflowHistory key={data.teamId} name={data.teamName}>

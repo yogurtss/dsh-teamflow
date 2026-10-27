@@ -89,6 +89,7 @@ import { TERMINAL_TASK_STATUSES, type TeamMember, type TeamState, type TeamTask 
 import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeamScheduler } from './scheduler.ts'
 import { installMailboxAdmission, isCurrentMail, mailboxContent, mailboxPrompt, readCurrentMailbox } from './mailbox.ts'
 import { resolveTeamProfile } from './profiles.ts'
+import { assertWorkflowArchivable } from './workflow-lifecycle.ts'
 import { forkLineageNote, leadIdentityOf, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeam, sessionLeadsTeamAsync } from './lineage.ts'
 
 export { steerCaptainReport } from './members.ts'
@@ -2359,6 +2360,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         attempt_id: task.attemptId ?? '',
         reassigning: task.reassigning === true,
         kind: taskKindOf(task),
+        ...task.checkpoint ? { human_checkpoint: true, checkpoint_round:task.checkpoint.round, checkpoint_decision:task.checkpoint.decision??'pending', review_instructions:'请在团队与流程打开材料并点击“通过验收”或“退回”；聊天文字不改变审批状态，不能把该节点当成可领取的执行任务。' } : {},
         ...task.round === undefined ? {} : { round: task.round },
         ...task.verdict === undefined ? {} : { verdict: task.verdict },
         ...task.supplementalEvidence === undefined ? {} : { supplemental_evidence: JSON.stringify(task.supplementalEvidence) },
@@ -2513,7 +2515,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_delete',
-    description: 'End and archive your team: interrupts members and moves the current tasks and mailboxes out of active state for later inspection. Use when the work is done or explicitly abandoned. A same-name archive replaces its previous generation.',
+    description: 'End and archive your team. TeamFlow workflows must have no unfinished nodes; a user saying review passed is not permission to archive. Keep completed workflows editable unless the user explicitly requests archival. For explicit abandonment, the user must first stop the workflow. A same-name archive replaces its previous generation.',
     parameters: {},
     output: {
       schema: {
@@ -2536,6 +2538,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
       const team = await requireCaptainTeam(ctx, workspace, config, captain)
       const members = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(ctx, stateRoot, team.id, captain.id)
+        assertWorkflowArchivable(fresh)
         // Include previously removed members so deleting a pre-fix team also
         // retires durable catalog entries left behind by remove_member.
         const roster = fresh.members.map(member => ({ ...member }))
@@ -2866,7 +2869,7 @@ function renderStatus(value: JsonValue): string {
       activity: string
       spawn_error?: string
     }[]
-    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; seed_id?: string; output?: string; kind?: string; round?: number; verdict?: string; findings_open?: number; supplemental_evidence?: string; fixes?: string }[]
+    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; seed_id?: string; output?: string; kind?: string; round?: number; verdict?: string; findings_open?: number; supplemental_evidence?: string; fixes?: string; human_checkpoint?: boolean; checkpoint_round?: number; checkpoint_decision?: string; review_instructions?: string }[]
     captain_inbox: { from: string; content: string }[]
     member_inbox?: { from: string; content: string }[]
     member_inboxes: Record<string, { count: number; latest: string }>
@@ -2909,11 +2912,11 @@ function renderStatus(value: JsonValue): string {
       const evidence = task.supplemental_evidence ? `\n      Supplemental observations (original verdict unchanged): ${task.supplemental_evidence}` : ''
       const handoff = task.reassigning ? ' (reassigning)' : ''
       const seed = task.seed_id === undefined || task.seed_id === '' ? '' : ` seed ${task.seed_id}`
-      const kind = task.kind ? ` ${task.kind}` : ''
+      const kind = task.human_checkpoint ? ` HUMAN CHECKPOINT round ${task.checkpoint_round} (${task.checkpoint_decision})` : task.kind ? ` ${task.kind}` : ''
       const round = task.round === undefined ? '' : ` r${task.round}`
       const verdict = task.verdict === undefined ? '' : ` verdict ${task.verdict}`
       const fixes = task.fixes === undefined ? '' : ` fixes ${task.fixes}`
-      return `  - ${task.id} [${task.status}]${kind}${round}${verdict}${fixes} attempt ${task.attempt}${handoff}${seed} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}${evidence}`
+      return `  - ${task.id} [${task.status}]${kind}${round}${verdict}${fixes} attempt ${task.attempt}${handoff}${seed} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}${evidence}${task.review_instructions ? `\n      ${task.review_instructions}` : ''}`
     }),
     ...team.coverage === undefined || team.coverage.length === 0 ? [] : [
       'Coverage:',

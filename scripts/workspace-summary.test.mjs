@@ -49,3 +49,15 @@ test('inbox renders unread snapshot content safely and keeps scroll regions keyb
   assert.ok(html.includes(en['workspace.inboxHint']))
   assert.doesNotMatch(render(base, en, { workspace: false }), /class="workspaceSummary"/)
 })
+
+for(const dict of [zh,en]) test(`human checkpoints use review labels and approval updates the progress (${dict===zh?'zh':'en'})`,()=>{
+  const tasks=Array.from({length:6},(_,i)=>task(`done-${i}`,'completed'))
+  tasks.push({...task('human','pending','open'),checkpoint:{round:1,history:[]},dependencies:tasks.map(t=>t.id)})
+  const html=render({...base,tasks},dict)
+  assert.match(html,/data-completed="6" data-total="7"/)
+  assert.ok(html.includes(dict['task.status.reviewReady']));assert.ok(!html.includes(dict['task.summary.ready'].replace('{tasks}','human')))
+  assert.ok(!html.includes(dict['task.detail.ready']))
+  tasks.at(-1).status='completed';tasks.at(-1).state='completed';tasks.at(-1).checkpoint.decision='approve'
+  const approved=render({...base,tasks},dict)
+  assert.match(approved,/data-completed="7" data-total="7"/);assert.ok(approved.includes(dict['task.status.reviewPassed']))
+})

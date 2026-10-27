@@ -15,8 +15,9 @@ import { ProposalReview, type ProposalReviewDraft } from './ProposalReview.tsx'
 import { TaskRerunPicker } from './TaskRerunPicker.tsx'
 import { rerunnableTasks } from '../task-rerun.ts'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialEditorDraft, initialWorkbenchView, selectWorkbench, targetDiscussion, type EditorTarget, type WorkbenchTarget, type WorkbenchView } from './workbench-selection.ts'
+import { publishWorkflowActivity, type ActivityTeam } from './activity-monitor.ts'
 
-interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string }
+interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string; activity?:ActivityTeam }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
   const response = await fetch('/plugins/dsh-agent-teams/workflow', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
   const result = await response.json() as Response & { error?: string }
@@ -166,6 +167,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     try {
       const result = await request({ sessionId, teamId: activeId, discussion, action, ...fields })
       if (!result) return
+      if(result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) { setData(result); setActiveId(result.team.id) }
       return result
     } catch (err) { if (mounted.current) setError(err instanceof Error ? err.message : String(err)); return undefined }

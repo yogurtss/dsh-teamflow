@@ -12,7 +12,7 @@ export function editorTarget(team: TeamState | undefined, target: WorkbenchTarge
   if(target.type==='edge'||target.type==='discussion') return
   if(target.type==='member'||!target.id) return target
   const task=team?.tasks.find(item=>item.id===target.id)
-  if(task?.status==='pending' && ((task.attempt??0)===0 || task.workflowRerunRequired) && !task.checkpoint?.decision && !task.reassigning) return target
+  if(task?.status==='pending' && ((task.attempt??0)===0 || task.workflowPaused) && !task.checkpoint?.decision && !task.reassigning) return target
 }
 export function targetDiscussion(target: WorkbenchTarget): string {
   return target.type==='discussion'?target.key:target.type==='member'&&target.id?`member:${target.id}`:target.type==='check'&&target.id?`check:${target.id}`:'graph'
