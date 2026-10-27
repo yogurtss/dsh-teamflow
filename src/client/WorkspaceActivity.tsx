@@ -5,7 +5,7 @@ import type { ISidebarRight } from '@deepseek-ai/dsh-client-ui-sidebar-right/cli
 import { ActivityPanel, TeamSection, historicCardTeam, type ActivityPanelProps } from './ActivityPanel.tsx'
 import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
-import { currentSessionId } from './session-navigation.ts'
+import { currentSessionId, openWorkflowConversation } from './session-navigation.ts'
 import { getActivityMonitorTargetsSnapshot, getActivitySnapshotsSnapshot, startActivityPolling, subscribeActivityMonitorTargets, subscribeActivitySnapshots, updateActivitySnapshots } from './activity-monitor.ts'
 import { createTeamDiscovery, type WorkspaceActivityState } from './workspace-state.ts'
 import { LEAD_ART } from './artwork.ts'
@@ -124,7 +124,7 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
         {history && selected && <WorkflowHistory name={selected.name}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}
         {!history && <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={selected?.teamId} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext}
           waitingCount={selected?.phase !== 'staged' && !selected?.halted ? selected?.tasks.filter(task => task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && task.dependencies.every(id => selected.tasks.some(t => t.id === id && t.status === 'completed'))).length : 0}
-          openConversation={id => openMember(id as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)}
+          openConversation={id => openWorkflowConversation(openMember, id as import('@deepseek-ai/dsh-session/types').SessionId)}
           openExecution={(id, parentId) => openMember((parentId ?? sessionId) as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)} />}
         {!isNativeContext && status === 'error' && <div className={css.error} role="alert"><span>{t('workspace.error')}</span><button onClick={() => setRetry(value => value + 1)}>{t('workspace.retry')}</button></div>}
         {records.length > 1 && <nav className={css.selector} aria-label={t('workspace.title')}>

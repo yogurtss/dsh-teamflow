@@ -28,7 +28,7 @@ import {
   IconStopFill16, IconWarningOutline16,
 } from './icons.tsx'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { currentSessionId } from './session-navigation.ts'
+import { currentSessionId, openWorkflowConversation } from './session-navigation.ts'
 import type { ModelDirectory, ModelDirectoryResolver } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -1327,10 +1327,10 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
           <div className={css.teams}>
             <div className={css.workflowLaunchers}>
               {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current}
-                openConversation={id => navigateToSession(current, id as SessionId)}
+                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
               {visibleTeams.map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId}
-                openConversation={id => navigateToSession(team.captainSessionId as SessionId, id as SessionId)}
+                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
                 openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
               {visibleArchived.map(team => <WorkflowHistory key={team.teamId} name={team.name}>
                 <TeamSection team={team} workspace historic onNavigate={navigateToSession} t={t} />

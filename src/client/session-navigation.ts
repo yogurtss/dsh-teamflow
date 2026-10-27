@@ -34,6 +34,14 @@ export interface AgentTeamsLayoutNavigator {
   beginNavigation?(): AbortSignal
 }
 
+/** Independent workflow discussions are ordinary sessions, never captain subagents. */
+export function openWorkflowConversation(
+  openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>,
+  sessionId: SessionId,
+): void | Promise<void> {
+  return openMember(sessionId, sessionId)
+}
+
 /**
  * Open one member's persisted transcript.
  *

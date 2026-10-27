@@ -34,7 +34,7 @@ Edges mean execution order: B waits for A. To insert a checkpoint manually, add 
 
 </details>
 
-Manual canvas edits save directly; AI proposals still require confirmation. Member configuration discussions show a context-and-intent panel before opening a fresh independent session. New execution tasks added to running teams start paused so you can wire them before resuming.
+Manual canvas edits save directly; AI proposals still require confirmation. Member configuration discussions open a fresh independent session with the current role, execution instructions, and assignments shown in the opening message; the original conversation remains intact. New execution tasks added to running teams start paused so you can wire them before resuming.
 
 ## Validation scope
 

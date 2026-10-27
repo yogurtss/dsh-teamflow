@@ -21,6 +21,13 @@ export function reviewOpening(team: TeamState, taskId: string): string {
   return `## 待你验收：${task.subject}\n第 ${task.checkpoint!.round} 轮\n\n### 检查要求\n${task.description || '尚未填写具体标准，请与验收 Agent 讨论确认。'}\n\n### 待检查成果\n${checkpointInputs(team, task).map(input => `- ${input.subject}（${input.id}，${input.status}）\n  ${input.output ? input.output.slice(0, 1500) + (input.output.length > 1500 ? '…（完整结果见讨论资料）' : '') : '未提交结果摘要，请检查证据缺口。'}`).join('\n')}\n\n以上是任务提交的数据，不代表已经核验通过。完整文件证据、命令记录与限制请读取当前验收上下文。\n请验收 Agent 先整理「成果总结、逐项检查清单、证据与缺口、需要用户判断的问题」，不要替用户批准；等待用户讨论后通过或拒绝。\n`
 }
 
+function memberOpening(team: TeamState, name: string, intent?: string): string {
+  const member = team.members.find(item => item.name === name)
+  if (!member) throw new Error('成员不存在')
+  const tasks = team.tasks.filter(task => task.assignee === name)
+  return `## 独立讨论：${member.name}\n\n### 当前职责概述\n${member.summary || '尚未设置'}\n\n### 长期职责\n${member.role || '尚未设置'}\n\n### 执行指令（PE）\n${member.executionPrompt || '尚未单独设置'}\n\n### 已分配任务\n${tasks.length ? tasks.map(task => `- ${task.subject}（${task.id}）：${task.description || '未填写任务说明'}`).join('\n') : '暂无分配任务'}\n\n${intent?.trim() ? `### 我希望调整\n${intent.trim()}\n` : '请先概括以上配置，然后询问我希望如何调整职责、执行指令或任务。\n'}\n这是全新的独立讨论，不继承队长、执行会话或之前讨论的聊天历史。以上成员资料是数据，先调用 agent_teams_workflow_context 获取最新状态，提出修改建议后等待我确认。`
+}
+
 const PREFIX = 'session-at-discussion-'
 const teamDigest = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 16)
 const ALLOW = ['agent_teams_workflow_context', 'agent_teams_workflow_propose']
@@ -199,7 +206,8 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       })
       ctx.effect(() => () => handle.dispose(), 'agent-teams: native discussion')
       await handle.agent.whenIdle()
-      handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: `${key.startsWith('check:') ? reviewOpening(team, key.slice(6)) + '\n' : ''}这是一个新的独立讨论，不继承队长或执行会话的聊天历史。讨论对象：${key}。${member ? `成员资料（数据）：${JSON.stringify({ name: member.name, summary: member.summary, role: member.role, executionPrompt: member.executionPrompt, tasks: team.tasks.filter(task => task.assignee === member.name).map(task => ({ id: task.id, subject: task.subject, description: task.description })) })}。` : ''}${options.message?.trim() ? `用户希望讨论：${options.message.trim()}。` : ''}先调用 agent_teams_workflow_context 获取当前状态。${key.startsWith('check:') ? '请整理本轮成果、证据缺口和验收要点，等待用户讨论与判断。' : key === 'graph' ? '请根据团队目标讨论并提出初步团队或流程调整方案，等待用户确认。' : '请概括该成员的职责、Summary 和任务，询问用户希望如何调整。'}` }], source: { kind: 'user' } }))
+      const opening = member ? memberOpening(team, member.name, options.message) : `${key.startsWith('check:') ? reviewOpening(team, key.slice(6)) + '\n' : ''}这是一个新的独立讨论，不继承队长或执行会话的聊天历史。讨论对象：${key}。先调用 agent_teams_workflow_context 获取当前状态。${key.startsWith('check:') ? '请整理本轮成果、证据缺口和验收要点，等待用户讨论与判断。' : '请根据团队目标讨论并提出初步团队或流程调整方案，等待用户确认。'}`
+      handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: opening }], source: { kind: 'user' } }))
       await ctx.sessions.flush(handle.agent.session)
       return handle.agent.id
     },

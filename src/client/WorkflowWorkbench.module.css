@@ -171,7 +171,6 @@
 .workbench .output:hover { background: color-mix(in srgb, var(--wb-accent) 15%, transparent); }
 @media(max-width:520px) { .columns[data-editing='true'] { grid-template-columns: minmax(0,1fr); grid-template-rows: 140px 240px minmax(250px,1fr); } .columns[data-editing='true']>.roster { grid-row: auto; } .columns[data-editing='true']>.editor { grid-column: 1; } }
 
-.editor[data-discussion-intro]>.contextInfo { max-height: 220px; overflow: auto; border: 1px solid var(--wb-border); border-radius: 8px; padding: 0 10px; }
 
 .checkpoint { border: 2px dashed var(--wb-accent); border-radius: 18px; }
 .checkpoint .drag { color: var(--wb-accent); font-weight: 600; }

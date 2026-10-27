@@ -76,8 +76,6 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   const [editor, setEditor] = useState<{ type: 'member' | 'task' | 'check'; id?: string }>()
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [selectedEdge, setSelectedEdge] = useState<{ from: string; to: string }>()
-  const [discussionIntro, setDiscussionIntro] = useState<string>()
-  const [discussionGoal, setDiscussionGoal] = useState('')
   const [zoom, setZoom] = useState(1)
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [link, setLink] = useState<{ from: string; x: number; y: number; to?: string; issue?: string }>()
@@ -158,7 +156,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     const result = await perform('open_discussion', { discussion: key, teamId: targetId, fresh, message })
     if (result?.openedSessionId) {
       if (result.openedSessionId === team?.captainSessionId || !result.openedSessionId.startsWith('session-at-discussion-')) { setError('宿主未返回独立讨论会话，已取消跳转'); return }
-      try { await openConversation(result.openedSessionId); setOpened(false); setDiscussionIntro(undefined); openContext?.() }
+      try { await openConversation(result.openedSessionId); setOpened(false); openContext?.() }
       catch (error) { setError(String(error)) }
     }
   }
@@ -169,9 +167,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
   async function saveEdit(operations: WorkflowOperation[], title: string, finishEditing = false): Promise<void> {
     if (await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, pos(task.id)]) ?? []) })) { if (finishEditing) setEditor(undefined); setSelectedEdge(undefined) }
   }
-  function prepareDiscussion(name: string): void {
-    setEditor(undefined); setSelectedTask(undefined); setSelectedEdge(undefined); setDiscussionIntro(name); setDiscussionGoal(''); selectDiscussion(`member:${name}`)
-  }
+  function prepareDiscussion(name: string): void { void openDiscussion(`member:${name}`, activeId, true) }
   async function deleteEdge(): Promise<void> {
     const target = team?.tasks.find(task => task.id === selectedEdge?.to)
     if (!target || !selectedEdge || working) return
@@ -200,7 +196,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
     target.onpointercancel = () => { cleanup(); suppressNodeClick.current = false; setPositions(prev => { const next = { ...prev }; delete next[task.id]; return next }) }
   }
   function edit(type: 'member' | 'task' | 'check', id?: string): void {
-    setEditor({ type, id }); setPane(type === 'member' ? 'members' : 'flow'); setError(''); setSelectedEdge(undefined); setDiscussionIntro(undefined)
+    setEditor({ type, id }); setPane(type === 'member' ? 'members' : 'flow'); setError(''); setSelectedEdge(undefined)
     const m = team?.members.find(item => item.name === id), t = team?.tasks.find(item => item.id === id)
     setDraft(type === 'member' ? { name: m?.name ?? '', summary: m?.summary ?? m?.role ?? '', role: m?.role ?? '', executionPrompt: m?.executionPrompt ?? '' }
       : { subject: t?.subject ?? '', description: t?.description ?? '', assignee: t?.assignee ?? '' })
@@ -252,7 +248,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
       {proposal && <section className={css.contextProposal}><strong>待确认 · {proposal.title}</strong>{proposal.operations.map((op, i) => <pre key={i}>{describeOperation(op, team, proposal.operations)}</pre>)}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看并确认</button></section>}
     </section>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor || !!discussionIntro || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
       if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) setEditor(undefined); else setOpened(false) }
       if (event.key === 'Tab') {
@@ -271,7 +267,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
       {!activeId ? <form className={css.create} onSubmit={e => { e.preventDefault(); void createFlow() }}>
         <h2>描述目标，一起规划团队</h2><label>团队名称<input required value={name} onChange={e => setName(e.target.value)} /></label>
         <label>团队目标<textarea required value={goal} onChange={e => setGoal(e.target.value)} /></label><button className={css.primary} disabled={working}>在 DSH 中讨论方案 ↗</button>
-      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-pane={pane} data-editing={!!editor || !!discussionIntro || !!selectedEdge || !!activeTask}>
+      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
         <aside className={css.roster}><h3>成员 <button aria-label="添加成员" disabled={working} onClick={() => edit('member')}>＋ 添加</button></h3>
           {team.members.filter(m => m.status !== 'removed').map(m => <article key={m.name} className={discussion === `member:${m.name}` ? css.selected : ''}>
             <button className={css.member} disabled={working} onClick={() => { selectDiscussion(`member:${m.name}`); setSelectedTask(undefined); edit('member', m.name) }}><img src={memberArtUrl(m.name, m.role ?? '')} alt="" /><span><strong>{m.name}</strong><span>{m.summary || m.role || '尚未填写职责概述'}</span></span></button>
@@ -279,21 +275,21 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
               {m.id && openExecution && <button onClick={() => { openExecution(m.id, team.captainSessionId); setOpened(false) }}>执行对话 ↗</button>}
               {openExecution && m.previousSessionIds?.map((id, i) => <button key={id} onClick={() => { openExecution(id, team.captainSessionId); setOpened(false) }}>历史执行 {i + 1} ↗</button>)}</div>
           </article>)}
-          <p className={css.hint}>点击成员卡片直接编辑；讨论调整先展示成员资料，再开启独立配置对话。</p>
+          <p className={css.hint}>点击成员卡片直接编辑；讨论调整会新建独立对话，先显示成员资料。</p>
         </aside>
         <main className={css.graphArea}>
           <nav className={css.toolbar}><button disabled={working || !!editor} onClick={() => edit('task')}>＋ 任务</button><button disabled={working || !!editor} onClick={() => edit('check')}>＋ 人工检查</button><button aria-label="缩小画布" onClick={() => setZoom(value => Math.max(.45, value - .1))}>−</button><button aria-label="放大画布" onClick={() => setZoom(value => Math.min(1.5, value + .1))}>＋</button><button onClick={fitCanvas}>适应画布</button><span role={link || taskEditing ? 'status' : undefined}>{link ? link.issue ?? (link.to ? '已吸附到输入端 · 松开连接' : '靠近下一节点以连接 · Esc 取消') : '拖动节点右侧中心连接柄建立交接；点击节点编辑属性、点击连线查看；Delete 删除选中对象'}</span></nav>
           {reviewNotice}
-          <div className={css.canvas} ref={canvas} onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)) { setSelectedEdge(undefined); setSelectedTask(undefined); setEditor(undefined); setDiscussionIntro(undefined) } }}>
+          <div className={css.canvas} ref={canvas} onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)) { setSelectedEdge(undefined); setSelectedTask(undefined); setEditor(undefined) } }}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
               <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor" /></marker></defs>
                 {team.tasks.flatMap(t => t.dependencies.map(dep => { const a = pos(dep), b = pos(t.id); const path = `M${a.x + 225},${a.y + 55} C${a.x + 260},${a.y + 55} ${b.x - 35},${b.y + 55} ${b.x},${b.y + 55}`; return <g key={`${dep}-${t.id}`} data-selected={selectedEdge?.from === dep && selectedEdge.to === t.id} className={css.edge}>
                   <path d={path} markerEnd="url(#workflow-arrow)" />
-                  <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={`交接：${team.tasks.find(task => task.id === dep)?.subject ?? dep} → ${t.subject}`} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { setSelectedEdge({ from: dep, to: t.id }); setSelectedTask(undefined); setEditor(undefined); setDiscussionIntro(undefined); setDiscussion('graph') }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedEdge({ from: dep, to: t.id }); setSelectedTask(undefined) } }} />
+                  <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={`交接：${team.tasks.find(task => task.id === dep)?.subject ?? dep} → ${t.subject}`} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { setSelectedEdge({ from: dep, to: t.id }); setSelectedTask(undefined); setEditor(undefined); setDiscussion('graph') }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedEdge({ from: dep, to: t.id }); setSelectedTask(undefined) } }} />
                 </g> }))}
                 {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
               </svg>
-              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); setDiscussionIntro(undefined); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
+              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${selectedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if (working || (event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; setSelectedEdge(undefined); setSelectedTask(task.id); if (task.status === 'pending' && (task.attempt ?? 0) === 0 && !task.checkpoint?.decision) edit(task.checkpoint ? 'check' : 'task', task.id); else setEditor(undefined) }}>
                 <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工验收' : '执行任务'} · {task.id}</div>
                 <button className={css.nodeBody} >
                   <strong>{task.subject}</strong><span className={css.taskOwner}><img src={task.checkpoint ? REVIEW_ART : memberArtUrl(task.assignee ?? '', team.members.find(m => m.name === task.assignee)?.role ?? '')} alt="" />{task.checkpoint ? '验收 Agent 与你' : task.assignee || '自动分配成员'}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
@@ -332,11 +328,11 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           </div>
         </main>
           {selectedEdge && <aside className={css.editor} aria-label="交接详情"><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>上游完成后，下游才开始。按 Delete 删除此连线。</p><button disabled={working} onClick={() => void deleteEdge()}>删除连线</button></aside>}
-          {activeTask && !editor && !discussionIntro && !selectedEdge && <aside className={css.editor}><strong>{activeTask.subject}</strong><p>{activeTask.description || '暂无任务说明'}</p><div>
+          {activeTask && !editor && !selectedEdge && <aside className={css.editor}><strong>{activeTask.subject}</strong><p>{activeTask.description || '暂无任务说明'}</p><div>
             {!activeTask.checkpoint && !['completed', 'failed', 'cancelled'].includes(activeTask.status) && <button disabled={working} onClick={() => void perform(activeTask.workflowPaused ? 'resume_task' : 'stop_task', { taskId: activeTask.id })}>{activeTask.workflowPaused ? '继续执行' : '停止任务以编辑'}</button>}
           </div></aside>}
 
-        {!editor && !discussionIntro && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
+        {!editor && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
           <small>{reviewTask ? '一起检查成果，由你决定是否通过' : '讨论不影响执行，修改确认后生效'}</small></div></header>
           <div className={css.messages}>
             <p className={css.hint}>{reviewTask ? '在原生验收对话中共同检查成果，回到这里确认验收决定。' : member ? '与独立配置顾问讨论职责、Summary、执行指令和任务。' : '在 DSH 原生对话中讨论团队与流程，修改方案会显示在这里。'}</p>
@@ -355,7 +351,7 @@ export function WorkflowWorkbench({ sessionId, teamId, waitingCount = 0, openExe
           {reviewTask && <div className={css.composer}><label>验收意见（随决定保存）<textarea aria-label="验收意见" value={note} onChange={e => setNote(e.target.value)} placeholder="记录通过或退回的原因…" /></label><button disabled={working || !data.ready.includes(reviewTask.id)} onClick={() => void perform('materials')}>刷新验收材料</button></div>}
           {!member && !data.currentDiscussion && <button disabled={working || data.busy.includes(discussion)} onClick={() => void perform('new_discussion').then(ok => { if (ok) void openDiscussion() })}>新建独立讨论</button>}
         </aside>}
-      {discussionIntro && <form className={css.editor} data-discussion-intro onSubmit={event => { event.preventDefault(); void openDiscussion(`member:${discussionIntro}`, activeId, true, discussionGoal) }}><h3>与 AI 讨论 · {discussionIntro}</h3><p className={css.hint}>将开启全新的独立配置对话，不带入队长、执行或上一次讨论的聊天历史。仅以当前成员资料和分配的任务为依据。</p><WorkflowContext team={team} discussion={`member:${discussionIntro}`} /><label>你希望怎样调整？<textarea value={discussionGoal} onChange={event => setDiscussionGoal(event.target.value)} placeholder="例如：让这个 Agent 更专注于需求分析，并补充交付标准…" /></label><footer><button className={css.primary} disabled={working}>开始独立讨论 ↗</button><button type="button" onClick={() => setDiscussionIntro(undefined)}>取消</button></footer></form>}
+
       {editor && <form data-workflow-editor className={css.editor} onSubmit={event => {
         event.preventDefault()
         try {

@@ -11,7 +11,7 @@ import { installTeamScheduler } from '../lib/scheduler.js'
 import { createTeamDir, readTeam } from '../lib/state.js'
 import { installWorkflowConversations } from '../lib/workflow-native.js'
 import { connectionIssue, connectionTarget } from '../lib/client/workflow-connections.js'
-import { openAgentTeamMember } from '../lib/client/session-navigation.js'
+import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
@@ -162,11 +162,27 @@ test('fresh member discussion creates an independent session seeded with member 
   assert.notEqual(id, captain.id); assert.notEqual(id, 'old-discussion')
   assert.equal(spec.resumeSessionId, undefined); assert.equal(spec.parentSessionId, undefined)
   assert.match(prompts[0].content[0].text, /Review requirements/)
+  assert.match(prompts[0].content[0].text, /^## 独立讨论：worker/)
+  assert.match(prompts[0].content[0].text, /### 执行指令（PE）/)
+  assert.match(prompts[0].content[0].text, /### 已分配任务/)
   assert.match(prompts[0].content[0].text, /Check acceptance criteria/)
   assert.match(prompts[0].content[0].text, /Focus on requirement risks/)
   assert.doesNotMatch(prompts[0].content[0].text, /OLD HISTORY/)
   assert.deepEqual(filters, [{ allow: ['agent_teams_workflow_context', 'agent_teams_workflow_propose'] }])
   assert.ok(Object.entries(source.workflow.discussions).some(([key, value]) => key.startsWith('archive:') && value.native.sessionId === 'old-discussion'))
+  const secondId = await runtime.open(captain, source, 'member:worker', join(root, '.agent-teams'), { fresh: true })
+  assert.notEqual(secondId, id)
+  assert.match(prompts[1].content[0].text, /询问我希望如何调整/)
+  assert.ok(Object.entries(source.workflow.discussions).some(([key, value]) => key.startsWith('archive:') && value.native.sessionId === id))
+})
+
+test('independent workflow conversations navigate as ordinary sessions on both modern and legacy hosts', async () => {
+  const target = 'session-at-discussion-example', calls = []
+  const openMember = (parent, child) => openAgentTeamMember({ open: id => calls.push(['legacy', id]), openSubagent: () => { throw new Error('independent discussion must not use subagent navigation') }, refreshSubagents: async () => { throw new Error('unexpected catalog refresh') } }, parent, child, { selectPanel: () => {} }, { openSession: id => calls.push(['workspace', id]) })
+  await openWorkflowConversation(openMember, target)
+  assert.deepEqual(calls, [['workspace', target]])
+  await openWorkflowConversation((parent, child) => openAgentTeamMember({ open: id => calls.push(['legacy', id]) }, parent, child), target)
+  assert.deepEqual(calls[1], ['legacy', target])
 })
 
 test('direct graph edits persist atomically, reject stale bases and cycles, and pause newly added running work', async t => {
