@@ -28,6 +28,7 @@ import {
 import {
   IconBranchOutline16, IconChevronDownOutline14, IconPanelLeftOutline16,
   IconStopFill16, IconWarningOutline16,
+  WorkflowIcon,
 } from './icons.tsx'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { currentSessionId, openWorkflowConversation } from './session-navigation.ts'
@@ -510,7 +511,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}>◇ {t('task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name="review" /> {t('task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
@@ -554,7 +555,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                 </svg>
                 {t(control.canRerun ? 'task.control.rerun' : control.disabled || control.stopping ? control.label : control.checked ? 'task.control.pause' : 'task.control.start')}
               </button>}
-              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
+              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{control.stopping ? <IconStopFill16 /> : <WorkflowIcon name={control.reviewReady ? 'review' : 'properties'} />}{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
             </div>
             {!control.terminal && waitingOn.length > 0 && <p className={css.taskControlHint}>{t('task.detail.waitingOn',{tasks:formatTaskIds(waitingOn,t)})}</p>}
             {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}

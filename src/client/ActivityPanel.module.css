@@ -2350,14 +2350,18 @@
 .dagNode[data-review-ready='true'], .team[data-workspace-team] .dagNode[data-review-ready='true'] { border-style: solid; border-color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 6%, var(--dsw-alias-bg-layer-1)); }
 .dagNode[aria-pressed='true'] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
 .taskDetailBadge[data-review-ready='true'], .taskDetailBadge[data-verdict-stale='true'] { color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--dsw-alias-bg-layer-1)); }
-.reviewKind { font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-primary); }
+.reviewKind { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-primary); }
+.reviewKind svg { width: 12px; height: 12px; flex: none; }
 .dagNodeHead .reviewKind { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
 .team[data-workspace-team] .dagNodeHead .reviewKind { font-size: 10px; }
+.dagNodeHead .reviewKind svg { width: 10px; height: 10px; }
+.team[data-workspace-team] .dagNodeHead .reviewKind svg { width: 12px; height: 12px; }
 .team[data-workspace-team] .dagRunningState { top: 8px; right: 7px; width: 14px; height: 14px; }
 .team[data-workspace-team] .dagRunningState .workGlyph { width: 14px; height: 14px; }
 .team[data-workspace-team] .dagNode[data-state='running'] .dagNodeHead { padding-right: 14px; }
 .taskDetailControls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-.taskDetailControls button { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; cursor: pointer; white-space: nowrap; }
+.taskDetailControls button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; cursor: pointer; white-space: nowrap; }
+.taskDetailControls button svg { width: 14px; height: 14px; flex: none; }
 .taskDetailControls button:disabled { cursor: default; opacity: .6; }
 .taskDetailControls [data-review-action='true'] { order: -1; color: var(--dsw-alias-state-warn-primary); border-color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 6%, var(--dsw-alias-bg-layer-1)); font-weight: 650; }
 .taskDetailControls .taskPlayback { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-state-business-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2)); transition: background .15s, transform .15s; }
