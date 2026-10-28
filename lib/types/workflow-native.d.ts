@@ -5,6 +5,19 @@ import type { ToolsConfig } from './tools.ts';
 import type { TeamState } from './types.ts';
 import type { WorkflowDiscussion } from './workflow-types.ts';
 export declare function reviewOpening(team: TeamState, taskId: string): string;
+export declare function taskDiscussionContext(team: TeamState, id: string): {
+    task: import("./types.ts").TeamTask;
+    upstream: import("./types.ts").TeamTask[];
+    downstream: import("./types.ts").TeamTask[];
+    owner: {
+        name: string;
+        summary: string | undefined;
+        role: string | undefined;
+        executionPrompt: string | undefined;
+        provider: string | undefined;
+        model: string | undefined;
+    } | undefined;
+};
 export declare function workflowDiscussion(team: TeamState, key: string): WorkflowDiscussion;
 /** The reserved ID namespace fails closed if plugin state is missing. Native
  * session logs contain only host-supported records; identity lives in team.json. */

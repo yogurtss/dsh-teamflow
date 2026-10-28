@@ -11,7 +11,7 @@ import { installTeamScheduler } from '../lib/scheduler.js'
 import { cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
 import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
 import { registerAgentTeamsTools } from '../lib/tools.js'
-import { installWorkflowConversations } from '../lib/workflow-native.js'
+import { installWorkflowConversations, workflowDiscussion } from '../lib/workflow-native.js'
 import { connectionIssue, connectionTarget } from '../lib/client/workflow-connections.js'
 import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/session-navigation.js'
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
@@ -23,6 +23,76 @@ const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture',
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
+
+test('task discussion carries saved context, stays isolated and requires human approval', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-task-discussion-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const stateRoot=join(root,'.agent-teams'), source=team()
+  Object.assign(source.tasks[0],{description:'Saved requirements',dependencies:['up'],workflowPaused:true,workflowConfigPending:true})
+  source.tasks.push({...task('up'),status:'completed',output:'Upstream evidence'},task('down',['t1']),{...task('unrelated'),output:'UNRELATED OUTPUT'})
+  await createTeamDir(stateRoot,source)
+  const definitions=new Map(), agents=new Map(), prompts=[], restrictions=[];let setup,route,status,response,kicks=0
+  const captain={id:'captain-id',status:'idle',options:{provider:'fixture',model:'fixture'},session:{header:{cwd:root},requestHeader:()=>({config:{}}),ownEvents:()=>[]}}
+  agents.set(captain.id,captain)
+  const ctx={tools:{register:d=>definitions.set(d.name,d)},subagents:{registerContinuableSetup:fn=>{setup=fn}},llm:{resolveCallConfig:async v=>v},effect:fn=>fn(),sessions:{flush:async()=>{}},logger:{warn(){}},agents:{get:id=>agents.get(id),create:async spec=>{
+    spec.setup({effect:fn=>fn(),tools:{restrict:filter=>{restrictions.push(filter);return()=>{}}}})
+    const events=[], agent={id:spec.sessionId,status:'idle',session:{header:{cwd:root},ownEvents:()=>events},whenIdle:async()=>{},followup:message=>{prompts.push(message);events.push({type:'user/message',seq:events.length+1,data:message})}}
+    agents.set(agent.id,agent);return{agent,dispose(){}}
+  }}}
+  const conversations=installWorkflowConversations(ctx,{stateDir:'.agent-teams',maxMembers:8},workflowMaterials)
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{kicks++}},{register:value=>{route=value;return()=>{}}},conversations)
+  const call=async(action,fields={})=>{const req=Readable.from([JSON.stringify({action,sessionId:captain.id,teamId:'demo',discussion:'task:t1',...fields})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await call('open_discussion');assert.equal(status,200,JSON.stringify(response))
+  const id=response.openedSessionId, agent=agents.get(id), exec={agent,signal:new AbortController().signal}
+  assert.notEqual(id,captain.id);assert.match(prompts[0].content[0].text,/独立任务讨论：t1/);assert.match(prompts[0].content[0].text,/Saved requirements/)
+  assert.match(prompts[0].content[0].text,/直接上游/);assert.match(prompts[0].content[0].text,/直接下游/);assert.equal(kicks,0)
+  assert.deepEqual(restrictions,[{allow:['agent_teams_workflow_context','agent_teams_workflow_propose']}])
+  const restoredFilters=[], hooks=[]
+  setup({agent,tools:{restrict:filter=>{restoredFilters.push(filter);return()=>{}}},systemPrompt:{section:()=>()=>{},getSectionOrder:()=>0},on:(event,fn)=>{hooks.push(fn);return()=>{}}})
+  assert.deepEqual(restoredFilters,restrictions,'restored task conversations retain proposal-only tools')
+  const read=async()=>JSON.parse(await definitions.get('agent_teams_workflow_context').execute({},exec))
+  let context=await read()
+  assert.equal(context.task.description,'Saved requirements');assert.equal(context.owner.name,'worker')
+  assert.equal(context.upstream[0].output,'Upstream evidence');assert.equal(context.downstream[0].id,'down')
+  assert.doesNotMatch(JSON.stringify(context),/UNRELATED OUTPUT/)
+  const propose=operations=>definitions.get('agent_teams_workflow_propose').execute({base:context.base,title:'Refine task',operations:JSON.stringify(operations)},exec)
+  await assert.rejects(propose([{action:'update_member',name:'worker',summary:'not allowed'}]),/只能调整/)
+  await assert.rejects(propose([{action:'update_task',id:'unrelated',description:'not allowed'}]),/只能调整/)
+  await assert.rejects(propose([{action:'update_task',id:'t1',confirmConfiguration:true}]),/完成配置/)
+  await propose([{action:'update_task',id:'t1',description:'Suggested requirements'}])
+  let saved=await readTeam(stateRoot,'demo');const proposal=saved.workflow.discussions['discussion:task:t1'].proposal
+  assert.equal(saved.tasks[0].description,'Saved requirements','AI suggestion does not mutate task')
+  await call('open_discussion');assert.equal(response.openedSessionId,id);assert.equal(prompts.length,1,'reopen preserves native history without another introduction')
+  await call('conversation_send',{message:'Explain the dependencies'});assert.equal(status,200);assert.equal(prompts.at(-1).content[0].text,'Explain the dependencies')
+  await call('conversation_state');assert.equal(status,200);assert.equal(response.messages.at(-1).text,'Explain the dependencies')
+  await call('conversation_state',{discussion:'member:worker'});assert.equal(status,409,'another scope cannot reuse the task session')
+  await call('apply',{sessionId:id,proposalId:proposal.id});assert.equal(status,200,JSON.stringify(response));assert.equal(response.currentDiscussion,'task:t1')
+  saved=await readTeam(stateRoot,'demo');assert.equal(saved.tasks[0].description,'Suggested requirements');assert.equal(saved.tasks[0].workflowConfigPending,true);assert.equal(saved.tasks[0].workflowPaused,true)
+  context=await read();saved.tasks[0].description='Concurrent edit';await writeTeam(stateRoot,saved)
+  await assert.rejects(propose([{action:'update_task',id:'t1',description:'Stale'}]),/团队已变化/)
+  context=await read();assert.equal(context.task.description,'Concurrent edit')
+  saved.tasks=saved.tasks.filter(item=>item.id!=='t1');await writeTeam(stateRoot,saved)
+  await assert.rejects(read(),/讨论对象不存在/)
+  assert.deepEqual(await hooks[0]({agent},()=>({kind:'allow'})),{kind:'reject'},'deleted task cannot resume a discussion turn')
+})
+
+test('running and finished tasks can be discussed without starting or changing execution', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-task-status-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const definitions=new Map(), nativeId=`session-at-discussion-${createHash('sha256').update('demo').digest('hex').slice(0,16)}-00000000-0000-0000-0000-000000000009`
+  const source=team();source.tasks[0].status='in_progress'
+  workflowDiscussion(source,'task:t1').native={sessionId:nativeId,label:'task-discussion'}
+  assert.throws(()=>workflowDiscussion(withGate(),'task:gate'),/不存在/);assert.throws(()=>workflowDiscussion(source,'task:missing'),/不存在/)
+  const stateRoot=join(root,'.agent-teams');await createTeamDir(stateRoot,source)
+  installWorkflowConversations({tools:{register:value=>definitions.set(value.name,value)},subagents:{registerContinuableSetup(){}}},{stateDir:'.agent-teams',maxMembers:8},workflowMaterials)
+  const exec={agent:{id:nativeId,session:{header:{cwd:root}}},signal:new AbortController().signal}
+  const read=async()=>JSON.parse(await definitions.get('agent_teams_workflow_context').execute({},exec))
+  let context=await read();assert.equal(context.task.status,'in_progress')
+  const propose=operations=>definitions.get('agent_teams_workflow_propose').execute({base:context.base,title:'Task suggestion',operations:JSON.stringify(operations)},exec)
+  await assert.rejects(propose([{action:'update_task',id:'t1',description:'unsafe'}]))
+  const saved=await readTeam(stateRoot,'demo');Object.assign(saved.tasks[0],{status:'failed',output:'Failure details',commandsRun:[{command:'test',status:'failed',evidence:'failed assertion'}]});await writeTeam(stateRoot,saved)
+  context=await read();assert.equal(context.task.output,'Failure details');assert.equal(context.task.commandsRun[0].evidence,'failed assertion')
+  await propose([{action:'rerun_task',id:'t1',instructions:'Fix the reported failure'}])
+  const proposed=await readTeam(stateRoot,'demo');assert.equal(proposed.tasks[0].status,'failed');assert.equal(proposed.workflow.discussions['discussion:task:t1'].proposal.status,'pending')
+})
 
 const sixOfSeven = () => {
   const source=team();source.tasks=Array.from({length:6},(_,i)=>({...task(`t${i+1}`),status:'completed',output:`result ${i+1}`}));source.taskSeq=6

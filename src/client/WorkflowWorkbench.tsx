@@ -104,11 +104,12 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   const draftEntry = draftId ? view.drafts[draftId] : undefined
   const draft = draftEntry?.values ?? (editor ? initialEditorDraft(team, editor).values : {})
   const draftStale = !!editor && !!draftEntry && draftEntry.source !== draftSource(team, editor)
-  const highlightedTask = selectedTask ?? (discussion.startsWith('check:') ? discussion.slice(6) : undefined)
+  const highlightedTask = selectedTask ?? (discussion.startsWith('check:') ? discussion.slice(6) : discussion.startsWith('task:') ? discussion.slice(5) : undefined)
   const relatedMember = selection.type === 'member' ? selection.id : selectedTask ? team?.tasks.find(task => task.id === selectedTask)?.assignee : discussion.startsWith('member:') ? discussion.slice(7) : undefined
   const conversation = team?.workflow?.discussions[`discussion:${discussion}`]
   const proposal = conversation?.proposal?.status === 'pending' ? conversation.proposal : undefined
   const reviewTask = discussion.startsWith('check:') ? team?.tasks.find(t => t.id === discussion.slice(6)) : undefined
+  const discussionTask = discussion.startsWith('task:') ? team?.tasks.find(t => t.id === discussion.slice(5) && !t.checkpoint) : undefined
   const activeTask = team?.tasks.find(t => t.id === selectedTask)
   const terminalEdit = !!editor && editor.type !== 'member' && !!activeTask && !activeTask.checkpoint && ['completed','failed','cancelled'].includes(activeTask.status)
   const member = discussion.startsWith('member:') ? team?.members.find(m => m.name === discussion.slice(7)) : undefined
@@ -454,7 +455,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     {error && !opened && <div className={css.error} role="alert">{error}</div>}
     {!nativeOnly && reviewNotice}
     {nativeOnly && data?.currentDiscussion && openContext && <button className={`${css.entry} ${css.compact}`} onClick={openContext}>{proposal ? '查看待确认修改 ↗' : '团队与讨论资料 ↗'}</button>}
-    {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => selectDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.filter(t => t.checkpoint).map(t => <option key={t.id} value={`check:${t.id}`}>验收 · {t.subject}</option>)}</select></label>
+    {embeddedContext && team && <section className={css.contextPanel} aria-label="讨论资料"><header><strong>讨论资料</strong><span>当前已保存的信息</span></header><label>查看对象<select value={discussion} onChange={event => selectDiscussion(event.target.value)}><option value="graph">团队与流程</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name} value={`member:${m.name}`}>{m.name}</option>)}{team.tasks.map(t => <option key={t.id} value={`${t.checkpoint ? 'check' : 'task'}:${t.id}`}>{t.checkpoint ? '验收' : '任务'} · {t.subject}</option>)}</select></label>
       {feedback && <p role="status">{feedback}</p>}
       {conversation?.materials && <details><summary>本轮验收证据</summary><ReviewMaterials text={conversation.materials} /></details>}
       {proposal && !opened && <section className={css.contextProposal} aria-label="待确认修改">{renderProposalReview()}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
@@ -565,6 +566,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         <section className={css.inspector} aria-label="属性与讨论面板"><header className={css.inspectorHeader}><strong>{editor ? '编辑属性' : activeTask || selectedEdge ? '节点与连接' : '讨论与验收'}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? '还原面板' : '放大面板'}</button></header>
           {selectedEdge && <aside className={css.editor} aria-label="交接详情"><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>删除连线</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? '人工验收属性' : '任务属性'}><h3>{activeTask.checkpoint ? '人工验收属性' : '任务属性'}</h3><strong>{activeTask.subject}</strong>{renderReadiness(activeTask)}<p>{activeTask.description || '暂无任务说明'}</p><p>{taskStatus(activeTask,data.ready)} · {activeTask.id}</p>{activeTask.checkpoint && <p>第 {activeTask.checkpoint.round} 轮 · {activeTask.checkpoint.note || '暂无验收意见'}</p>}<div>
+            {!archiveView && !activeTask.checkpoint && <button className={css.primary} disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}>与 AI 讨论任务</button>}
             {!archiveView && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>修改负责人并重跑此任务</button>}
             {!archiveView && !activeTask.checkpoint && !['completed', 'failed', 'cancelled'].includes(activeTask.status) && <button disabled={working || activeTask.workflowConfigPending} onClick={() => void perform(activeTask.workflowPaused ? 'resume_task' : 'stop_task', { taskId: activeTask.id, base: data.base })}>{activeTask.workflowPaused ? '继续执行' : '停止任务以编辑'}</button>}
           </div><TaskRecord task={activeTask} team={team} expanded />
@@ -572,10 +574,11 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
             {!archiveView && activeTask.checkpoint && data.ready.includes(activeTask.id) && <button className={css.primary} disabled={working} onClick={() => void openReview(activeTask.id)}>开始验收</button>}
           </aside>}
 
-        {!editor && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
+        {!editor && !selectedEdge && !activeTask && <aside className={css.discussion}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3>{reviewTask ? `验收 · ${reviewTask.subject}` : discussionTask ? `任务讨论 · ${discussionTask.subject}` : member ? `成员职责 · ${member.name}` : '流程修改'}</h3>
           <small>{reviewTask ? '一起检查成果，由你决定是否通过' : '讨论不影响执行，修改确认后生效'}</small></div></header>
           <div className={css.messages}>
-            <p className={css.hint}>{reviewTask ? '在原生验收对话中共同检查成果，回到这里确认验收决定。' : member ? '在这里与独立配置顾问讨论；队长对话保持独立。' : '在 DSH 原生对话中讨论团队与流程，修改方案会显示在这里。'}</p>
+            <p className={css.hint}>{reviewTask ? '在原生验收对话中共同检查成果，回到这里确认验收决定。' : discussionTask ? '基于已保存的任务要求、负责人、上下游和提交结果讨论；未保存草稿不会发送给 AI。' : member ? '在这里与独立配置顾问讨论；队长对话保持独立。' : '在 DSH 原生对话中讨论团队与流程，修改方案会显示在这里。'}</p>
+            {discussionTask && <div><button onClick={() => locateTask(discussionTask.id)}>返回任务属性</button><button disabled={working || archiveView} onClick={() => void startEmbedded('graph')}>讨论整体流程与拆分</button></div>}
             {archiveView ? <p className={css.hint}>恢复并编辑流程后可继续讨论。</p> : embeddedDiscussion === discussion && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : <button className={css.primary} disabled={working} onClick={() => member ? prepareDiscussion(member.name) : void startEmbedded(discussion)}>在此处{conversation?.native ? '继续' : '开始'}讨论</button>}
             {embeddedDiscussion === discussion && conversation?.native && openConversation && <button disabled={working} onClick={() => void openDiscussion(discussion)}>打开完整 DSH 对话 ↗</button>}
             <details open={archiveView || selection.type === 'member'}><summary>查看当前资料</summary><WorkflowContext team={team} discussion={discussion} onSelect={key => key.startsWith('member:') ? edit('member', key.slice(7)) : selectDiscussion(key)} openExecution={openExecution} /></details>
@@ -609,6 +612,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         } catch (error) { setError(String(error)) }
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'} <small className={currentDirty ? css.dirtyDot : css.hint}>{currentDirty ? '未保存' : editor.id ? '已保存' : '尚未创建'}</small></h3>
         {editor.type !== 'member' && activeTask && renderReadiness(activeTask)}
+        {editor.type === 'task' && activeTask && <><button type="button" disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}>与 AI 讨论任务</button><small className={css.hint}>讨论使用已保存的资料；当前草稿会保留。</small></>}
         {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
             <p className={css.hint}>节点已在画布中，可直接拖动右侧箭头连线。修改名称或要求后点击保存。</p></>}

@@ -31,7 +31,8 @@ export function WorkflowContext({ team, discussion, onSelect, openExecution }: {
 }) {
   const member = discussion.startsWith('member:') ? team.members.find(m => m.name === discussion.slice(7)) : undefined
   const gate = discussion.startsWith('check:') ? team.tasks.find(t => t.id === discussion.slice(6)) : undefined
-  const tasks = member ? team.tasks.filter(t => t.assignee === member.name) : gate ? team.tasks.filter(t => gate.dependencies.includes(t.id)) : team.tasks
+  const focusedTask = discussion.startsWith('task:') ? team.tasks.find(t => t.id === discussion.slice(5) && !t.checkpoint) : undefined
+  const tasks = member ? team.tasks.filter(t => t.assignee === member.name) : gate ? team.tasks.filter(t => gate.dependencies.includes(t.id)) : focusedTask ? team.tasks.filter(t => focusedTask.dependencies.includes(t.id) || t.dependencies.includes(focusedTask.id)) : team.tasks
   return <div className={css.contextInfo}>
     {member ? <>
       <section><h4>{member.name} · 当前配置</h4><p>{member.summary || member.role || '尚未填写职责概述'}</p><dl>
@@ -44,10 +45,11 @@ export function WorkflowContext({ team, discussion, onSelect, openExecution }: {
         {member.runtimeSetup?.persona ? <pre>{member.runtimeSetup.persona}</pre> : <p>{member.id ? '当前记录没有保存该快照，可打开执行对话核对。' : '尚无执行快照；成员启动后会保存角色提示词。'}</p>}
       </details>
       {member.id && openExecution && <button type="button" onClick={() => void openExecution(member.id, team.captainSessionId)}>查看执行对话与工具记录 ↗</button>}
-    </> : gate ? <section><h4>{gate.subject} · 第 {gate.checkpoint?.round ?? 1} 轮</h4><p>{gate.description || '未填写验收要求'}</p><p>{gate.checkpoint?.decision === 'approve' ? '已通过' : gate.checkpoint?.decision === 'reject' ? '已退回' : '等待人工决定'}</p>{gate.checkpoint?.note && <p>{gate.checkpoint.note}</p>}</section>
+    </> : focusedTask ? <section><h4>{focusedTask.subject} · 当前任务</h4><p>执行负责人：{focusedTask.assignee || '自动分配'}</p><p>下游交接：{team.tasks.filter(t => t.dependencies.includes(focusedTask.id)).map(t => t.subject).join('、') || '无'}</p><TaskRecord task={focusedTask} team={team} expanded /></section>
+      : gate ? <section><h4>{gate.subject} · 第 {gate.checkpoint?.round ?? 1} 轮</h4><p>{gate.description || '未填写验收要求'}</p><p>{gate.checkpoint?.decision === 'approve' ? '已通过' : gate.checkpoint?.decision === 'reject' ? '已退回' : '等待人工决定'}</p>{gate.checkpoint?.note && <p>{gate.checkpoint.note}</p>}</section>
       : <section><h4>团队目标</h4><p>{team.description || '未填写目标'}</p><h4>成员与分工</h4>{team.members.filter(m => m.status !== 'removed').map(m => <button type="button" className={css.contextMember} key={m.name} onClick={() => onSelect?.(`member:${m.name}`)}><strong>{m.name}</strong><span>{m.summary || m.role || '尚未填写职责'}</span></button>)}</section>}
-    <h4>{member ? '负责的任务与成果' : gate ? '直接上游的提交记录' : '任务与成果'}</h4>
-    {!tasks.length && <p className={css.hint}>尚未分配任务。</p>}
+    <h4>{member ? '负责的任务与成果' : gate ? '直接上游的提交记录' : focusedTask ? '直接上下游的提交记录' : '任务与成果'}</h4>
+    {!tasks.length && <p className={css.hint}>{focusedTask ? '没有直接上下游任务。' : '尚未分配任务。'}</p>}
     {tasks.map(task => <TaskRecord key={task.id} task={task} team={team} />)}
     <p className={css.hint}>结果和验证记录来自 Agent 提交；没有记录的内容会标明缺失，不视为已经验证。</p>
   </div>
