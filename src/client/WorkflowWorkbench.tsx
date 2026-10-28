@@ -92,6 +92,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [link, setLink] = useState<{ from: string; x: number; y: number; to?: string; issue?: string }>()
   const suppressNodeClick = useRef(false)
+  const suppressPanClick = useRef(false)
   const cancelLink = useRef<(() => void) | undefined>(undefined)
   const canvas = useRef<HTMLDivElement>(null)
   const dialog = useRef<HTMLElement>(null)
@@ -382,19 +383,24 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   function beginPan(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0 && event.button !== 1) return
     const blank = event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)
-    if (event.button !== 1 && !panMode && !blank) return
-    event.preventDefault(); event.stopPropagation()
+    if (event.button !== 1 && !panMode && !blank && editing && !archiveView) return
+    if ((event.target as Element).closest('[data-connection-handle]')) return
+    const immediate = blank || panMode || event.button === 1
+    if (immediate) { event.preventDefault(); event.stopPropagation() }
     const target = event.currentTarget, x = event.clientX, y = event.clientY
     const left = target.scrollLeft, top = target.scrollTop
     let moved = false
-    target.setPointerCapture(event.pointerId)
+    suppressPanClick.current = false
+    if (immediate) target.setPointerCapture(event.pointerId)
     target.onpointermove = move => {
-      if (Math.hypot(move.clientX - x, move.clientY - y) > 4) moved = true
+      if (!moved && Math.hypot(move.clientX - x, move.clientY - y) <= 4) return
+      if (!moved) { moved = true; target.setPointerCapture(event.pointerId); target.dataset.dragging = 'true' }
+      move.preventDefault(); suppressPanClick.current = true
       target.scrollTo(left - move.clientX + x, top - move.clientY + y)
     }
-    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
+    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; delete target.dataset.dragging; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
     target.onpointerup = () => { cleanup(); if (!moved && blank && !panMode) selectDiscussion('graph') }
-    target.onpointercancel = cleanup
+    target.onpointercancel = () => { cleanup(); suppressPanClick.current = false }
   }
   function resizeInspector(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0) return
@@ -529,7 +535,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         <main className={css.graphArea}>
           <nav className={css.toolbar} aria-label="画布工具"><button aria-pressed={!panMode} onClick={() => setPanMode(false)}><WorkflowIcon name="select" />选择</button><button aria-pressed={panMode} onClick={() => setPanMode(true)}><WorkflowIcon name="pan" />平移</button><button aria-label="缩小画布" disabled={zoom <= .1} onClick={() => changeZoom(zoom - .1)}>−</button><button title="恢复 100%" aria-label={`缩放 ${Math.round(zoom * 100)}%，点击恢复 100%`} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label="放大画布" disabled={zoom >= 2} onClick={() => changeZoom(zoom + .1)}>＋</button><button onClick={fitCanvas}><WorkflowIcon name="fit" />适应画布</button><button disabled={working || archiveView || !team.tasks.length} onClick={() => void arrangeCanvas()}><WorkflowIcon name="arrange" />自动整理</button></nav>
           {reviewNotice}
-          <div className={css.canvas} data-pan={panMode} ref={canvas} onPointerDownCapture={beginPan}>
+          <div className={css.canvas} data-pan={panMode || !editing || archiveView} data-linking={!!link} ref={canvas} onPointerDownCapture={beginPan} onClickCapture={event=>{if(suppressPanClick.current) {suppressPanClick.current=false;event.preventDefault();event.stopPropagation()}}}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
               <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-muted)" /></marker><marker id="workflow-arrow-active" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-accent)" /></marker></defs>
                 {team.tasks.flatMap(t => t.dependencies.map(dep => { const a = pos(dep), b = pos(t.id); const path = `M${a.x + 225},${a.y + 55} C${a.x + 260},${a.y + 55} ${b.x - 35},${b.y + 55} ${b.x},${b.y + 55}`; const selected=selectedEdge?.from === dep && selectedEdge.to === t.id; const related=highlightedTask === dep || highlightedTask === t.id; return <g key={`${dep}-${t.id}`} data-selected={selected} data-related={related} data-dimmed={(!!highlightedTask || !!selectedEdge) && !related && !selected} className={css.edge}>
@@ -543,7 +549,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
                 <button className={css.nodeBody} >
                   <strong title={task.subject}>{task.subject}</strong><span className={css.taskOwner} title={task.assignee}>{task.checkpoint ? '人工验收 · 由你确认' : `执行 Agent · ${task.assignee || '自动分配'}`}</span><small title={taskReadiness(team,task).detail} data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
                 <button className={`${css.port} ${css.input}`} data-connection-handle data-input-id={task.id} aria-label={`${task.subject} 输入端`} />
-                <button className={`${css.port} ${css.output}`} data-connection-handle aria-label={`${task.subject} 输出端`} disabled={working || archiveView || !editing || (taskEditing && !editor?.id)} title="从这里拖出连接线" onPointerDown={event => {
+                <button className={`${css.port} ${css.output}`} data-connection-handle aria-label={`${task.subject} 输出端`} disabled={working || archiveView || !editing || (taskEditing && !editor?.id)} title="从圆点拖出连接线" onPointerDown={event => {
                   if (event.button !== 0) return
                   event.preventDefault()
                   const target = event.currentTarget
@@ -575,7 +581,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
               {!team.tasks.length && !editor && <p className={css.empty}>添加任务或人工检查，或让 AI 根据目标提出流程方案。</p>}
             </div>
           </div>
-          <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? '已吸附 · 松开连接' : '拖到下游节点 · Esc 取消') : `${team.tasks.length} 个任务节点 · 拖动空白处平移 · 滚轮缩放（以鼠标位置为中心）${editing ? ' · 拖动右侧箭头连线 · Delete 删除' : ' · 点击节点查看详情'}`}</footer>
+          <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? '已吸附 · 松开连接' : '拖到下游节点 · Esc 取消') : `${team.tasks.length} 个任务节点 · ${editing ? '拖动空白处平移' : '拖动画布平移'} · 滚轮缩放（以鼠标位置为中心）${editing ? ' · 靠近节点显示圆点，拖动连线 · Delete 删除' : ' · 单击节点查看详情'}`}</footer>
         </main>
         <div className={css.resizeHandle} role="separator" aria-label="调整右侧面板宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
         <section className={css.inspector} aria-label="属性与讨论面板"><header className={css.inspectorHeader}><strong>{editor ? '编辑属性' : activeTask || selectedEdge ? '节点与连接' : '讨论与验收'}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? '还原面板' : '放大面板'}</button></header>
@@ -630,7 +636,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         {editor.type === 'task' && activeTask && <><button type="button" disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />与 AI 讨论任务</button><small className={css.hint}>讨论使用已保存的资料；当前草稿会保留。</small></>}
         {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
-            <p className={css.hint}>节点已在画布中，可直接拖动右侧箭头连线。修改名称或要求后点击保存。</p></>}
+            <p className={css.hint}>节点已在画布中，靠近节点后可拖动右侧圆点连线。修改名称或要求后点击保存。</p></>}
         {editor.type !== 'member' && activeTask && <TaskRecord task={activeTask} team={team} expanded />}
         {terminalEdit && activeTask && <><p className={css.notice}>保存将开启新一轮执行，原有状态与结果保存在历史执行记录中，并挂起下游：{rerunImpact(team.tasks,activeTask.id).descendants.map(task=>task.subject).join('、') || '无'}。其他分支保留；下游需逐个确认。{team.phase === 'staged' ? '请先查看流程并确认启动团队，再重跑。' : ''}</p></>}
         {editor.type === 'member' && editor.id && <TaskRerunPicker tasks={team.tasks} member={editor.id} taskId={draft['rerunTaskId'] ?? ''} instructions={draft['rerunInstructions'] ?? ''} disabled={working} onTask={id => setDraft(prev => ({ ...prev, rerunTaskId: id }))} onInstructions={text => setDraft(prev => ({ ...prev, rerunInstructions: text }))} />}
