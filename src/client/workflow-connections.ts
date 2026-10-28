@@ -1,5 +1,15 @@
 import type { TeamTask } from '../types.ts'
 
+export const WORKFLOW_NODE_WIDTH = 225
+export const WORKFLOW_PORT_Y = 55
+/** Anchors use the node's outer border box, shared by paths, snapping and CSS. */
+export function connectionPort(point: {x:number;y:number}, side: 'input'|'output') {
+  return {x:point.x + (side === 'output' ? WORKFLOW_NODE_WIDTH : 0),y:point.y + WORKFLOW_PORT_Y}
+}
+export function connectionPath(start: {x:number;y:number}, end: {x:number;y:number}) {
+  return `M${start.x},${start.y} C${start.x+35},${start.y} ${end.x-35},${end.y} ${end.x},${end.y}`
+}
+
 /** Mirrors graph invariants for immediate drag feedback; the server revalidates. */
 export function connectionIssue(tasks: TeamTask[], from: string, to: string): string | undefined {
   const target = tasks.find(t => t.id === to)
@@ -19,7 +29,7 @@ export function connectionIssue(tasks: TeamTask[], from: string, to: string): st
 
 export function connectionTarget(tasks: TeamTask[], position: (id: string) => { x: number; y: number }, point: { x: number; y: number }, from: string) {
   return tasks.filter(t => t.id !== from).map(task => {
-    const p = position(task.id), dx = point.x - p.x, dy = point.y - (p.y + 55)
+    const p = position(task.id), anchor = connectionPort(p,'input'), dx = point.x - anchor.x, dy = point.y - anchor.y
     const distance = Math.hypot(dx, dy)
     return { task, p, distance, inside: point.x >= p.x - 18 && point.x <= p.x + 243 && point.y >= p.y - 12 && point.y <= p.y + 138 }
   }).filter(candidate => candidate.distance <= 40 || candidate.inside).sort((a, b) => a.distance - b.distance)[0]?.task

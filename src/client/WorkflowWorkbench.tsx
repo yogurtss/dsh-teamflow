@@ -1,11 +1,11 @@
 /** Editable task canvas and isolated configuration / human-review discussions. */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { TeamState, TeamTask } from '../types.ts'
 import type { WorkflowOperation } from '../workflow-types.ts'
 import css from './WorkflowWorkbench.module.css'
 import { TaskRecord, WorkflowContext } from './WorkflowContext.tsx'
-import { connectionIssue, connectionTarget } from './workflow-connections.ts'
+import { connectionIssue, connectionTarget, connectionPort, connectionPath, WORKFLOW_NODE_WIDTH, WORKFLOW_PORT_Y } from './workflow-connections.ts'
 import { LEAD_ART, REVIEW_ART, memberArtUrl } from './artwork.ts'
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { AgentTeamsTranslate } from './locales.ts'
@@ -380,6 +380,18 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     viewport.addEventListener('wheel', wheel, { passive: false })
     return () => viewport.removeEventListener('wheel', wheel)
   }, [opened, zoom, !!team])
+  useLayoutEffect(() => {
+    // CSS zoom rounds borders to device pixels. Use the rendered border widths
+    // so ports remain on the SVG's outer-box anchors at fractional zoom too.
+    const measured = Array.from(canvas.current?.querySelectorAll<HTMLElement>('[data-canvas-node]') ?? []).map(node => {
+      const style = getComputedStyle(node)
+      return {node,side:style.borderLeftWidth,top:style.borderTopWidth}
+    })
+    for (const {node,side,top} of measured) {
+      node.style.setProperty('--node-side-border',side)
+      node.style.setProperty('--node-top-border',top)
+    }
+  }, [opened,zoom,team?.tasks])
   function beginPan(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0 && event.button !== 1) return
     const blank = event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)
@@ -482,7 +494,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       {proposal && !opened && <section className={css.contextProposal} aria-label="待确认修改">{renderProposalReview()}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
       <WorkflowContext team={team} discussion={discussion} onSelect={selectDiscussion} openExecution={openExecution} />
     </section>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} style={{'--wb-node-width':`${WORKFLOW_NODE_WIDTH}px`,'--wb-port-y':`${WORKFLOW_PORT_Y}px`} as CSSProperties} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
       if (!archiveView && editing && (event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) { setEditing(false); setFeedback('已退出编辑，未保存的草稿已保留。') } else closeWorkbench() }
       if (event.key === 'Tab') {
@@ -537,14 +549,14 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
           {reviewNotice}
           <div className={css.canvas} data-pan={panMode || !editing || archiveView} data-linking={!!link} ref={canvas} onPointerDownCapture={beginPan} onClickCapture={event=>{if(suppressPanClick.current) {suppressPanClick.current=false;event.preventDefault();event.stopPropagation()}}}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
-              <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-muted)" /></marker><marker id="workflow-arrow-active" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-accent)" /></marker></defs>
-                {team.tasks.flatMap(t => t.dependencies.map(dep => { const a = pos(dep), b = pos(t.id); const path = `M${a.x + 225},${a.y + 55} C${a.x + 260},${a.y + 55} ${b.x - 35},${b.y + 55} ${b.x},${b.y + 55}`; const selected=selectedEdge?.from === dep && selectedEdge.to === t.id; const related=highlightedTask === dep || highlightedTask === t.id; return <g key={`${dep}-${t.id}`} data-selected={selected} data-related={related} data-dimmed={(!!highlightedTask || !!selectedEdge) && !related && !selected} className={css.edge}>
+              <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-muted)" /></marker><marker id="workflow-arrow-active" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-accent)" /></marker></defs>
+                {team.tasks.flatMap(t => t.dependencies.map(dep => { const path = connectionPath(connectionPort(pos(dep),'output'),connectionPort(pos(t.id),'input')); const selected=selectedEdge?.from === dep && selectedEdge.to === t.id; const related=highlightedTask === dep || highlightedTask === t.id; return <g key={`${dep}-${t.id}`} data-selected={selected} data-related={related} data-dimmed={(!!highlightedTask || !!selectedEdge) && !related && !selected} className={css.edge}>
                   <path d={path} markerEnd={selected ? 'url(#workflow-arrow-active)' : 'url(#workflow-arrow)'} />
                   <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={`交接：${team.tasks.find(task => task.id === dep)?.subject ?? dep} → ${t.subject}`} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { choose({ type:'edge',from:dep,to:t.id }) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose({ type:'edge',from:dep,to:t.id }) } }} />
                 </g> }))}
-                {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
+                {link && <path d={connectionPath(connectionPort(pos(link.from),'output'),link)} />}
               </svg>
-              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
+              {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-canvas-node={task.id} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
                 <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={task.checkpoint ? 'review' : 'task'} />{task.checkpoint ? '人工节点' : '任务节点'} · {task.id}</div>
                 <button className={css.nodeBody} >
                   <strong title={task.subject}>{task.subject}</strong><span className={css.taskOwner} title={task.assignee}>{task.checkpoint ? '人工验收 · 由你确认' : `执行 Agent · ${task.assignee || '自动分配'}`}</span><small title={taskReadiness(team,task).detail} data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
@@ -557,7 +569,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
                   const update = (move: { clientX: number; clientY: number }) => {
                     const at = point(move), to = connectionTarget(team.tasks, pos, at, task.id)
                     const issue = to ? connectionIssue(team.tasks, task.id, to.id) : undefined
-                    const end = to && !issue ? { x: pos(to.id).x, y: pos(to.id).y + 55 } : at
+                    const end = to && !issue ? connectionPort(pos(to.id),'input') : at
                     setLink({ from: task.id, ...end, to: to?.id, issue })
                     return { to, issue }
                   }

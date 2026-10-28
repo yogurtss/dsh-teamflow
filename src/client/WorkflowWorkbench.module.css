@@ -105,7 +105,7 @@
 .plane { position: relative; }
 .edges { position: absolute; width: 100%; height: 100%; pointer-events: none; overflow: visible; color: color-mix(in srgb, var(--wb-muted) 65%, var(--wb-border)); }
 .edges>path { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.node { touch-action: none; position: absolute; width: 225px; background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 10px; box-shadow: 0 2px 5px color-mix(in srgb, var(--wb-text) 4%, transparent); }
+.node { --node-side-border: 1px; --node-top-border: 3px; touch-action: none; position: absolute; width: var(--wb-node-width); background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 10px; box-shadow: 0 2px 5px color-mix(in srgb, var(--wb-text) 4%, transparent); }
 .node { height: 150px; border-top: 3px solid var(--wb-border); }
 .checkpoint { border-color: color-mix(in srgb, var(--wb-accent) 35%, var(--wb-border)); }
 .drag { cursor: grab; padding: 6px 11px; color: var(--wb-muted); font-size: 10px; border-bottom: 1px solid var(--wb-border); touch-action: none; user-select: none; }
@@ -117,10 +117,10 @@
 .taskOwner img { width: 20px; height: 20px; }
 .nodeBody small { align-self: flex-start; border-radius: 5px; background: var(--wb-base); padding: 1px 6px; font-size: 10px; color: var(--wb-muted); }
 .nodeBody small[data-ready='true'] { color: var(--wb-accent); background: color-mix(in srgb, var(--wb-accent) 8%, var(--wb-bg)); }
-.workbench .port { position: absolute; top: 41px; width: 28px; height: 28px; border-radius: 50%; padding: 0; background: transparent; border: 0; touch-action: none; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+.workbench .port { position: absolute; top: calc(var(--wb-port-y) - var(--node-top-border) - 14px); width: 28px; height: 28px; border-radius: 50%; padding: 0; background: transparent; border: 0; touch-action: none; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
 .workbench .port:hover:not(:disabled) { background: transparent; border: 0; }
 .workbench .port:disabled { opacity: 0; }
-.input { left: -14px; }.output { right: -14px; }
+.input { left: calc(-14px - var(--node-side-border)); }.output { right: calc(-14px - var(--node-side-border)); }
 .port::before { content: ''; position: absolute; width: 8px; height: 8px; box-sizing: border-box; left: 10px; top: 10px; border: 2px solid var(--wb-accent); border-radius: 50%; background: var(--wb-bg); transition: transform 150ms ease, background 150ms ease; }
 .node:hover .port, .node:has(:focus-visible) .port, .canvas[data-linking='true'] .port, .port:focus-visible { opacity: 1; pointer-events: auto; }
 .port:hover::before, .port:focus-visible::before { background: var(--wb-accent); transform: scale(1.3); }
@@ -210,7 +210,7 @@
 
 
 
-.checkpoint { border: 2px dashed var(--wb-accent); border-radius: 18px; }
+.checkpoint { --node-side-border: 2px; --node-top-border: 2px; border: 2px dashed var(--wb-accent); border-radius: 18px; }
 .checkpoint .drag { color: var(--wb-accent); font-weight: 600; }
 .node[data-review-ready='true'] { border-style: solid; border-color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 5%, var(--wb-bg)); }
 .reviewNotice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 10px; border: 1px solid var(--wb-accent); border-radius: 10px; background: color-mix(in srgb, var(--wb-accent) 8%, var(--wb-bg)); font-size: 12px; }
