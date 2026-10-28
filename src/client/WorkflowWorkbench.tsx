@@ -370,9 +370,11 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     const viewport = canvas.current
     if (!opened || !viewport) return
     const wheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return
+      if (event.deltaY === 0) return
       event.preventDefault()
-      changeZoom(zoom * Math.exp(-event.deltaY * .002), event.clientX, event.clientY)
+      const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1)
+      const delta = Math.max(-120, Math.min(120, pixels))
+      changeZoom(zoom * Math.exp(-delta * .002), event.clientX, event.clientY)
     }
     viewport.addEventListener('wheel', wheel, { passive: false })
     return () => viewport.removeEventListener('wheel', wheel)
@@ -573,7 +575,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
               {!team.tasks.length && !editor && <p className={css.empty}>添加任务或人工检查，或让 AI 根据目标提出流程方案。</p>}
             </div>
           </div>
-          <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? '已吸附 · 松开连接' : '拖到下游节点 · Esc 取消') : `${team.tasks.length} 个任务节点 · 拖动空白处平移 · Ctrl / ⌘ + 滚轮缩放${editing ? ' · 拖动右侧箭头连线 · Delete 删除' : ' · 点击节点查看详情'}`}</footer>
+          <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? '已吸附 · 松开连接' : '拖到下游节点 · Esc 取消') : `${team.tasks.length} 个任务节点 · 拖动空白处平移 · 滚轮缩放（以鼠标位置为中心）${editing ? ' · 拖动右侧箭头连线 · Delete 删除' : ' · 点击节点查看详情'}`}</footer>
         </main>
         <div className={css.resizeHandle} role="separator" aria-label="调整右侧面板宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
         <section className={css.inspector} aria-label="属性与讨论面板"><header className={css.inspectorHeader}><strong>{editor ? '编辑属性' : activeTask || selectedEdge ? '节点与连接' : '讨论与验收'}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? '还原面板' : '放大面板'}</button></header>
