@@ -149,16 +149,19 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             checkToggle(team, task)
             if (toggling && task?.checkpoint) {
               if (task.status !== 'pending') throw new Error('该人工审核不能暂停')
-              task.workflowPaused = true; task.updatedAt = Date.now()
+              task.workflowPaused = true; task.workflowAwaitingStart = false; task.updatedAt = Date.now()
               await writeTeam(root, team); return
             }
             if (!task || task.checkpoint || ['completed', 'failed', 'cancelled'].includes(task.status)) throw new Error('该任务不能暂停编辑')
             // A pause flag records intent, not a completed drain. Older or
             // interrupted stops may still carry a running/claimed status.
-            if (task.workflowPaused && task.status === 'pending' && !task.reassigning && !team.members.some(m => m.name === task.assignee && m.stopping)) return
+            if (task.workflowPaused && task.status === 'pending' && !task.reassigning && !team.members.some(m => m.name === task.assignee && m.stopping)) {
+              task.workflowAwaitingStart = false; task.updatedAt = Date.now(); await writeTeam(root,team); return
+            }
             if (task.assignee === 'captain' && captain.status !== 'idle') throw new Error('请先在宿主中停止队长当前执行，再暂停此任务以编辑')
             const member = team.members.find(m => m.name === task.assignee)
             task.workflowPaused = true
+            task.workflowAwaitingStart = false
             stopId = randomUUID(); task.handoffId = stopId
             task.stoppedAttempts ??= []; task.stoppedAttempts.push({ attemptId: task.attemptId, output: task.output, at: Date.now() })
             task.attemptId = undefined
@@ -229,7 +232,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
               for (const task of updated.tasks) if (!team.tasks.some(existing => existing.id === task.id)) { layout[`task:${task.id}`] = { x: 32, y: row }; row = Math.min(10000, row + 160) }
             }
             if (action === 'edit' && team.phase !== 'staged') {
-              for (const task of updated.tasks) if (!task.checkpoint && !team.tasks.some(existing => existing.id === task.id)) task.workflowPaused = true
+              for (const task of updated.tasks) if (!task.checkpoint && !team.tasks.some(existing => existing.id === task.id)) { task.workflowPaused = true; task.workflowAwaitingStart = true }
             }
             for (const op of proposal.operations) {
               if (op.action === 'add_member' || (op.action === 'update_member' && (op.provider !== undefined || op.model !== undefined || op.reasoningEffort !== undefined))) {
@@ -275,6 +278,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             if (task.workflowRerunRequired && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新节点后重新确认')
             if (task.workflowRerunRequired && task.dependencies.some(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))) throw new Error('请先等待所有上游任务完成，再确认此节点重跑')
             task.workflowPaused = false
+            task.workflowAwaitingStart = false
             task.workflowRerunRequired = false
             task.updatedAt = Date.now()
           } else throw new Error('未知操作')

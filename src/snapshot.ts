@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { memberActivity } from './members.ts'
+import { awaitsFirstStart } from './task-start-state.ts'
 import { canDeclareDelivery, describeQualityLoop, verdictAuditNotes } from './quality-gates.ts'
 import { auditTeamWorkspace } from './workspace-audit.ts'
 import {
@@ -46,6 +47,7 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
   readonly checkpoint?: import('./workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
+  readonly workflowAwaitingStart?: boolean
   readonly workflowConfigPending?: boolean
   readonly workflowRerunRequired?: boolean
   readonly id: string
@@ -221,7 +223,7 @@ export async function assembleTeamSnapshot(
     tasks: tasks.map((task) => ({
       id: task.id,
       ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },
-      ...task.workflowPaused ? { workflowPaused: true } : {},
+      ...task.workflowPaused ? { workflowPaused: true, workflowAwaitingStart: awaitsFirstStart(task) } : {},
       ...task.workflowConfigPending ? { workflowConfigPending: true } : {},
       ...task.workflowRerunRequired ? { workflowRerunRequired: true } : {},
       subject: task.subject,

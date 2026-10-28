@@ -1,4 +1,5 @@
 import type { TeamState, TeamTask } from '../types.ts'
+import { awaitsFirstStart } from '../task-start-state.ts'
 
 export interface TaskReadiness { label: string; detail: string; dependencies: string[] }
 /** Explain saved execution state without claiming to know live host availability. */
@@ -16,6 +17,7 @@ export function taskReadiness(team: TeamState, task: TeamTask): TaskReadiness {
     return item ? `${item.subject}（${item.status === 'failed' ? '失败' : item.status === 'cancelled' ? '已取消' : item.workflowConfigPending ? '待配置' : item.checkpoint ? '未通过验收' : '未完成'}）` : `${id}（不存在）`
   }).join('、')
   if (task.workflowRerunRequired) return result('待确认重跑', blocked.length ? `先等待上游：${upstream}；随后确认使用最新成果重跑。` : '上游已完成，请确认使用最新成果重跑。', blocked)
+  if (awaitsFirstStart(task)) return result('待启动', `节点已配置，点击开始后进入调度。${blocked.length ? `仍需等待：${upstream}` : ''}`, blocked)
   if (task.workflowPaused) return result('手动暂停', `保存要求后需明确确认${task.checkpoint ? '验收' : '执行'}。${blocked.length ? `仍需等待：${upstream}` : ''}`, blocked)
   if (team.halted) return result('团队已停止', '团队停止期间不会派发此任务。')
   if (team.phase === 'staged') return result('待启动', '团队方案尚未确认启动。')

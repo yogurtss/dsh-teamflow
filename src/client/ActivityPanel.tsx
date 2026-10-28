@@ -161,6 +161,8 @@ const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
 
 function taskStatusLabel(task: ActivityTask, t: AgentTeamsTranslate): string {
   if(task.workflowConfigPending && task.status === 'pending') return t('task.status.configurationPending')
+  if(task.workflowPaused && task.status === 'pending' && task.workflowAwaitingStart) return t('task.control.awaitingStart')
+  if(task.workflowPaused && task.status === 'pending' && !task.checkpoint) return t('task.control.paused')
   if(task.checkpoint && !['failed','cancelled'].includes(task.status)) {
     if(task.status==='completed' && task.checkpoint.decision==='approve') return t('task.status.reviewPassed')
     if(task.workflowPaused) return t('task.status.reviewPaused')

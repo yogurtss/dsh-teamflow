@@ -207,6 +207,7 @@ export function cancelUnfinishedTask(task: TeamTask, output?: string): void {
   if (TERMINAL_TASK_STATUSES.includes(task.status)) return
   task.status = 'cancelled'
   task.workflowPaused = false
+  task.workflowAwaitingStart = false
   delete task.workflowConfigPending
   task.workflowRerunRequired = false
   task.attemptId = undefined
@@ -1047,6 +1048,7 @@ export function isTeamTask(value: unknown): value is TeamTask {
   return typeof value['id'] === 'string'
     && (value['workflowRerunRequired'] === undefined || typeof value['workflowRerunRequired'] === 'boolean')
     && (value['workflowPaused'] === undefined || typeof value['workflowPaused'] === 'boolean')
+    && (value['workflowAwaitingStart'] === undefined || typeof value['workflowAwaitingStart'] === 'boolean')
     && (value['workflowConfigPending'] === undefined || typeof value['workflowConfigPending'] === 'boolean')
     && (value['checkpoint'] === undefined || isCheckpoint(value['checkpoint']))
     && (value['stoppedAttempts'] === undefined || isStoppedAttempts(value['stoppedAttempts']))

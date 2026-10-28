@@ -21,6 +21,7 @@ export interface ActivityMember {
 export interface ActivityTask {
     readonly checkpoint?: import('../workflow-types.ts').Checkpoint;
     readonly workflowPaused?: boolean;
+    readonly workflowAwaitingStart?: boolean;
     readonly workflowConfigPending?: boolean;
     readonly workflowRerunRequired?: boolean;
     readonly id: string;

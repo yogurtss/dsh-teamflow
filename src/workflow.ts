@@ -143,7 +143,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       }
       team.tasks.push({ id, subject: op.subject, description: op.description, assignee: op.checkpoint ? undefined : op.assignee || undefined,
         dependencies: op.dependencies, kind: 'work', status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
-        ...op.configurationPending ? { workflowConfigPending: true, workflowPaused: true } : {},
+        ...op.configurationPending ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
         ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
       const task = taskOf(team, op.id)

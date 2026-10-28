@@ -121,7 +121,7 @@ test('readiness distinguishes upstream failures, pauses, busy members and host d
   const source=team();const next=task('next',['t1']);source.tasks.push(next)
   source.tasks[0].status='failed'
   assert.deepEqual(taskReadiness(source,next).dependencies,['t1']);assert.match(taskReadiness(source,next).detail,/失败/)
-  next.workflowPaused=true;assert.equal(taskReadiness(source,next).label,'手动暂停')
+  next.workflowPaused=true;next.workflowAwaitingStart=false;assert.equal(taskReadiness(source,next).label,'手动暂停')
   next.workflowConfigPending=true;assert.equal(taskReadiness(source,next).label,'待配置')
   next.workflowConfigPending=false;next.workflowPaused=false;source.tasks[0].status='completed'
   assert.equal(taskReadiness(source,next).label,'等待调度')

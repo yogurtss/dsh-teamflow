@@ -77,6 +77,19 @@ test('running dependency cards keep the animated work glyph, idle cards do not',
   assert.match(paused,/data-task-action="play"[^>]*aria-label="开始 · paused"/)
 })
 
+test('new work awaits configuration or its first start while explicit pauses remain distinct',()=>{
+  const item={...task('new','pending','blocked'),workflowPaused:true,workflowAwaitingStart:true}
+  for(const dict of [zh,en]) {
+    let html=render({...base,tasks:[item]},dict)
+    assert.ok(html.includes(dict['task.control.awaitingStart']))
+    assert.equal(taskControlState(base,item).label,'task.control.awaitingStart')
+    assert.match(html,/data-task-action="play"/)
+    html=render({...base,tasks:[{...item,workflowConfigPending:true}]},dict)
+    assert.ok(html.includes(dict['task.status.configurationPending']))
+    assert.equal(taskControlState(base,{...item,workflowAwaitingStart:false}).label,'task.control.paused')
+  }
+})
+
 test('finished canvas task details expose submitted results and verification records without starting work',()=>{
   const finished={...task('done','completed'),subject:'Finished task',description:'Original requirements',objective:'Goal',acceptance:['Criterion'],verify:['run tests'],output:'Delivered result',commandsRun:[{command:'test command',status:'passed',evidence:'verification evidence'}],acceptanceResults:[{criterion:'Criterion',status:'passed',evidence:'acceptance evidence'}]}
   const html=renderToStaticMarkup(React.createElement(TaskRecord,{task:finished,team:{tasks:[finished]},expanded:true}))

@@ -542,6 +542,8 @@ test('direct graph edits persist atomically, reject stale bases and cycles, and 
   assert.equal(status, 200); assert.deepEqual(result.team.tasks[1].dependencies, [])
   await send([{ action: 'add_task', subject: 'Wire before running', dependencies: [] }], result.base)
   assert.equal(status, 200); assert.equal(result.team.tasks.at(-1).workflowPaused, true)
+  assert.equal(result.team.tasks.at(-1).workflowAwaitingStart,true)
+  assert.equal(result.activity.tasks.at(-1).workflowAwaitingStart,true)
   const addedId = result.team.tasks.at(-1).id
   await send([{ action: 'update_task', id: addedId, dependencies: ['t2'] }], result.base)
   assert.equal(status, 200)
@@ -763,6 +765,8 @@ test('pausing a queued task preserves another running task and its member stop b
   await route.handler(req, { writeHead: code => { status = code }, end: body => { response = JSON.parse(body) } })
   assert.equal(status, 200, JSON.stringify(response))
   assert.equal(response.team.tasks[1].workflowPaused, true)
+  assert.equal(response.team.tasks[1].workflowAwaitingStart,false)
+  assert.equal(response.activity.tasks[1].workflowAwaitingStart,false)
   assert.equal(response.team.tasks[0].attemptId, 'original-attempt')
   assert.equal(response.team.members[0].stopping, true); assert.equal(response.team.members[0].id, 'child')
   disposers.reverse().forEach(dispose => dispose?.()); assert.equal(removed, true)

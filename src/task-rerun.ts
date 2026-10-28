@@ -21,6 +21,7 @@ export function resetTaskForRerun(task: TeamTask, suspended: boolean, now: numbe
     task.stoppedAttempts.push({ attemptId: task.attemptId, output: `${status} · ${task.output || '未提交结果'}`, at: now })
   }
   task.status='pending'; task.workflowPaused=suspended; task.workflowRerunRequired=suspended; task.updatedAt=now
+  task.workflowAwaitingStart = false
   for (const key of ['output','attemptId','handoffId','handoffFromMemberId','reassigning','verdict','findings','changedPaths','acceptanceResults','commandsRun','supplementalEvidence','reviewedAttempt','reviewedArtifacts','reviewedGaps','reviewedScope','reviewedDuringDrift','verdictStartSnapshot'] as const) delete task[key]
   if(task.checkpoint) task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
 }

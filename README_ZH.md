@@ -155,6 +155,8 @@ dsh plugin --profile web remove @yogurtss/dsh-teamflow
 
 任务、Agent、人工审核及属性、讨论、画布工具使用统一线性图标，并保留文字标签；成员头像和运行小动画沿用现有样式。[图标效果](./docs/interface-icons-2026-10-28/README.md)。
 
+新建节点先显示「待配置」，完成配置后显示「待启动」，主动暂停后才显示暂停状态。画布选中任务会高亮直接输入和输出连线，其他连线淡化；连线仍可点击和键盘选择。[状态与连线效果](./docs/task-start-and-edges-2026-10-28/README.md)。
+
 ## 工作方式
 
 1. 当前会话创建团队并成为队长。

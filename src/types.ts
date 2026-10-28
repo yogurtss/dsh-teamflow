@@ -164,6 +164,8 @@ export interface TeamTask {
   /** Upstream rerun invalidated this task; explicit human confirmation is required. */
   workflowRerunRequired?: boolean
   workflowPaused?: boolean
+  /** New canvas work is held for its first explicit start, distinct from a user pause. */
+  workflowAwaitingStart?: boolean
   /** Canvas placeholder: cannot run or be reviewed until explicitly configured. */
   workflowConfigPending?: boolean
   stoppedAttempts?: { attemptId?: string; output?: string; at: number }[]
