@@ -196,7 +196,7 @@
 .edge>path:first-child { transition: opacity 180ms ease, stroke 180ms ease, stroke-width 180ms ease; }
 .edge .edgeHit { stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
 .edge[data-dimmed='true']>path:first-child { opacity: .25; }
-.edge[data-related='true']>path:first-child, .edge[data-selected='true']>path:first-child, .edge:focus-within>path:first-child, .edge:hover>path:first-child { stroke: var(--wb-accent); stroke-width: 3; opacity: 1; }
+.edge[data-selected='true']>path:first-child, .edge:focus-within>path:first-child, .edge:hover>path:first-child { stroke: var(--wb-accent); stroke-width: 3; opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .edge>path:first-child { transition: none; } }
 .edgeHit:focus { outline: none; }
 .workbench .output { right: -23px; top: 40px; height: 30px; width: 30px; border: 0; background: transparent; border-radius: 4px; }
