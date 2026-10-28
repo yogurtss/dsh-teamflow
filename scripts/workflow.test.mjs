@@ -603,6 +603,7 @@ test('scheduler never dispatches a human checkpoint or a task paused for editing
   const root = mkdtempSync(join(tmpdir(), 'workflow-scheduler-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = withGate(); source.tasks[0].status = 'completed'
   source.tasks.push({ ...task('paused'), workflowPaused: true })
+  source.tasks.push({ ...task('unconfigured'), workflowConfigPending: true, workflowPaused: false })
   await createTeamDir(join(root, '.agent-teams'), source)
   const captain = { id: 'captain-id', session: { header: { cwd: root }, ownEvents: () => [] }, status: 'idle' }
   const dispatched = []

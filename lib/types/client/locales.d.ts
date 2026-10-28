@@ -51,6 +51,7 @@ export declare const zh: {
     'task.status.pending': string;
     'task.status.reviewPassed': string;
     'task.status.reviewPaused': string;
+    'task.status.configurationPending': string;
     'task.status.reviewRejected': string;
     'task.status.reviewWaiting': string;
     'task.status.reviewReady': string;
@@ -280,6 +281,7 @@ export declare const en: {
     'task.status.pending': string;
     'task.status.reviewPassed': string;
     'task.status.reviewPaused': string;
+    'task.status.configurationPending': string;
     'task.status.reviewRejected': string;
     'task.status.reviewWaiting': string;
     'task.status.reviewReady': string;

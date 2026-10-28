@@ -64,7 +64,7 @@ createServer(async (req, res) => {
     const body = JSON.parse(raw), key = body.discussion || 'graph';
     if (body.action === 'edit' && process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS)));
     if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_state') { send(res, 200, { messages, busy: false }); return; }
-    if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_send') { messages.push({ id: String(messages.length + 1), role: 'user', text: body.message }, { id: String(messages.length + 2), role: 'assistant', text: '这是模拟回复，正式环境将由独立 DSH 会话生成。' }); send(res, 200, { messages, busy: false }); return; }
+    if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_send') { if (process.env.TEAMFLOW_PREVIEW_SEND_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.TEAMFLOW_PREVIEW_SEND_DELAY_MS))); messages.push({ id: String(messages.length + 1), role: 'user', text: body.message }, { id: String(messages.length + 2), role: 'assistant', text: '这是模拟回复，正式环境将由独立 DSH 会话生成。' }); send(res, 200, { messages, busy: false }); return; }
     if (body.action === 'create') team = { id: 'preview', name: body.name, description: body.description, captainSessionId: 'preview', phase: 'staged', members: [], tasks: [], taskSeq: 0, createdAt: 1 };
     const state = workflowState(team), slot = `discussion:${key}`;
     if(body.action==='restore_archive') team=prepareArchivedWorkflow(team);
@@ -78,6 +78,7 @@ createServer(async (req, res) => {
     }
     if (body.action === 'resume_task') {
       const task=team.tasks.find(task=>task.id===body.taskId)
+      if(task?.workflowConfigPending) throw Error('请先填写任务／验收要求并完成节点配置')
       if(!task?.workflowPaused || task.status!=='pending') throw Error('节点没有挂起')
       if(task.workflowRerunRequired && task.dependencies.some(id=>team.tasks.find(item=>item.id===id)?.status!=='completed')) throw Error('请先等待所有上游任务完成')
       task.workflowPaused=false;task.workflowRerunRequired=false

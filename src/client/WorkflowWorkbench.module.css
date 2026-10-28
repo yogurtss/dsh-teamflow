@@ -50,6 +50,12 @@
 .commandBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--wb-border); background: var(--wb-bg); }
 .commandBar>strong { font-size: 11px; color: var(--wb-muted); margin-right: 4px; }
 .commandSpacer { flex: 1; }
+.saveBar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 7px 16px; background: var(--wb-bg); border-bottom: 1px solid var(--wb-border); font-size: 11px; color: var(--wb-muted); max-height: 140px; overflow: auto; flex: none; }
+.saveBar details[open] { flex-basis: 100%; }.saveBar summary { cursor: pointer; }.saveBar details button { margin: 4px; }
+.dirtyDot { font-size: 10px; font-style: normal; font-weight: 500; color: light-dark(#946519, #f1c076); }
+.readiness { padding: 10px; margin: 10px 0; border: 1px solid var(--wb-border); border-radius: 8px; background: var(--wb-base); font-size: 12px; }
+.readiness p { margin: 4px 0; }.readiness button { margin: 4px 4px 0 0; }
+.node[data-config-pending='true'] { border-style: dashed; }.node[data-config-pending='true'] small { color: light-dark(#946519, #f1c076); }
 .columns[data-inspector-expanded='true'] { grid-template-columns: 224px minmax(0,1fr) 6px min(720px, 60%); }
 .columns[data-inspector-hidden='true'] { grid-template-columns: 224px minmax(0,1fr); }
 .columns[data-inspector-hidden='true']>.inspector, .columns[data-inspector-hidden='true']>.resizeHandle { display: none; }

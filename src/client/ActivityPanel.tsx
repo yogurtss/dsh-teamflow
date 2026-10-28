@@ -157,6 +157,7 @@ const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
 }
 
 function taskStatusLabel(task: ActivityTask, t: AgentTeamsTranslate): string {
+  if(task.workflowConfigPending && task.status === 'pending') return t('task.status.configurationPending')
   if(task.checkpoint && !['failed','cancelled'].includes(task.status)) {
     if(task.status==='completed' && task.checkpoint.decision==='approve') return t('task.status.reviewPassed')
     if(task.workflowPaused) return t('task.status.reviewPaused')
@@ -285,7 +286,7 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
   const claimed = team.tasks.filter((task) => task.state === 'claimed')
   const blocked = team.tasks.filter((task) => task.state === 'blocked')
   const ready = team.tasks.filter((task) => !task.checkpoint && task.state === 'open' && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
-  const reviews = team.tasks.filter(task=>task.checkpoint && task.status==='pending' && !task.workflowPaused && !task.checkpoint.decision && task.dependencies.every(id=>team.tasks.some(item=>item.id===id&&item.status==='completed')))
+  const reviews = team.tasks.filter(task=>task.checkpoint && task.status==='pending' && !task.workflowPaused && !task.workflowConfigPending && !task.checkpoint.decision && task.dependencies.every(id=>team.tasks.some(item=>item.id===id&&item.status==='completed')))
   const failed = team.tasks.filter((task) => task.status === 'failed')
   if (discarded) return t('task.summary.discarded', { count: team.tasks.length })
   if (team.tasks.length === 0) return t('task.summary.waitingBreakdown')

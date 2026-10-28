@@ -10,6 +10,7 @@ function operation(value: unknown): boolean {
   if (!record(value)) return false
   if (['id', 'name', 'subject', 'summary', 'role', 'executionPrompt', 'description', 'assignee', 'provider', 'model', 'reasoningEffort', 'instructions'].some(key => !optionalString(value[key]))) return false
   if (value['dependencies'] !== undefined && !strings(value['dependencies'])) return false
+  if (['configurationPending', 'confirmConfiguration'].some(key => value[key] !== undefined && typeof value[key] !== 'boolean')) return false
   switch (value['action']) {
     case 'add_member': return string(value['name']) && string(value['summary'])
     case 'update_member': case 'remove_member': return string(value['name'])

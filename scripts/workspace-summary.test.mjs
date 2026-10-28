@@ -65,6 +65,9 @@ for(const dict of [zh,en]) test(`human checkpoints use review labels and approva
   assert.match(html,/data-completed="6" data-total="7"/)
   assert.ok(html.includes(dict['task.status.reviewReady']));assert.ok(!html.includes(dict['task.summary.ready'].replace('{tasks}','human')))
   assert.ok(!html.includes(dict['task.detail.ready']))
+  const unconfigured=render({...base,tasks:tasks.map(item=>item.id==='human'?{...item,workflowConfigPending:true,workflowPaused:true,state:'blocked'}:item)},dict)
+  assert.ok(unconfigured.includes(dict['task.status.configurationPending']))
+  assert.ok(!unconfigured.includes(dict['task.status.reviewReady']))
   tasks.at(-1).status='completed';tasks.at(-1).state='completed';tasks.at(-1).checkpoint.decision='approve'
   const approved=render({...base,tasks},dict)
   assert.match(approved,/data-completed="7" data-total="7"/);assert.ok(approved.includes(dict['task.status.reviewPassed']))

@@ -1,0 +1,31 @@
+import type { TeamState, TeamTask } from '../types.ts'
+
+export interface TaskReadiness { label: string; detail: string; dependencies: string[] }
+/** Explain saved execution state without claiming to know live host availability. */
+export function taskReadiness(team: TeamState, task: TeamTask): TaskReadiness {
+  const result = (label: string, detail = label, dependencies: string[] = []): TaskReadiness => ({ label, detail, dependencies })
+  if (task.checkpoint?.decision === 'reject') return result('已退回', task.checkpoint.note || '等待调整方案并返工。')
+  if (task.status === 'completed') return result(task.checkpoint ? '验收通过' : '已完成')
+  if (task.status === 'failed') return result('执行失败', '查看执行记录中的失败原因，再决定是否修改并重跑。')
+  if (task.status === 'cancelled') return result('已取消')
+  if (task.workflowConfigPending) return result('待配置', '节点已保存，可先连线；请填写要求并完成配置。')
+  if (task.status === 'in_progress' || task.status === 'claimed') return result(task.status === 'in_progress' ? '执行中' : '已领取')
+  const blocked = task.dependencies.filter(id => !team.tasks.some(t => t.id === id && t.status === 'completed'))
+  const upstream = blocked.map(id => {
+    const item = team.tasks.find(t => t.id === id)
+    return item ? `${item.subject}（${item.status === 'failed' ? '失败' : item.status === 'cancelled' ? '已取消' : item.workflowConfigPending ? '待配置' : item.checkpoint ? '未通过验收' : '未完成'}）` : `${id}（不存在）`
+  }).join('、')
+  if (task.workflowRerunRequired) return result('待确认重跑', blocked.length ? `先等待上游：${upstream}；随后确认使用最新成果重跑。` : '上游已完成，请确认使用最新成果重跑。', blocked)
+  if (task.workflowPaused) return result('手动暂停', `保存要求后需明确确认${task.checkpoint ? '验收' : '执行'}。${blocked.length ? `仍需等待：${upstream}` : ''}`, blocked)
+  if (team.halted) return result('团队已停止', '团队停止期间不会派发此任务。')
+  if (team.phase === 'staged') return result('待启动', '团队方案尚未确认启动。')
+  if (blocked.length) return result('等待上游', `等待：${upstream}`, blocked)
+  if (task.checkpoint) return result('等待人工验收', '上游已完成，打开材料并作出验收决定。')
+  if (task.assignee === 'captain') return result('等待队长', '依赖已满足，等待队长领取。')
+  const candidates = team.members.filter(m => m.status !== 'removed' && (!task.assignee || m.name === task.assignee))
+  if (!candidates.length) return result('缺少执行 Agent', task.assignee ? `执行成员 ${task.assignee} 不可用，请调整负责人。` : '请创建或恢复至少一个执行 Agent。')
+  const available = candidates.filter(m => !m.stopping && !team.tasks.some(t => t.assignee === m.name && ['claimed', 'in_progress'].includes(t.status)))
+  if (!available.length) return result('等待 Agent 空闲', task.assignee ? `${task.assignee} 正在执行其他任务或停止中。` : '可用成员均在执行其他任务或停止中。')
+  if (available.every(m => !!m.spawnError)) return result('Agent 启动失败', available.map(m => `${m.name}：${m.spawnError}`).join('；'))
+  return result('等待调度', '依赖已满足，等待调度器派发；实际成员会话状态由宿主确认。')
+}

@@ -299,6 +299,7 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
   if (task.checkpoint) throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
+  if (task.workflowConfigPending) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
   if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
   return task
 }
@@ -395,6 +396,7 @@ function validateStagedGraph(team: TeamState, requireRunnable: boolean): void {
   const memberNames = new Set(members.map((member) => member.name))
   const taskIds = new Set(team.tasks.map((task) => task.id))
   for (const task of team.tasks) {
+    if (requireRunnable && task.workflowConfigPending) throw new Error(`请先完成节点配置：${task.subject}（${task.id}）`)
     if (task.subject.trim() === '') throw new Error(`task "${task.id}" must have a subject`)
     if (task.assignee !== undefined && task.assignee !== CAPTAIN_KEY && !memberNames.has(task.assignee)) {
       throw new Error(`task "${task.id}" assignee "${task.assignee}" is not an active member`)

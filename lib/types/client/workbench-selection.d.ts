@@ -15,6 +15,7 @@ export type WorkbenchTarget = EditorTarget | {
 export type EditorDraft = {
     values: Record<string, string>;
     source: string;
+    baseline?: Record<string, string>;
 };
 export type WorkbenchView = {
     target: WorkbenchTarget;

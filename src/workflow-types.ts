@@ -3,8 +3,8 @@ export type WorkflowOperation =
   | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
   | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
   | { action: 'remove_member'; name: string }
-  | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean }
-  | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[] }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean }
+  | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean }
   | { action: 'remove_task'; id: string }
   | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; assignee?: string }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }

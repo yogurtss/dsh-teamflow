@@ -34,6 +34,7 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
     const op = object(raw), action = op['action']
     if (typeof action !== 'string' || !action.trim()) throw new Error('每个修改对象必须包含 action 字段，例如 {"action":"update_member","name":"planner","summary":"职责说明"}；参数与 action 同层，不使用 type、op 或嵌套 payload')
     const fields = (names: string[]) => Object.fromEntries(names.flatMap(name => op[name] === undefined ? [] : [[name, text(op[name], name)]]))
+    for (const field of ['configurationPending', 'confirmConfiguration']) if (op[field] !== undefined && typeof op[field] !== 'boolean') throw new Error(`${field} 必须是布尔值`)
     switch (action) {
       case 'add_member': return { action, name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'update_member': return { action, name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt', 'provider', 'model', 'reasoningEffort']) }
@@ -41,9 +42,10 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
       case 'add_task': {
         if (op['checkpoint'] !== undefined && typeof op['checkpoint'] !== 'boolean') throw new Error('checkpoint 必须是布尔值')
         return { action, subject: text(op['subject'], 'subject', true)!, ...fields(['id', 'description', 'assignee']),
-          dependencies: strings(op['dependencies'], 'dependencies'), checkpoint: op['checkpoint'] === true }
+          dependencies: strings(op['dependencies'], 'dependencies'), checkpoint: op['checkpoint'] === true, ...op['configurationPending'] === true ? { configurationPending: true } : {} }
       }
       case 'update_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['subject', 'description', 'assignee']),
+        ...op['confirmConfiguration'] === true ? { confirmConfiguration: true } : {},
         ...op['dependencies'] === undefined ? {} : { dependencies: strings(op['dependencies'], 'dependencies') } }
       case 'remove_task': return { action, id: text(op['id'], 'id', true)! }
       case 'rerun_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['instructions', 'subject', 'description', 'assignee']) }
@@ -88,7 +90,7 @@ export function validateWorkflowGraph(team: TeamState): void {
   team.tasks.forEach(visit)
 }
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
-  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused
+  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !task.workflowConfigPending
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
 /** All transitive upstream results, in dependency order. */
@@ -141,6 +143,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       }
       team.tasks.push({ id, subject: op.subject, description: op.description, assignee: op.checkpoint ? undefined : op.assignee || undefined,
         dependencies: op.dependencies, kind: 'work', status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
+        ...op.configurationPending ? { workflowConfigPending: true, workflowPaused: true } : {},
         ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
       const task = taskOf(team, op.id); editable(task)
@@ -148,6 +151,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (op.description !== undefined) task.description = op.description
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
       if (op.dependencies !== undefined) task.dependencies = op.dependencies
+      if (op.confirmConfiguration && task.workflowConfigPending) {
+        if (!task.subject.trim() || !task.description?.trim()) throw new Error(`请填写 ${task.subject} 的名称与任务／验收要求，再完成配置`)
+        task.workflowConfigPending = false
+        if (team.phase === 'staged') task.workflowPaused = false
+      }
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
       task.updatedAt = now

@@ -28,6 +28,7 @@ export type WorkflowOperation = {
     assignee?: string;
     dependencies: string[];
     checkpoint?: boolean;
+    configurationPending?: boolean;
 } | {
     action: 'update_task';
     id: string;
@@ -35,6 +36,7 @@ export type WorkflowOperation = {
     description?: string;
     assignee?: string;
     dependencies?: string[];
+    confirmConfiguration?: boolean;
 } | {
     action: 'remove_task';
     id: string;

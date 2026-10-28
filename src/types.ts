@@ -164,6 +164,8 @@ export interface TeamTask {
   /** Upstream rerun invalidated this task; explicit human confirmation is required. */
   workflowRerunRequired?: boolean
   workflowPaused?: boolean
+  /** Canvas placeholder: cannot run or be reviewed until explicitly configured. */
+  workflowConfigPending?: boolean
   stoppedAttempts?: { attemptId?: string; output?: string; at: number }[]
   /** Human-only gate. Never dispatched to an execution member. */
   checkpoint?: import('./workflow-types.ts').Checkpoint

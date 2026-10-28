@@ -46,6 +46,7 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
   readonly checkpoint?: import('./workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
+  readonly workflowConfigPending?: boolean
   readonly workflowRerunRequired?: boolean
   readonly id: string
   readonly subject: string
@@ -221,6 +222,7 @@ export async function assembleTeamSnapshot(
       id: task.id,
       ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },
       ...task.workflowPaused ? { workflowPaused: true } : {},
+      ...task.workflowConfigPending ? { workflowConfigPending: true } : {},
       ...task.workflowRerunRequired ? { workflowRerunRequired: true } : {},
       subject: task.subject,
       description: task.description ?? '',

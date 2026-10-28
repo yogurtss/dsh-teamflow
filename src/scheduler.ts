@@ -201,7 +201,7 @@ function ownedOpenTask(tasks: readonly TeamTask[], memberName: string): TeamTask
 
 function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
   const ready = tasks.filter(task => task.status === 'pending'
-    && task.checkpoint === undefined && task.workflowPaused !== true
+    && task.checkpoint === undefined && task.workflowPaused !== true && task.workflowConfigPending !== true
     && task.reassigning !== true
     && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
   return ready.find(task => task.assignee === memberName)

@@ -252,6 +252,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             decideCheckpoint(team, id, decision, body['evidence'], workflowMaterials(team, id, workspace).evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '')
           } else if (action === 'resume_task') {
             const task = team.tasks.find(t => t.id === body['taskId'])
+            if (task?.workflowConfigPending) throw new Error('请先填写任务／验收要求并完成节点配置')
             if (!task || !task.workflowPaused || task.status !== 'pending' || team.members.some(m => m.name === task.assignee && m.stopping)) throw new Error('任务尚未停止完成')
             if (task.workflowRerunRequired && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新节点后重新确认')
             if (task.workflowRerunRequired && task.dependencies.some(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))) throw new Error('请先等待所有上游任务完成，再确认此节点重跑')

@@ -1,11 +1,11 @@
 /** The stored facts a person and the native discussion can inspect together. */
 import type { TeamState, TeamTask } from '../types.ts'
 import css from './WorkflowWorkbench.module.css'
+import { taskReadiness } from './task-readiness.ts'
 
-const statuses = { pending: '等待执行', claimed: '已领取', in_progress: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消' }
 
 export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; team: TeamState; expanded?: boolean }) {
-  return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {task.workflowPaused ? '已暂停' : statuses[task.status]}</summary>
+  return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {taskReadiness(team,task).label}</summary>
     <p>{task.description || '未单独填写任务说明'}</p>
     {task.workflowRerunRequired && <p><strong>上游已重跑：</strong>当前节点已挂起，请在画布中确认后执行。此前结果已失效。</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>

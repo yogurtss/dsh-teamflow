@@ -1,12 +1,31 @@
 /** A compact view over the same isolated native discussion session. */
 import { useEffect, useRef, useState } from 'react'
 import css from './WorkflowWorkbench.module.css'
+import { remainingMessage } from './workbench-drafts.ts'
 
 type Chat = { messages: { id: string; role: string; text: string }[]; busy: boolean }
 export function EmbeddedDiscussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {
+  return <Discussion key={JSON.stringify([sessionId,teamId,discussion])} sessionId={sessionId} teamId={teamId} discussion={discussion} />
+}
+function Discussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {
+  const storageKey = `teamflow:discussion-draft:v1:${JSON.stringify([sessionId,teamId,discussion])}`
+  const [storageError,setStorageError] = useState('')
   const [chat, setChat] = useState<Chat>({ messages: [], busy: false })
   const [loading, setLoading] = useState(true)
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => { try { return sessionStorage.getItem(storageKey) ?? '' } catch { return '' } })
+  const textRef = useRef(text), liveRef = useRef(true)
+  useEffect(() => { liveRef.current = true; return () => { liveRef.current = false } }, [])
+  function changeText(value: string): void {
+    textRef.current = value; setText(value)
+    try { if (value) sessionStorage.setItem(storageKey,value); else sessionStorage.removeItem(storageKey); setStorageError('') }
+    catch { setStorageError('草稿备份失败，离开页面前请保留文本。') }
+  }
+  useEffect(() => {
+    if (!text || !storageError) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload',warn)
+    return () => window.removeEventListener('beforeunload',warn)
+  }, [text,storageError])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const transcript = useRef<HTMLDivElement>(null)
@@ -28,16 +47,20 @@ export function EmbeddedDiscussion({ sessionId, teamId, discussion }: { sessionI
     return () => { live = false; clearInterval(timer) }
   }, [sessionId, teamId, discussion])
   async function send(): Promise<void> {
-    const message = text.trim(); if (!message || loading || sending || chat.busy) return
+    const submitted = textRef.current, message = submitted.trim(); if (!message || loading || sending || chat.busy) return
     setSending(true); setError('')
-    try { const result = await request('conversation_send', message); setChat(result); setText('') }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
-    finally { setSending(false) }
+    try {
+      const result = await request('conversation_send', message)
+      if (liveRef.current) { setChat(result); changeText(remainingMessage(textRef.current,submitted)) }
+      else { try { if (sessionStorage.getItem(storageKey) === submitted) sessionStorage.removeItem(storageKey) } catch { /* Keep a recoverable draft if storage is unavailable. */ } }
+    }
+    catch (err) { if (liveRef.current) setError(err instanceof Error ? err.message : String(err)) }
+    finally { if (liveRef.current) setSending(false) }
   }
   return <div className={css.embeddedChat}>
     <div ref={transcript} className={css.embeddedTranscript} aria-label="独立讨论记录">{chat.messages.map(message => <div key={message.id} className={message.role === 'user' ? css.userMessage : css.assistantMessage}><strong>{message.role === 'user' ? '你' : 'AI'}</strong><p>{message.text}</p></div>)}
       {loading ? <p role="status">正在读取讨论记录…</p> : chat.busy && <p role="status">AI 正在思考…</p>}{error && <p role="alert" className={css.error}>{error}</p>}
     </div>
-    <form className={css.embeddedComposer} onSubmit={event => { event.preventDefault(); void send() }}><label>继续讨论<textarea value={text} onChange={event => setText(event.target.value)} placeholder="例如：让这个 Agent 更专注于需求分析…" /></label><button type="submit" disabled={!text.trim() || loading || chat.busy || sending}>发送</button></form>
+    <form className={css.embeddedComposer} onSubmit={event => { event.preventDefault(); void send() }}><label>继续讨论<textarea value={text} onChange={event => changeText(event.target.value)} placeholder="例如：让这个 Agent 更专注于需求分析…" /></label><small role={storageError ? 'alert' : undefined}>{storageError || (text ? '草稿保存在此标签页，切换讨论或刷新可恢复。' : '')}</small><button type="submit" disabled={!text.trim() || loading || chat.busy || sending}>{sending ? '发送中…' : '发送'}</button></form>
   </div>
 }
