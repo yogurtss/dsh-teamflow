@@ -94,10 +94,10 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
           type="button"
           className={css.panelButton}
           onClick={() => { openActivityPanel(resolved) }}
-          aria-label={t('workspace.focus')}
-          title={t('workspace.focus')}
+          aria-label={t('action.openActivityPanel')}
+          title={t('action.openActivityPanel')}
         >
-          {t('workspace.focus')}
+          {t('activity.panelButton')}
         </button>
       </header>
       {resolved.members.length > 0 && (

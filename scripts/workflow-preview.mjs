@@ -15,16 +15,25 @@ writeFileSync(directory + '/entry.tsx', `import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { WorkflowWorkbench } from '../../lib/client/WorkflowWorkbench.js';
 import { TeamSection } from '../../lib/client/ActivityPanel.js';
+import { ActivitySurface } from '../../lib/client/WorkspaceActivity.js';
+import { TeamChatEntry } from '../../lib/client/TeamChatEntry.js';
+import { AgentTeamsSummary } from '../../lib/client/AgentTeamsCard.js';
+import { createWorkspaceState } from '../../lib/client/workspace-state.js';
 import { zh } from '../../lib/client/locales.js';
 import { WorkflowHistory } from '../../lib/client/WorkflowHistory.js';
 import { getActivitySnapshotsSnapshot, subscribeActivitySnapshots, publishWorkflowActivity } from '../../lib/client/activity-monitor.js';
 const snapshot = { groups: [{ id: 'fixture', name: '测试提供方', models: [{ id: '模拟模型', name: '模拟模型', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }, { id: '模拟模型 B', name: '模拟模型 B', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }] }], failures: [], status: 'ready', current: null, pending: null, error: null };
 const modelDirectory = { store: { subscribe: () => () => {}, getSnapshot: () => snapshot }, load: async () => {} } as any;
+const activityState=createWorkspaceState();
+const sessionSnapshot={current:'preview',byId:{preview:{id:'preview'}}};
+const sessionStore={subscribe:()=>()=>{},getSnapshot:()=>sessionSnapshot} as any;
+const modelDirectories={directoryFor:()=>modelDirectory} as any;
 const t = ((key: string, values: Record<string, unknown> = {}) => (zh as Record<string, string>)[key]?.replace(/\\{(\\w+)\\}/g, (_, name) => String(values[name])) ?? key) as any;
 const example = { workspace: '', teamId: 'preview', name: '活动面板示例', captainSessionId: 'preview', phase: 'running', workflowEnabled: true, messageCount: 0, captainInbox: [], members: [{ id: '', name: 'researcher', role: '需求分析师', provider: 'fixture', model: '模拟模型', activity: 'idle', progress: 0, done: 0, total: 1, currentTask: '', unread: 0 }], tasks: [{ id:'t1', subject:'需求调研', assignee:'researcher', status:'pending', state:'open', dependencies:[], depth:0 }] } as any;
 const archived = {...example,name:'6/7 人工验收归档恢复示例',workflowEnabled:true,tasks:[...Array.from({length:6},(_,i)=>({id:'t'+(i+1),subject:'已完成成果 '+(i+1),status:'completed',state:'completed',assignee:'researcher',dependencies:[],depth:0})),{id:'t7',subject:'人工检查',status:'pending',state:'open',assignee:'',dependencies:['t1','t2','t3','t4','t5','t6'],depth:1,checkpoint:{round:1,history:[]}}]} as any;
 function Preview() {const snapshots=React.useSyncExternalStore(subscribeActivitySnapshots,getActivitySnapshotsSnapshot);const restored=snapshots.teams.find(team=>team.teamId==='preview');
   React.useEffect(()=>{if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) void fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'state',sessionId:'preview',teamId:'preview'})}).then(res=>res.json()).then(value=>publishWorkflowActivity(value.activity));},[]);
+  if(${Boolean(process.env.TEAMFLOW_PREVIEW_ACTIVITY)}) return <><main data-phase="active" style={{minHeight:500}}><header><h3>当前团队对话</h3><TeamChatEntry sessionId={'preview' as any} t={t} openMember={()=>{}}/></header><p>团队已建立。右上角的小圆点可打开成员、依赖与执行进度。</p>{restored && <AgentTeamsSummary data={{teamId:restored.teamId,teamName:restored.name,captainSessionId:'preview',members:restored.members}} sessionId="preview" openMember={()=>{}} t={t}/>}</main><div data-shell-overlay style={{position:'fixed',inset:0,pointerEvents:'none'}}><div style={{pointerEvents:'auto'}}><ActivitySurface state={activityState} sessionsList={sessionStore} modelDirectories={modelDirectories} openMember={()=>{}} t={t}/></div></div></>;
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) return restored ? <TeamSection team={restored} workspace modelDirectory={modelDirectory} t={t} onNavigate={()=>{}}/> : <p>正在加载依赖图…</p>;
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_ARCHIVED)}) return <><WorkflowWorkbench sessionId="preview" teamId="preview" archived={!restored} embeddedContext modelDirectory={modelDirectory} t={t}/><TeamSection team={restored??archived} workspace historic={!restored} modelDirectory={modelDirectory} onNavigate={()=>{}} t={t}/></>;
   return <><WorkflowWorkbench sessionId="preview" embeddedContext modelDirectory={modelDirectory} t={t} teamId={location.search.includes('blank') ? undefined : 'preview'} waitingCount={location.search.includes('blank') ? 0 : 1} /><TeamSection team={example} workspace modelDirectory={modelDirectory} onNavigate={() => {}} t={t} /></>}
@@ -76,6 +85,7 @@ function previewMessages(key) {
 }
 createServer(async (req, res) => {
   if (req.url === '/app.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(readFileSync(directory + '/app.js')); return; }
+  if(req.method==='GET' && req.url?.startsWith('/plugins/dsh-agent-teams/state')) { send(res,200,{teams:req.url.includes('archived=1')?[]:[await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)]});return; }
   if (req.method !== 'POST') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end('<!doctype html><html lang="zh" style="color-scheme:' + (req.url.includes('dark') ? 'dark' : 'light') + '"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentTeams 工作台交互验证</title><style>'+previewTheme+'</style></head><body style="font-family:system-ui;padding:30px;background:light-dark(#f6f7f9,#181a1e);color:light-dark(#26303d,#e3e6ec)"><h2>AgentTeams 工作台 · 开发预览</h2><p>本页使用实际界面代码，执行结果为模拟数据；原生讨论入口需要在 DSH 中使用。</p><div id="root"></div><script src="/app.js"></script></body></html>'); return; }
   try {
     let raw = ''; for await (const chunk of req) raw += chunk;

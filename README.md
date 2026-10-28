@@ -147,11 +147,11 @@ Proposals require human confirmation. Stop running tasks before applying edits, 
 
 The inherited activity panel, slash command and configuration remain available, as described below.
 
-## View teams in the workspace
+## Activity dot and team panel
 
-Click **View team** in the current chat header or the team card below a reply to open the native **Team collaboration** tab. The entry belongs to its chat, rather than the general workspace start page.
+Click the activity dot on the right of the current chat to open the compact **TeamFlow activity** panel. The **Activity panel** button on a team card opens the same panel, including historical teams. This remains the primary entry on hosts with native workspace tabs.
 
-Team and task content starts immediately: wide panes use columns and narrow panes stack them. Select a task to locate its owner; member icons open their conversations. Closing the tab does not stop the team, and its chat can reopen it. Completed teams retain their archives. Older hosts keep the activity panel.
+The panel shows members, task dependencies and execution progress, and can float, dock, resize or collapse back to the dot. Collapsing it does not stop the team. **Team & workflow** opens the full canvas; discussion context stays in independent discussion views. Human review markers, running animations, task discussion and rerun controls remain available. [Screenshots and validation](./docs/activity-panel-restored-2026-10-28/README.md).
 
 ## How it works
 

@@ -1,13 +1,11 @@
 /** Native workspace content; discovery remains mounted independently of tab lifetime. */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISidebarRight } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { ActivityPanel, TeamSection, historicCardTeam, type ActivityPanelProps } from './ActivityPanel.tsx'
-import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
-import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
-import { currentSessionId, openWorkflowConversation } from './session-navigation.ts'
-import { getActivityMonitorTargetsSnapshot, getActivitySnapshotsSnapshot, startActivityPolling, subscribeActivityMonitorTargets, subscribeActivitySnapshots, updateActivitySnapshots } from './activity-monitor.ts'
-import { createTeamDiscovery, type WorkspaceActivityState } from './workspace-state.ts'
+import { openWorkflowConversation } from './session-navigation.ts'
+import { getActivitySnapshotsSnapshot, startActivityPolling, subscribeActivitySnapshots } from './activity-monitor.ts'
+import type { WorkspaceActivityState } from './workspace-state.ts'
 import { LEAD_ART } from './artwork.ts'
 import css from './WorkspaceActivity.module.css'
 import { WorkflowHistory } from './WorkflowHistory.tsx'
@@ -16,7 +14,7 @@ import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 export const TEAM_TAB_KIND = 'agent-teams'
 export const TEAM_TAB_ID = '@yogurtss/dsh-teamflow/activity'
 
-/** Optional host integration is observable so installing/removing it also switches the fallback. */
+/** Optional host integration tracks whether the host renders durable turn-tail cards. */
 export function createWorkspaceBridge() {
   let sidebar: ISidebarRight | undefined
   const listeners = new Set<() => void>()
@@ -27,56 +25,11 @@ export function createWorkspaceBridge() {
   }
 }
 
-export function ActivitySurface({ bridge, state, ...props }: ActivityPanelProps & {
-  bridge: ReturnType<typeof createWorkspaceBridge>
+/** The activity dot is the primary monitor on every host; native tabs are supplementary. */
+export function ActivitySurface({ state, ...props }: ActivityPanelProps & {
   state: WorkspaceActivityState
 }) {
-  const sidebar = useSyncExternalStore(bridge.subscribe, bridge.getSnapshot)
-  return sidebar === undefined ? <ActivityPanel {...props} /> : <WorkspaceMonitor {...props} sidebar={sidebar} state={state} />
-}
-
-function WorkspaceMonitor({ sessionsList, sidebar, state }: ActivityPanelProps & {
-  sidebar: ISidebarRight
-  state: WorkspaceActivityState
-}) {
-  const current = currentSessionId(useSyncExternalStore(sessionsList.subscribe, sessionsList.getSnapshot))
-  const targets = useSyncExternalStore(subscribeActivityMonitorTargets, getActivityMonitorTargetsSnapshot)
-  const currentTargets = useMemo(() => targets.filter(target => target.sessionId === current), [targets, current])
-  // One discovery tracker per visit, outside polling effects restarted by card registration.
-  const discover = useMemo(() => createTeamDiscovery(), [current])
-  useEffect(() => {
-    if (current === undefined) return
-    state.status(current, 'loading')
-    const controller = startActivityPolling(currentTargets, {
-      discoverySessionId: current,
-      onStatus(status) {
-        state.status(current, status)
-      },
-      publishSnapshots(update) {
-        updateActivitySnapshots(update)
-        if (update.teams === undefined) return
-        const added = discover(update.teams.filter(team => team.captainSessionId === current))
-        // Do not replace a file/terminal, or navigate a session whose surface is not bound.
-        if (added !== undefined && sidebar.mounted.getSnapshot() === current && !sidebar.isExpanded()) {
-          state.select(current, added)
-          sidebar.openTab(TEAM_TAB_KIND)
-        }
-      },
-    })
-    return () => { controller.stop() }
-  }, [current, currentTargets, discover, sidebar, state])
-  useEffect(() => {
-    const open = (event: Event): void => {
-      if (current === undefined || sidebar.mounted.getSnapshot() !== current) return
-      const data = (event as CustomEvent<AgentTeamsCardData>).detail
-      if (data?.captainSessionId && data.captainSessionId !== current) return
-      if (data?.teamId) state.remember(current, data)
-      sidebar.openTab(TEAM_TAB_KIND)
-    }
-    window.addEventListener(OPEN_PANEL_EVENT, open)
-    return () => { window.removeEventListener(OPEN_PANEL_EVENT, open) }
-  }, [current, sidebar, state])
-  return null
+  return <ActivityPanel {...props} onMonitorStatus={state.status} onRememberTeam={state.remember} />
 }
 
 export type WorkspaceActivityProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'agentTeams'> & {
@@ -122,7 +75,7 @@ export function WorkspaceActivity({ sessionId, useTabInfo, t, state, modelDirect
           <span>{t('workspace.title')}</span>
         </header>
         {history && selected && !archived.includes(selected) && <WorkflowHistory name={selected.name}><TeamSection team={selected} workspace historic onNavigate={openMember} t={t} /></WorkflowHistory>}
-        {(!history || !!selected && archived.includes(selected)) && <WorkflowWorkbench key={`${sessionId}:${selected?.teamId ?? ''}`} sessionId={sessionId} teamId={selected?.teamId} archived={history} embeddedContext onNativeContext={setIsNativeContext} openContext={openContext} modelDirectory={modelDirectories.directoryFor(sessionId)} t={t}
+        {(!history || !!selected && archived.includes(selected)) && <WorkflowWorkbench key={`${sessionId}:${selected?.teamId ?? ''}`} sessionId={sessionId} teamId={selected?.teamId} archived={history} embeddedContext={isNativeContext} onNativeContext={setIsNativeContext} openContext={openContext} modelDirectory={modelDirectories.directoryFor(sessionId)} t={t}
           waitingCount={selected?.phase !== 'staged' && !selected?.halted ? selected?.tasks.filter(task => task.checkpoint && !task.workflowConfigPending && !task.workflowPaused && !task.checkpoint.decision && task.status === 'pending' && task.dependencies.every(id => selected.tasks.some(t => t.id === id && t.status === 'completed'))).length : 0}
           openConversation={id => openWorkflowConversation(openMember, id as import('@deepseek-ai/dsh-session/types').SessionId)}
           openExecution={(id, parentId) => openMember((parentId ?? sessionId) as import('@deepseek-ai/dsh-session/types').SessionId, id as import('@deepseek-ai/dsh-session/types').SessionId)} />}

@@ -910,13 +910,15 @@ export function historicCardTeam(data: AgentTeamsCardData, owner: string): Activ
  * snapshots and historic card summaries are only shown while their captain
  * session is the one currently open. */
 export type ActivityPanelProps = {
+  readonly onMonitorStatus?: (sessionId: SessionId, status: 'loading' | 'ready' | 'error') => void
+  readonly onRememberTeam?: (sessionId: SessionId, data: AgentTeamsCardData) => void
   readonly conversationVisible?: boolean
   readonly sessionsList: ObservableSnapshot<SessionListState>
   readonly modelDirectories: ModelDirectoryResolver
   readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>
 } & PropsLocale<'agentTeams'>
 
-export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true }: ActivityPanelProps) {
+export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true, onMonitorStatus, onRememberTeam }: ActivityPanelProps) {
   // Navigating to a member's subagent transcript is an explicit departure:
   // hide the floater immediately instead of waiting out the autocollapse
   // grace, so the panel never lingers over the member session.
@@ -1067,7 +1069,8 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     // Cards keep live teams on the normal cadence. The current-session scope
     // also performs one cold-start discovery pass so archived/cardless teams
     // survive a browser or `dsh web` restart.
-    const controller = startActivityPolling(currentTargets, { discoverySessionId: current })
+    onMonitorStatus?.(current, 'loading')
+    const controller = startActivityPolling(currentTargets, { discoverySessionId: current, onStatus: status => onMonitorStatus?.(current, status) })
     let active = true
     const tracker = autoOpenTrackerRef.current
     if (tracker.sessionId === current && !tracker.restoreComplete) {
@@ -1084,19 +1087,21 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
       active = false
       controller.stop()
     }
-  }, [current, currentTargets])
+  }, [current, currentTargets, onMonitorStatus])
 
   useEffect(() => {
     const onOpenPanel = (event: Event): void => {
       const activeSession = currentRef.current
       if (activeSession === undefined) return
+      const detail = (event as CustomEvent<AgentTeamsCardData>).detail
+      if (detail?.captainSessionId && detail.captainSessionId !== activeSession) return
       setOpenOwner(activeSession)
       setOpen(true)
-      const detail = (event as CustomEvent<AgentTeamsCardData>).detail
       if (detail?.teamId !== undefined) {
+        onRememberTeam?.(activeSession, detail)
         // A card from a log that predates captainSessionId belongs to the
         // session that activated it (the current one at injection time).
-        const owner = detail.captainSessionId !== '' ? detail.captainSessionId : currentRef.current ?? ''
+        const owner = detail.captainSessionId || activeSession
         const teamKey = `${owner}:${detail.teamId}`
         setHistoric((previous) => {
           const next = new Map(previous)
@@ -1109,7 +1114,7 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     return () => {
       window.removeEventListener(OPEN_PANEL_EVENT, onOpenPanel)
     }
-  }, [])
+  }, [onRememberTeam])
 
   // Teams follow the current session: live snapshots and historic card
   // summaries are visible only while their captain session is current.

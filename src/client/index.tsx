@@ -74,7 +74,6 @@ export function apply(ctx: ClientContext): void {
     const conversationVisible = usePanel(panel => panel.activePanelId === null)
     return (
     <ActivitySurface
-      bridge={bridge}
       state={state}
       conversationVisible={conversationVisible}
       sessionsList={ctx.sessions.list}

@@ -1,10 +1,9 @@
-/** Session-owned entry points: a persistent title action and a durable turn card. */
+/** Session-owned review reminders, discussion entry and durable team cards. */
 import { useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { AgentTeamsSummary, openActivityPanel, type AgentTeamsCardInjected } from './AgentTeamsCard.tsx'
+import { AgentTeamsSummary, type AgentTeamsCardInjected } from './AgentTeamsCard.tsx'
 import { getActivitySnapshotsSnapshot, subscribeActivitySnapshots } from './activity-monitor.ts'
 import { teamCardsForTurn } from './agent-teams-card-definition.ts'
-import { LEAD_ART } from './artwork.ts'
 import css from './AgentTeamsCard.module.css'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { openWorkflowConversation } from './session-navigation.ts'
@@ -15,11 +14,8 @@ export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRu
   if (!team) return <WorkflowWorkbench key={sessionId} sessionId={sessionId} nativeOnly openContext={openContext}
     openConversation={openMember ? id => openWorkflowConversation(openMember, id as typeof sessionId) : undefined}
     openExecution={(id, parentId) => openMember?.((parentId ?? sessionId) as typeof sessionId, id as typeof sessionId)} />
-  return <><button className={css.chatEntry} data-team-chat-entry type="button" title={t('workspace.focus')}
-    onClick={() => openActivityPanel({ teamId: team.teamId, captainSessionId: sessionId, teamName: team.name, members: team.members })}>
-    <img src={LEAD_ART} alt="" aria-hidden />{t('workspace.focus')}
-  </button><WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={team.teamId} reviewEntryOnly
-    openConversation={openMember ? id => openWorkflowConversation(openMember, id as typeof sessionId) : undefined} /></>
+  return <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={team.teamId} reviewEntryOnly
+    openConversation={openMember ? id => openWorkflowConversation(openMember, id as typeof sessionId) : undefined} />
 }
 
 export function TeamTurnCard({ sessionId, turn, useChat, t, openMember }: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<'agentTeams'> & AgentTeamsCardInjected) {

@@ -496,7 +496,7 @@ check(
 check(
   'activity polling combines card demand with current-session cold discovery',
   activityPanelSource.includes('if (current === undefined) return')
-    && activityPanelSource.includes('startActivityPolling(currentTargets, { discoverySessionId: current })')
+    && activityPanelSource.includes('startActivityPolling(currentTargets, { discoverySessionId: current,')
     && agentTeamsCardSource.includes('monitorAgentTeam(owner, data.teamId)')
     && !agentTeamsCardSource.includes('setInterval(')
     && !agentTeamsCardSource.includes('fetch('),

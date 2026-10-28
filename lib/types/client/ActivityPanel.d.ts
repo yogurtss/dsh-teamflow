@@ -42,9 +42,11 @@ export declare function historicCardTeam(data: AgentTeamsCardData, owner: string
  * snapshots and historic card summaries are only shown while their captain
  * session is the one currently open. */
 export type ActivityPanelProps = {
+    readonly onMonitorStatus?: (sessionId: SessionId, status: 'loading' | 'ready' | 'error') => void;
+    readonly onRememberTeam?: (sessionId: SessionId, data: AgentTeamsCardData) => void;
     readonly conversationVisible?: boolean;
     readonly sessionsList: ObservableSnapshot<SessionListState>;
     readonly modelDirectories: ModelDirectoryResolver;
     readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>;
 } & PropsLocale<'agentTeams'>;
-export declare function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible }: ActivityPanelProps): import("react").JSX.Element | null;
+export declare function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible, onMonitorStatus, onRememberTeam }: ActivityPanelProps): import("react").JSX.Element | null;
