@@ -6,7 +6,7 @@ export function connectionIssue(tasks: TeamTask[], from: string, to: string): st
   if (!target || !tasks.some(t => t.id === from)) return '节点不存在'
   if (from === to) return '不能连接自身'
   if (target.dependencies.includes(from)) return '这条交接已存在'
-  if (target.status !== 'pending' || ((target.attempt ?? 0) > 0 && !target.workflowPaused) || target.reassigning || target.checkpoint?.decision) return '请先停止目标任务，或创建返工轮次'
+  if (target.status !== 'pending' || ((target.attempt ?? 0) > 0 && !target.workflowPaused) || target.reassigning || (target.checkpoint?.decision && target.checkpoint.decision !== 'reject')) return '请先停止目标任务，或创建返工轮次'
   const seen = new Set<string>()
   function reaches(id: string): boolean {
     if (id === to) return true

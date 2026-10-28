@@ -650,6 +650,59 @@ test('reject preserves downstream blocking; confirmed rework creates new attempt
   assert.notEqual(result.tasks[1].dependencies[0], 't1')
   assert.equal(result.tasks.at(-1).status, 'pending'); assert.equal(checkpointReady(result, result.tasks[1]), false)
 })
+
+test('new upstream wiring reopens a rejected checkpoint without stopping it or losing review history', () => {
+  let source=withGate();source.tasks[0].status='completed';source.tasks[0].output='Original result'
+  decideCheckpoint(source,'gate','reject','old','old','Missing implementation')
+  source=applyWorkflowOperations(source,[{action:'add_task',id:'fix',subject:'Fix implementation',dependencies:['t1'],configurationPending:true}])
+  const before=structuredClone(source), operation={action:'update_task',id:'gate',dependencies:['t1','fix']}
+  assert.equal(connectionIssue(source.tasks,'fix','gate'),undefined)
+  const updated=applyWorkflowOperations(source,[operation]), gate=updated.tasks.find(task=>task.id==='gate')
+  assert.deepEqual(source,before,'graph edits operate atomically on a copy')
+  assert.equal(gate.status,'pending');assert.equal(gate.checkpoint.round,2);assert.equal(gate.checkpoint.decision,undefined)
+  assert.equal(gate.checkpoint.evidence,undefined);assert.equal(gate.checkpoint.note,undefined)
+  assert.deepEqual(gate.checkpoint.history,before.tasks[1].checkpoint.history)
+  assert.equal(updated.tasks[0].output,'Original result');assert.equal(updated.tasks[2].status,'pending')
+  assert.equal(checkpointReady(updated,gate),false,'new unfinished upstream blocks review')
+  assert.equal(applyWorkflowOperations(updated,[operation]).tasks[1].checkpoint.round,2,'repeat wiring cannot create extra rounds')
+  assert.throws(()=>applyWorkflowOperations(source,[{...operation,description:'Unrelated edit'}]),/先停止/)
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:['t1']}]),/先停止/)
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:[]}]),/先停止/)
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'remove_task',id:'gate'}]),/先停止/)
+  assert.match(connectionIssue(source.tasks,'after','gate'),/循环/)
+  assert.throws(()=>applyWorkflowOperations(source,[{...operation,dependencies:['after']}]),/循环/)
+  assert.deepEqual(source,before,'invalid reconnection retains rejected round')
+  updated.tasks.find(task=>task.id==='fix').status='completed'
+  const current=workflowMaterials(updated,'gate',process.cwd()).evidence
+  assert.throws(()=>decideCheckpoint(updated,'gate','approve','old',current,''),/材料已变化/)
+  decideCheckpoint(updated,'gate','approve',current,current,'Fixed')
+  assert.equal(gate.checkpoint.history.length,2);assert.equal(gate.status,'completed')
+  assert.match(connectionIssue(updated.tasks,'fix','t1'),/停止/,'finished ordinary targets stay protected')
+  assert.throws(()=>applyWorkflowOperations(updated,[{action:'update_task',id:'gate',dependencies:['fix']}]),/先停止/,'approved checkpoint stays protected')
+})
+
+test('reconnecting rejected review through the canvas route persists a new round and refreshes evidence', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-reconnect-review-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const stateRoot=join(root,'.agent-teams');let source=withGate();source.tasks[0].status='completed'
+  const material=workflowMaterials(source,'gate',root)
+  decideCheckpoint(source,'gate','reject',material.evidence,material.evidence,'Needs another task')
+  workflowState(source).discussions['discussion:check:gate']={key:'check:gate',messages:[],calls:[],materials:material.text,evidence:material.evidence,materialsRound:1}
+  source=applyWorkflowOperations(source,[{action:'add_task',id:'fix',subject:'Fix',dependencies:[],configurationPending:true}])
+  await createTeamDir(stateRoot,source)
+  let route,status,response
+  const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
+  installWorkflowWorkbench({agents:{get:()=>captain},effect:fn=>fn(),logger:{warn(){}}},{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{}},{register:value=>{route=value;return()=>{}}})
+  const call=async(action,fields={})=>{const req=Readable.from([JSON.stringify({action,sessionId:captain.id,teamId:'demo',discussion:'check:gate',...fields})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await call('edit',{base:workflowFingerprint(source),title:'Connect fix to rejected checkpoint',operations:[{action:'update_task',id:'gate',dependencies:['t1','fix']}]})
+  assert.equal(status,200,JSON.stringify(response));assert.equal(response.ready.includes('gate'),false)
+  const saved=await readTeam(stateRoot,'demo');assert.equal(saved.tasks[1].checkpoint.round,2);assert.equal(saved.tasks[1].checkpoint.history[0].decision,'reject')
+  await call('review',{taskId:'gate',decision:'approve',evidence:material.evidence});assert.equal(status,409,'cannot approve while the new task is unfinished')
+  Object.assign(saved.tasks.find(task=>task.id==='fix'),{status:'completed',workflowConfigPending:false,workflowPaused:false,output:'Fixed implementation'});await writeTeam(stateRoot,saved)
+  await call('review',{taskId:'gate',decision:'approve',evidence:material.evidence});assert.equal(status,409,'prior-round evidence cannot approve the new round')
+  await call('materials');assert.equal(status,200,JSON.stringify(response))
+  const discussion=response.team.workflow.discussions['discussion:check:gate'];assert.equal(discussion.materialsRound,2);assert.notEqual(discussion.evidence,material.evidence)
+  await call('review',{taskId:'gate',decision:'approve',evidence:discussion.evidence});assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks[1].status,'completed')
+})
 test('rework also repeats downstream computation before the checkpoint', () => {
   const source = applyWorkflowOperations(team(), [{ action: 'add_task', id: 'build', subject: 'Build', dependencies: ['t1'] }, { action: 'add_task', id: 'gate', subject: 'Review', dependencies: ['build'], checkpoint: true }])
   source.tasks[0].status = source.tasks[1].status = 'completed'

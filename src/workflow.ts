@@ -64,8 +64,8 @@ function nextTaskId(team: TeamState): string {
   do { id = `t${++team.taskSeq}` } while (team.tasks.some(t => t.id === id))
   return id
 }
-function editable(task: TeamTask): void {
-  if (task.status !== 'pending' || ((task.attempt ?? 0) !== 0 && !task.workflowPaused) || task.reassigning || task.checkpoint?.decision) {
+function editable(task: TeamTask, reconnectRejected = false): void {
+  if (task.status !== 'pending' || ((task.attempt ?? 0) !== 0 && !task.workflowPaused) || task.reassigning || (task.checkpoint?.decision && !reconnectRejected)) {
     throw new Error(`任务 ${task.id} 已开始；请先停止该任务，已结束任务请使用修改并重跑`)
   }
 }
@@ -146,7 +146,14 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         ...op.configurationPending ? { workflowConfigPending: true, workflowPaused: true } : {},
         ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
-      const task = taskOf(team, op.id); editable(task)
+      const task = taskOf(team, op.id)
+      // Connecting new upstream work is the manual equivalent of a rework round.
+      // A rejected human checkpoint has no execution process to stop. Only a
+      // dependency edit that adds an input may reopen it; keep other edits fenced.
+      const reconnectRejected = task.checkpoint?.decision === 'reject'
+        && !!op.dependencies?.some(id => !task.dependencies.includes(id))
+        && op.subject === undefined && op.description === undefined && op.assignee === undefined && !op.confirmConfiguration
+      editable(task, reconnectRejected)
       if (op.subject !== undefined) task.subject = op.subject
       if (op.description !== undefined) task.description = op.description
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
@@ -158,6 +165,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       }
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
+      if (reconnectRejected && task.checkpoint) task.checkpoint = { round: task.checkpoint.round + 1, history: task.checkpoint.history }
       task.updatedAt = now
     } else if (op.action === 'remove_task') {
       const task = taskOf(team, op.id); editable(task)
