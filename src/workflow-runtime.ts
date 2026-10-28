@@ -110,6 +110,13 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       }
       const currentDiscussion = address ? boundDiscussion(await load(), caller)?.key : undefined
       const key = typeof body['discussion'] === 'string' ? body['discussion'] : currentDiscussion ?? 'graph'
+      const toggling = action === 'set_task_enabled'
+      if (toggling && (typeof body['enabled'] !== 'boolean' || typeof body['updatedAt'] !== 'number')) throw new Error('节点开关需要目标状态和当前版本，请刷新后重试')
+      const checkToggle = (team: TeamState, task: TeamState['tasks'][number] | undefined): void => {
+        if (!toggling) return
+        if (team.halted || !task || task.updatedAt !== body['updatedAt']) throw new Error('节点或团队状态已变化，请刷新后重试')
+        if (['completed','failed','cancelled'].includes(task.status) || task.checkpoint?.decision || task.workflowConfigPending || task.workflowRerunRequired) throw new Error('请在节点属性中完成配置、处理退回或确认重跑')
+      }
       let openedSessionId: string | undefined
       if (action === 'conversation_state' || action === 'conversation_send') {
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
@@ -131,7 +138,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           discussion.materials = material.text; discussion.evidence = material.evidence; discussion.materialsRound = task.checkpoint!.round
           await writeTeam(root, team)
         })
-      } else if (action === 'stop_task') {
+      } else if (action === 'stop_task' || (toggling && body['enabled'] === false)) {
         const stopKey = `${root}:${teamId}:${String(body['taskId'])}`
         if (stopping.has(stopKey)) throw new Error('任务正在停止，请稍候')
         stopping.add(stopKey)
@@ -139,7 +146,14 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           let child = '', stopId = ''
           await withTeamLock(lock, async () => {
             const team = await load(), task = team.tasks.find(t => t.id === body['taskId'])
+            checkToggle(team, task)
+            if (toggling && task?.checkpoint) {
+              if (task.status !== 'pending') throw new Error('该人工审核不能暂停')
+              task.workflowPaused = true; task.updatedAt = Date.now()
+              await writeTeam(root, team); return
+            }
             if (!task || task.checkpoint || ['completed', 'failed', 'cancelled'].includes(task.status)) throw new Error('该任务不能暂停编辑')
+            if (task.workflowPaused && !task.reassigning && !team.members.some(m => m.name === task.assignee && m.stopping)) return
             if (task.assignee === 'captain' && captain.status !== 'idle') throw new Error('请先在宿主中停止队长当前执行，再暂停此任务以编辑')
             const member = team.members.find(m => m.name === task.assignee)
             task.workflowPaused = true
@@ -250,9 +264,11 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const discussion = discussionOf(team, `check:${id}`)
             if (typeof body['evidence'] !== 'string' || body['evidence'] !== discussion.evidence) throw new Error('请先打开并阅读当前验收材料')
             decideCheckpoint(team, id, decision, body['evidence'], workflowMaterials(team, id, workspace).evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '')
-          } else if (action === 'resume_task') {
+          } else if (action === 'resume_task' || (toggling && body['enabled'] === true)) {
             const task = team.tasks.find(t => t.id === body['taskId'])
+            checkToggle(team, task)
             if (task?.workflowConfigPending) throw new Error('请先填写任务／验收要求并完成节点配置')
+            if (toggling && task && !task.workflowPaused) return
             if (!task || !task.workflowPaused || task.status !== 'pending' || team.members.some(m => m.name === task.assignee && m.stopping)) throw new Error('任务尚未停止完成')
             if (task.workflowRerunRequired && body['base'] !== workflowFingerprint(team)) throw new Error('团队已变化，请刷新节点后重新确认')
             if (task.workflowRerunRequired && task.dependencies.some(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))) throw new Error('请先等待所有上游任务完成，再确认此节点重跑')
@@ -266,7 +282,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if (['apply', 'edit', 'review', 'resume_task'].includes(action)) {
+        if (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true)) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }
@@ -274,7 +290,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       // A fresh discussion may archive the caller's old discussion after ownership was checked.
       const team = openedSessionId ? await readTeam(root, teamId) : await load()
       if (!team) throw new Error('团队不存在')
-      reply(200, { team, base: workflowFingerprint(team), ...(action==='review'?{activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
+      reply(200, { team, base: workflowFingerprint(team), ...(action==='review' || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })
     } catch (error) {
       reply(error instanceof RequestBodyError ? error.status : 409, { error: error instanceof Error ? error.message : '操作失败' })

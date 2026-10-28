@@ -44,10 +44,10 @@ test('disposal prevents a late failed request from updating a different session'
 test('workspace DAG keeps real dependency endpoints aligned with enlarged nodes',async()=>{
  const {compactDagLayout}=await import('../lib/client/activity-model.js')
  const tasks=[{id:'implement',depth:0,dependencies:[]},{id:'review',depth:1,dependencies:['implement']}]
- const layout=compactDagLayout(tasks,{nodeWidth:164,nodeHeight:76,columnGap:36,rowGap:16})
- assert.equal(layout.width,364)
- assert.equal(layout.nodes[1].x,200)
- assert.equal(layout.edges[0].path,'M164 38C178 38,186 38,200 38')
+ const layout=compactDagLayout(tasks,{nodeWidth:212,nodeHeight:154,columnGap:36,rowGap:20})
+ assert.equal(layout.width,460)
+ assert.equal(layout.nodes[1].x,248)
+ assert.equal(layout.edges[0].path,'M212 77C226 77,234 77,248 77')
 })
 
 test('restoration and human approval publish live state without changing other team owners',()=>{

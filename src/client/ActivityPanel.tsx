@@ -18,6 +18,7 @@
  */
 
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
+import { taskControlState } from './task-control.ts'
 import { QuickMemberEditor } from './QuickMemberEditor.tsx'
 import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
@@ -40,8 +41,6 @@ import {
   activityPanelShouldAutoExpand,
   compactDagLayout,
   compactModelLabel,
-  COMPACT_DAG_NODE_HEIGHT,
-  COMPACT_DAG_NODE_WIDTH,
   dependencyFocusTaskId,
   memberRouteLabel,
   orderDelegationMembers,
@@ -57,6 +56,7 @@ import {
   startActivityPolling,
   subscribeActivityMonitorTargets,
   subscribeActivitySnapshots,
+  publishWorkflowActivity,
   type ActivityMember,
   type ActivityTask,
   type ActivityTeam,
@@ -393,7 +393,12 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
   )
 }
 
-function DependencyMap({ tasks, members, t, discarded = false, workspace = false, onSelectTask }: {
+function DependencyMap({ tasks, members, t, discarded = false, workspace = false, onSelectTask, team, historic = false, onToggle, onOpenTask, controlBusy }: {
+  readonly team: ActivityTeam
+  readonly historic?: boolean
+  readonly controlBusy?: string
+  readonly onToggle: (task: ActivityTask, enabled: boolean) => void
+  readonly onOpenTask: (task: ActivityTask, review: boolean) => void
   readonly tasks: readonly ActivityTask[]
   readonly members: readonly ActivityMember[]
   readonly t: AgentTeamsTranslate
@@ -407,10 +412,10 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focusedTaskId = dependencyFocusTaskId(pinnedTaskId, keyboardTaskId, hoverTaskId)
-  const nodeWidth = workspace ? 164 : COMPACT_DAG_NODE_WIDTH
-  const nodeHeight = workspace ? 76 : COMPACT_DAG_NODE_HEIGHT
-  const layout = useMemo(() => compactDagLayout(tasks, workspace
-    ? { nodeWidth: 164, nodeHeight: 76, columnGap: 36, rowGap: 16 } : undefined), [tasks, workspace])
+  const nodeWidth = workspace ? 212 : 172
+  const nodeHeight = workspace ? 154 : 142
+  const layout = useMemo(() => compactDagLayout(tasks,
+    { nodeWidth, nodeHeight, columnGap: 36, rowGap: 20 }), [tasks, nodeWidth, nodeHeight])
   const parallel = useMemo(() => usesParallelTaskGrid(tasks), [tasks])
   const related = useMemo(
     () => focusedTaskId === null ? null : relatedTaskIds(focusedTaskId, tasks),
@@ -463,6 +468,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
       </header>
       {open && (
         <>
+          <p className={css.taskControlHint}>{t('task.control.hint')}</p>
           <div className={css.dagViewport}>
             <div
               className={css.dagCanvas}
@@ -477,29 +483,31 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               </svg>}
               {layout.nodes.map(({ task, x, y }) => {
                 const model = taskModelLabel(task, members)
+                const control = taskControlState(team,task,historic)
                 return (
-                  <button
+                  <article
                     key={task.id}
-                    type="button"
                     className={css.dagNode}
                     style={parallel
                       ? { height: nodeHeight }
                       : { left: x, top: y, width: nodeWidth, height: nodeHeight }}
                     data-task-id={task.id}
+                    data-checkpoint={!!task.checkpoint || undefined}
+                    data-review-ready={control.reviewReady || undefined}
                     data-state={discarded ? 'cancelled' : taskTone(task.state, task.status)}
                     data-verdict-stale={task.verdictStale === undefined ? undefined : 'true'}
                     data-task-model={model || undefined}
                     data-focused={related?.has(task.id) ?? false}
                     data-dimmed={related !== null && !related.has(task.id)}
-                    aria-pressed={pinnedTaskId === task.id}
                     title={taskTitle(task, model)}
-                    onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
                     onMouseEnter={() => { scheduleHover(task.id) }}
                     onMouseLeave={() => { scheduleHover(null) }}
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{workspace && <span className={css.dagOwner}>{task.checkpoint ? t('task.assignee.human') : task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    <button type="button" className={css.dagSelect} aria-pressed={pinnedTaskId === task.id} onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}>
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{workspace && !task.checkpoint && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    {task.checkpoint && <span className={css.reviewKind}>◇ {t('task.control.human')} · {t('task.control.round',{round:task.checkpoint.round})}</span>}
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
@@ -509,7 +517,13 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                         <WorkGlyph active />
                       </span>
                     )}
-                  </button>
+                    </button>
+                    <span className={css.dagExecutionState} title={control.waiting.length ? t('task.detail.waitingOn',{tasks:formatTaskIds(control.waiting,t)}) : t(control.label)}>{discarded ? t('task.status.notRun') : t(control.label)}</span>
+                    <div className={css.dagControls}>
+                      <button type="button" role="switch" aria-checked={control.checked} aria-label={t('task.control.switch',{task:task.subject})} className={css.taskSwitch} disabled={control.disabled || control.stopping || !!controlBusy} title={control.disabled || control.stopping ? t(control.label) : t('task.control.hint')} onClick={() => onToggle(task,!control.checked)}><span aria-hidden="true" />{control.disabled || control.stopping ? t(control.label) : control.checked ? t('task.control.enabled') : t('task.control.paused')}</button>
+                      <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(task,false) : onOpenTask(task,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
+                    </div>
+                  </article>
                 )
               })}
             </div>
@@ -519,7 +533,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               <span className={css.taskDetailId}>{detailTask.id}</span>
               <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject.replace(/^开发\s*/u, '')}</span>
               <span className={css.taskDetailBadge} data-state={discarded ? 'cancelled' : taskTone(detailTask.state, detailTask.status)}>
-                {discarded ? t('task.status.notRun') : detailTask.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(detailTask, t)}
+                {discarded ? t('task.status.notRun') : t(taskControlState(team,detailTask,historic).label)}
               </span>
             </span>
             <span className={css.taskDetailLine}>
@@ -531,6 +545,8 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                   ? t('task.detail.cancelled')
                 : detailTask.status === 'failed'
                   ? t('task.detail.failed')
+                : detailTask.workflowPaused || detailTask.workflowConfigPending || detailTask.workflowRerunRequired || team.halted || team.phase === 'staged'
+                  ? t(taskControlState(team,detailTask,historic).label)
                 : detailTask.checkpoint
                   ? taskStatusLabel(detailTask,t)
                 : detailTask.dependencies.length === 0
@@ -544,6 +560,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                 {t('task.model', { model: detailModel })}
               </span>
             )}
+            {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
             <span className={css.taskDetailMeta}>{dependents.length === 0
               ? t('task.detail.noDownstream')
               : t('task.detail.unlocks', { tasks: formatTaskIds(dependents.map((task) => task.id), t) })}</span>
@@ -566,6 +583,21 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
   readonly workspace?: boolean
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [controlBusy,setControlBusy] = useState<string>()
+  const controlPending = useRef(false)
+  const [controlError,setControlError] = useState('')
+  const [taskEntry,setTaskEntry] = useState<{taskId:string;review:boolean}>()
+  async function toggleTask(task: ActivityTask, enabled: boolean): Promise<void> {
+    if (controlPending.current || taskControlState(team,task,historic).disabled) return
+    controlPending.current = true; setControlBusy(task.id); setControlError('')
+    try {
+      const response = await fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set_task_enabled',sessionId:team.captainSessionId,teamId:team.teamId,taskId:task.id,enabled,updatedAt:task.updatedAt})})
+      const value = await response.json() as {error?:string;activity?:ActivityTeam}
+      if (!response.ok || !value.activity) throw new Error(value.error || t('task.control.failed'))
+      publishWorkflowActivity(value.activity)
+    } catch (error) { setControlError(error instanceof Error ? error.message : t('task.control.failed')) }
+    finally { controlPending.current = false; setControlBusy(undefined) }
+  }
   const [editingMember, setEditingMember] = useState<string>()
   const selectedAssignee = team.tasks.find(task => task.id === selectedTaskId)?.assignee
   const [membersOpen, setMembersOpen] = useState(workspace)
@@ -816,7 +848,10 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
         })()}
       </section>
 
-      <DependencyMap tasks={team.tasks} members={team.members} t={t} discarded={discarded} workspace={workspace} onSelectTask={setSelectedTaskId} />
+      {controlBusy && <p role="status" className={css.taskControlHint}>{t('task.control.saving')}</p>}
+      {controlError && <p role="alert" className={css.stopModalError}>{controlError}</p>}
+      <DependencyMap team={team} tasks={team.tasks} members={team.members} t={t} historic={historic} discarded={discarded} workspace={workspace} onSelectTask={setSelectedTaskId} controlBusy={controlBusy} onToggle={(task,enabled)=>void toggleTask(task,enabled)} onOpenTask={(task,review)=>setTaskEntry({taskId:task.id,review})} />
+      {taskEntry && <WorkflowWorkbench key={taskEntry.taskId} sessionId={team.captainSessionId} teamId={team.teamId} archived={historic} entryTarget={taskEntry} onClose={()=>setTaskEntry(undefined)} modelDirectory={modelDirectory} t={t} openExecution={(id,parent)=>onNavigate((parent??team.captainSessionId) as SessionId,id as SessionId)} openConversation={id=>openWorkflowConversation(onNavigate,id as SessionId)} />}
       {workspace && <WorkspaceSummary team={team} t={t} discarded={discarded} />}
       </section>
       <Modal

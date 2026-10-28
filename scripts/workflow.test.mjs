@@ -762,6 +762,60 @@ test('pausing a queued task preserves another running task and its member stop b
   disposers.reverse().forEach(dispose => dispose?.()); assert.equal(removed, true)
 })
 
+test('node switches queue downstream, never enable upstream or bypass human review, and reject stale or terminal changes', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-task-switch-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const stateRoot=join(root,'.agent-teams'),source=withGate();source.tasks[0].workflowPaused=true;source.tasks[2].workflowPaused=true
+  await createTeamDir(stateRoot,source)
+  const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}, dispatched=[]
+  let route,status,response
+  const ctx={agents:{get:id=>id===captain.id?captain:undefined},on(){},effect:fn=>fn(),logger:{warn(){}}}
+  const scheduler=installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async(...args)=>{dispatched.push(args);return true}})
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},scheduler,{register:value=>{route=value;return()=>{}}})
+  const toggle=async(id,enabled,extra={})=>{
+    const current=await readTeam(stateRoot,'demo'),updatedAt=current.tasks.find(task=>task.id===id)?.updatedAt
+    const req=Readable.from([JSON.stringify({action:'set_task_enabled',sessionId:captain.id,teamId:'demo',taskId:id,enabled,updatedAt,...extra})]);req.method='POST';req.headers={}
+    await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})
+  }
+  await toggle('after',true);assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks[2].workflowPaused,false)
+  assert.equal(response.team.tasks[0].workflowPaused,true);assert.equal(response.team.tasks[1].checkpoint.decision,undefined);assert.equal(dispatched.length,0)
+  assert.equal(response.activity.tasks[2].state,'blocked','enabled is still blocked on prerequisites')
+  await toggle('gate',false);assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks[1].workflowPaused,true)
+  const saved=await readTeam(stateRoot,'demo');saved.tasks[0].status='completed';saved.tasks[0].output='Keep this result';await writeTeam(stateRoot,saved)
+  await scheduler.kickTeam(root,'demo',captain);assert.equal(dispatched.length,0)
+  assert.equal(checkpointReady(saved,saved.tasks[1]),false,'disabled review cannot approve or unlock')
+  await toggle('gate',true);assert.equal(status,200,JSON.stringify(response));assert.equal(response.ready.includes('gate'),true);assert.equal(dispatched.length,0)
+  assert.equal(response.team.tasks[1].checkpoint.decision,undefined,'enabling is not approval')
+  const ready=await readTeam(stateRoot,'demo');decideCheckpoint(ready,'gate','approve','evidence','evidence','OK');await writeTeam(stateRoot,ready)
+  await scheduler.kickTeam(root,'demo',captain);assert.equal(dispatched.length,1,'enabled downstream runs only after approval')
+  await toggle('gate',false);assert.equal(status,409)
+  await toggle('t1',true);assert.equal(status,409);assert.equal((await readTeam(stateRoot,'demo')).tasks[0].output,'Keep this result')
+  await toggle('after',false,{updatedAt:-1});assert.equal(status,409);assert.match(response.error,/状态已变化/)
+  await toggle('after','yes');assert.equal(status,409)
+  for(const flag of ['workflowConfigPending','workflowRerunRequired']) {
+    const current=await readTeam(stateRoot,'demo');Object.assign(current.tasks[2],{status:'pending',workflowPaused:true,[flag]:true});await writeTeam(stateRoot,current)
+    await toggle('after',true);assert.equal(status,409);const unchanged=await readTeam(stateRoot,'demo');assert.equal(unchanged.tasks[2][flag],true)
+    delete unchanged.tasks[2][flag];await writeTeam(stateRoot,unchanged)
+  }
+  const rejected=await readTeam(stateRoot,'demo');Object.assign(rejected.tasks[1],{status:'pending',checkpoint:{round:2,decision:'reject',history:[]}});await writeTeam(stateRoot,rejected)
+  await toggle('gate',true);assert.equal(status,409)
+})
+
+test('switching off running work drains only its child, fences the old attempt and preserves its record', async t => {
+  const root=mkdtempSync(join(tmpdir(),'workflow-switch-running-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+  const stateRoot=join(root,'.agent-teams'), source=team();Object.assign(source.members[0],{id:'child',status:'working'})
+  Object.assign(source.tasks[0],{status:'in_progress',attempt:1,attemptId:'old-attempt',output:'Partial result'})
+  await createTeamDir(stateRoot,source)
+  const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}},drained=[];let route,status,response,failDrain=true
+  const ctx={agents:{get:id=>id===captain.id?captain:undefined},subagents:{drainChildren:async(parent,ids)=>{if(failDrain) {failDrain=false;throw Error('Temporary drain failure')} drained.push(...ids)}},effect:fn=>fn(),logger:{warn(){}}}
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{}},{register:value=>{route=value;return()=>{}}})
+  const stop=async()=>{const req=Readable.from([JSON.stringify({action:'set_task_enabled',sessionId:captain.id,teamId:'demo',taskId:'t1',enabled:false,updatedAt:1})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
+  await stop();assert.equal(status,409);const retry=await readTeam(stateRoot,'demo');assert.equal(retry.members[0].stopping,true);assert.equal(retry.tasks[0].workflowPaused,true);assert.equal(retry.tasks[0].status,'in_progress')
+  await stop()
+  assert.equal(status,200,JSON.stringify(response));assert.deepEqual(drained,['child'])
+  const stopped=response.team.tasks[0];assert.equal(stopped.workflowPaused,true);assert.equal(stopped.status,'pending');assert.equal(stopped.attemptId,undefined)
+  assert.equal(stopped.stoppedAttempts[0].output,'Partial result');assert.equal(response.team.members[0].id,'');assert.deepEqual(response.team.members[0].previousSessionIds,['child'])
+})
+
 test('first human review opens an isolated conversation with checklist and stored evidence before the model responds', async t => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-review-intro-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = withGate(); source.tasks[0].status = 'completed'; source.tasks[0].output = 'Implemented login validation'

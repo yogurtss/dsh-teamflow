@@ -46,7 +46,9 @@ function ReviewMaterials({ text }: { text: string }) {
   } catch { return <pre>{text}</pre> }
 }
 
-export function WorkflowWorkbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t }: {
+export function WorkflowWorkbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, openConversation, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, onClose }: {
+  entryTarget?: { taskId: string; review?: boolean }
+  onClose?: () => void
   archived?: boolean
   modelDirectory?: ModelDirectory
   t?: AgentTeamsTranslate
@@ -58,7 +60,8 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   openConversation?: (id: string) => void | Promise<void>
   sessionId: string; teamId?: string; waitingCount?: number; openExecution?: (memberId: string, parentId?: string) => void | Promise<void>
 }) {
-  const [opened, setOpened] = useState(false)
+  const [opened, setOpened] = useState(!!entryTarget)
+  const entryOpened = useRef(false)
   const [editing, setEditing] = useState(false)
   const [archiveView, setArchiveView] = useState(archived)
   const [data, setData] = useState<Response>()
@@ -145,6 +148,14 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     return () => window.removeEventListener('beforeunload', warn)
   }, [storageError, unsaved.length])
   useEffect(() => { onNativeContext?.(!!data?.currentDiscussion) }, [data?.currentDiscussion, onNativeContext])
+  useEffect(() => {
+    if (!entryTarget || entryOpened.current || !team) return
+    entryOpened.current = true
+    const task = team.tasks.find(task => task.id === entryTarget.taskId)
+    if (!task) { setError('节点已不存在，请刷新任务列表'); return }
+    choose({type:task.checkpoint ? 'check' : 'task',id:task.id})
+    if (entryTarget.review && data?.ready.includes(task.id)) void openReview(task.id)
+  }, [team,entryTarget])
   function updateView(update: (current: WorkbenchView) => WorkbenchView): void { const next = update(viewRef.current); viewRef.current = next; setView(next) }
   function choose(target: WorkbenchTarget, overrides?: Record<string,string>): void {
     updateView(current => selectWorkbench(current, target, team, overrides)); setError(''); setFeedback('')
@@ -154,7 +165,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     setPane(target.type === 'member' ? 'discussion' : target.type === 'task' || target.type === 'check' || target.type === 'edge' ? 'flow' : 'discussion')
   }
   const selectDiscussion = (key: string) => choose({ type:'discussion', key })
-  function closeWorkbench(): void { updateView(current=>({...current,revision:current.revision+1})); setOpened(false) }
+  function closeWorkbench(): void { updateView(current=>({...current,revision:current.revision+1})); setOpened(false); onClose?.() }
   function setDraft(update: Record<string,string> | ((previous: Record<string,string>) => Record<string,string>)): void {
     if (!editor || !draftId) return
     updateView(current => { const entry = current.drafts[draftId] ?? initialEditorDraft(team, editor); return { ...current, drafts:{...current.drafts,[draftId]:{...entry,values:typeof update === 'function' ? update(entry.values) : update}} } })

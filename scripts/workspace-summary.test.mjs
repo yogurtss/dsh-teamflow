@@ -20,12 +20,34 @@ const hook = registerHooks({ resolve(specifier, context, next) {
 } })
 const { TeamSection } = await import('../lib/client/ActivityPanel.js')
 const { TaskRecord } = await import('../lib/client/WorkflowContext.js')
+const { taskControlState } = await import('../lib/client/task-control.js')
 hook.deregister()
 const base = { workspace: '', teamId: 'summary', name: 'Summary', captainSessionId: 'captain', phase: 'running', members: [], tasks: [], messageCount: 0, captainInbox: [] }
 const task = (id, status, state = status) => ({ id, subject: id, status, state, assignee: '', dependencies: [], depth: 0 })
 const render = (team, dict, extra = {}) => renderToStaticMarkup(React.createElement(TeamSection, {
   team, workspace: true, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
 }))
+
+test('dependency cards distinguish human reviews and expose independent accessible scheduling switches',()=>{
+  const tasks=[{...task('up','pending','open'),workflowPaused:true},{...task('review','pending','blocked'),checkpoint:{round:2,history:[]},dependencies:['up']},{...task('down','pending','blocked'),dependencies:['review']},task('done','completed')]
+  const team={...base,tasks}
+  const html=render(team,zh)
+  assert.match(html,/data-checkpoint="true"/);assert.ok(html.includes('人工审核'));assert.ok(html.includes('第 2 轮'))
+  assert.equal((html.match(/role="switch"/g)||[]).length,4)
+  assert.match(html,/role="switch" aria-checked="false" aria-label="启用／暂停 · done"[^>]*disabled/)
+  assert.ok(html.includes('已启用 · 等待上游'));assert.ok(!html.includes('data-review-action="true"'))
+  const waiting=taskControlState(team,tasks[2]);assert.equal(waiting.checked,true);assert.deepEqual(waiting.waiting,['review'])
+  assert.equal(taskControlState(team,tasks[1]).reviewReady,false)
+  tasks[0].status='completed';assert.equal(taskControlState(team,tasks[1]).reviewReady,true)
+  assert.ok(render(team,en).includes('Start review'))
+  assert.equal(taskControlState(team,{...tasks[1],workflowPaused:true}).reviewReady,false)
+  assert.equal(taskControlState(team,{...tasks[1],workflowConfigPending:true}).disabled,true)
+  assert.equal(taskControlState(team,{...tasks[2],workflowRerunRequired:true}).disabled,true)
+  assert.equal(taskControlState({...team,phase:'staged'},tasks[1]).reviewReady,false)
+  assert.equal(taskControlState(team,tasks[1],true).disabled,true)
+  const draining=taskControlState(team,{...tasks[2],status:'in_progress',workflowPaused:true})
+  assert.equal(draining.stopping,true);assert.equal(draining.label,'task.control.stopping')
+})
 
 test('finished canvas task details expose submitted results and verification records without starting work',()=>{
   const finished={...task('done','completed'),subject:'Finished task',description:'Original requirements',objective:'Goal',acceptance:['Criterion'],verify:['run tests'],output:'Delivered result',commandsRun:[{command:'test command',status:'passed',evidence:'verification evidence'}],acceptanceResults:[{criterion:'Criterion',status:'passed',evidence:'acceptance evidence'}]}

@@ -3,6 +3,23 @@
 export declare const AGENT_TEAMS_LOCALE_NAMESPACE = "agentTeams";
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export declare const zh: {
+    'task.control.enabled': string;
+    'task.control.paused': string;
+    'task.control.waiting': string;
+    'task.control.queued': string;
+    'task.control.staged': string;
+    'task.control.stopped': string;
+    'task.control.rerunRequired': string;
+    'task.control.switch': string;
+    'task.control.hint': string;
+    'task.control.saving': string;
+    'task.control.stopping': string;
+    'task.control.retryStop': string;
+    'task.control.failed': string;
+    'task.control.review': string;
+    'task.control.properties': string;
+    'task.control.human': string;
+    'task.control.round': string;
     'workspace.dependencies': string;
     'workspace.title': string;
     'workspace.guide': string;
@@ -233,6 +250,23 @@ export declare const zh: {
 export type AgentTeamsLocaleKey = keyof typeof zh;
 /** English dictionary, checked complete against the Chinese source key set. */
 export declare const en: {
+    'task.control.enabled': string;
+    'task.control.paused': string;
+    'task.control.waiting': string;
+    'task.control.queued': string;
+    'task.control.staged': string;
+    'task.control.stopped': string;
+    'task.control.rerunRequired': string;
+    'task.control.switch': string;
+    'task.control.hint': string;
+    'task.control.saving': string;
+    'task.control.stopping': string;
+    'task.control.retryStop': string;
+    'task.control.failed': string;
+    'task.control.review': string;
+    'task.control.properties': string;
+    'task.control.human': string;
+    'task.control.round': string;
     'workspace.dependencies': string;
     'workspace.title': string;
     'workspace.guide': string;

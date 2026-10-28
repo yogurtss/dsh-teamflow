@@ -1072,8 +1072,8 @@
 
 .dagCanvas[data-layout='parallel'] .dagNode {
   position: relative;
-  flex: 1 1 92px;
-  min-width: 92px;
+  flex: 1 1 172px;
+  min-width: 172px;
 }
 
 .dagEdges {
@@ -1105,7 +1105,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 1px;
-  padding: 0 6px;
+  padding: 8px;
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
@@ -1116,6 +1116,24 @@
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
+
+.dagSelect { display: flex; flex-direction: column; gap: 3px; flex: 1; min-height: 0; min-width: 0; width: 100%; padding: 0; background: transparent; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.dagSelect:focus-visible, .taskSwitch:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.dagNode[data-checkpoint='true'], .team[data-workspace-team] .dagNode[data-checkpoint='true'] { border: 2px solid var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 9%, var(--dsw-alias-bg-layer-1)); }
+.dagNode[data-review-ready='true'] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 20%, transparent); }
+.reviewKind { font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-primary); }
+.dagExecutionState { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dsw-alias-label-secondary); }
+.dagControls { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 5px; }
+.dagControls button { font: inherit; font-size: 10px; padding: 3px 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; cursor: pointer; white-space: nowrap; }
+.dagControls button:disabled { cursor: default; opacity: .6; }
+.dagControls [data-review-action='true'] { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-state-warn-primary); font-weight: 650; }
+.dagControls .taskSwitch { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding-left: 0; }
+.taskSwitch>span { display: block; width: 23px; height: 13px; border-radius: 9px; background: var(--dsw-alias-label-tertiary); position: relative; flex: none; }
+.taskSwitch>span::after { content: ''; position: absolute; width: 9px; height: 9px; top: 2px; left: 2px; border-radius: 50%; background: var(--dsw-alias-bg-layer-1); }
+.taskSwitch[aria-checked='true']>span { background: var(--dsw-alias-state-business-primary); }
+.taskSwitch[aria-checked='true']>span::after { left: 12px; }
+.taskControlHint { margin: 6px 0; font-size: 11px; color: var(--dsw-alias-label-secondary); line-height: 1.5; }
+.reviewNote { font-size: 12px; white-space: pre-wrap; color: var(--dsw-alias-label-primary); }
 
 .dagNode:hover,
 .dagNode[data-focused='true'] {
@@ -1213,8 +1231,8 @@
 .dagNodeLabel {
   overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 8.5px;
-  line-height: 11px;
+  font-size: 11px;
+  line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
