@@ -33,8 +33,8 @@ test('compact dependency cards distinguish human reviews and put controls in the
   const team={...base,tasks}
   const html=render(team,zh)
   assert.match(html,/data-checkpoint="true"/);assert.ok(html.includes('人工审核'));assert.ok(html.includes('第 2 轮'))
-  assert.equal((html.match(/role="switch"/g)||[]).length,1)
-  assert.match(html,/role="switch" aria-checked="true" aria-label="启用／暂停 · review"/)
+  assert.doesNotMatch(html,/role="switch"/)
+  assert.match(html,/data-task-action="pause"[^>]*aria-label="暂停 · review"/)
   assert.match(html,/width:164px;height:76px/)
   assert.ok(html.includes('已启用 · 等待上游'));assert.ok(!html.includes('data-review-action="true"'))
   const waiting=taskControlState(team,tasks[2]);assert.equal(waiting.checked,true);assert.deepEqual(waiting.waiting,['review'])
@@ -57,6 +57,7 @@ test('completed, cancelled and failed execution tasks expose rerun instead of a 
       const html=render(team,dict)
       assert.ok(html.includes(dict['task.control.rerun']))
       assert.match(html,/data-rerun-action="true"/)
+      assert.match(html,/data-task-action="rerun"[^>]*data-rerun-action="true"[^>]*class="taskPlayback"(?![^>]*disabled)/)
       assert.doesNotMatch(html,/role="switch"/)
     }
     assert.equal(taskControlState(team,item).canRerun,true)
@@ -71,6 +72,9 @@ test('running dependency cards keep the animated work glyph, idle cards do not',
   const html=render({...base,tasks:[task('running','in_progress','running'),task('waiting','pending','open')]},zh)
   assert.equal((html.match(/class="dagRunningState"/g)||[]).length,1)
   assert.match(html,/class="workGlyph"[^>]*data-active="true"/)
+  assert.match(html,/data-task-action="pause"[^>]*data-running="true"/)
+  const paused=render({...base,tasks:[{...task('paused','pending','open'),workflowPaused:true}]},zh)
+  assert.match(paused,/data-task-action="play"[^>]*aria-label="开始 · paused"/)
 })
 
 test('finished canvas task details expose submitted results and verification records without starting work',()=>{

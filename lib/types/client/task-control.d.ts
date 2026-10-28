@@ -1,5 +1,5 @@
 import type { ActivityTask, ActivityTeam } from './activity-monitor.ts';
-/** The switch grants scheduling permission; it never satisfies a dependency. */
+/** Playback grants scheduling permission; it never satisfies a dependency. */
 export declare function taskControlState(team: Pick<ActivityTeam, 'tasks' | 'phase' | 'halted'>, task: ActivityTask, historic?: boolean): {
     disabled: boolean;
     checked: boolean;

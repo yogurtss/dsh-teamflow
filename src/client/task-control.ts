@@ -1,7 +1,7 @@
 import type { ActivityTask, ActivityTeam } from './activity-monitor.ts'
 import type { AgentTeamsLocaleKey } from './locales.ts'
 
-/** The switch grants scheduling permission; it never satisfies a dependency. */
+/** Playback grants scheduling permission; it never satisfies a dependency. */
 export function taskControlState(team: Pick<ActivityTeam,'tasks'|'phase'|'halted'>, task: ActivityTask, historic = false) {
   const terminal = ['completed','failed','cancelled'].includes(task.status)
   const stopping = !!task.workflowPaused && ['claimed','in_progress'].includes(task.status)

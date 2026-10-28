@@ -563,8 +563,20 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               ? t('task.detail.noDownstream')
               : t('task.detail.unlocks', { tasks: formatTaskIds(dependents.map((task) => task.id), t) })}</span>
             <div className={css.taskDetailControls}>
-              {!control.terminal && <button type="button" role="switch" aria-checked={control.checked} aria-label={t('task.control.switch',{task:detailTask.subject})} className={css.taskSwitch} disabled={control.disabled || control.stopping || !!controlBusy} title={control.disabled || control.stopping ? t(control.label) : t('task.control.hint')} onClick={() => onToggle(detailTask,!control.checked)}><span aria-hidden="true" />{control.disabled || control.stopping ? t(control.label) : control.checked ? t('task.control.enabled') : t('task.control.paused')}</button>}
-              {control.canRerun && <button type="button" data-rerun-action disabled={!!controlBusy} onClick={()=>onOpenTask(detailTask,false,true)}>{t('task.control.rerun')}</button>}
+              {(!control.terminal || control.canRerun) && <button type="button"
+                data-task-action={control.canRerun ? 'rerun' : control.checked ? 'pause' : 'play'}
+                data-rerun-action={control.canRerun || undefined}
+                data-running={!control.stopping && detailTask.status === 'in_progress' || undefined}
+                aria-label={t(control.canRerun ? 'task.control.rerunTask' : control.checked ? 'task.control.pauseTask' : 'task.control.startTask',{task:detailTask.subject})}
+                className={css.taskPlayback}
+                disabled={!control.canRerun && (control.disabled || control.stopping) || !!controlBusy}
+                title={t(control.canRerun ? 'task.control.rerunHint' : control.disabled || control.stopping ? control.label : 'task.control.hint')}
+                onClick={() => control.canRerun ? onOpenTask(detailTask,false,true) : onToggle(detailTask,!control.checked)}>
+                <svg className={css.taskPlaybackIcon} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  {control.checked && !control.canRerun ? <path d="M4 3h3v10H4zm5 0h3v10H9z" /> : <path d="M4 2.5v11l9-5.5z" />}
+                </svg>
+                {t(control.canRerun ? 'task.control.rerun' : control.disabled || control.stopping ? control.label : control.checked ? 'task.control.pause' : 'task.control.start')}
+              </button>}
               <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
             </div>
             {!control.terminal && !control.disabled && <p className={css.taskControlHint}>{t('task.control.hint')}</p>}

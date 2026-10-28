@@ -153,6 +153,8 @@ Click the activity dot on the right of the current chat to open the compact **Te
 
 The panel shows members, task dependencies and execution progress, and can float, dock, resize or collapse back to the dot. Collapsing it does not stop the team. **Team & workflow** opens the full canvas; discussion context stays in independent discussion views. Human review markers, running animations, task discussion and rerun controls remain available. [Screenshots and validation](./docs/activity-panel-restored-2026-10-28/README.md).
 
+Select a dependency node to use **▶ Start / Ⅱ Pause**. Running tasks retain their animation and the pause icon pulses gently. Started tasks still wait for prerequisites. Completed, failed and cancelled execution tasks offer **▶ Run again**: confirm requirements, then save and rerun, preserving history and suspending affected downstream work. [Interaction screenshots](./docs/task-playback-2026-10-28/README.md).
+
 ## How it works
 
 1. For a request to use TeamFlow, the captain follows the core protocol already in its system instructions. It continues an existing team and uses `agent_teams_status` when current state needs checking. When no team exists, the goal becomes a staged plan for review.

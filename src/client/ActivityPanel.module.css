@@ -2357,10 +2357,12 @@
 .taskDetailControls button { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; cursor: pointer; white-space: nowrap; }
 .taskDetailControls button:disabled { cursor: default; opacity: .6; }
 .taskDetailControls [data-review-action='true'] { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-state-warn-primary); font-weight: 650; }
-.taskDetailControls .taskSwitch { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding-left: 0; }
-.taskSwitch>span { display: block; width: 23px; height: 13px; border-radius: 9px; background: var(--dsw-alias-label-tertiary); position: relative; flex: none; }
-.taskSwitch>span::after { content: ''; position: absolute; width: 9px; height: 9px; top: 2px; left: 2px; border-radius: 50%; background: var(--dsw-alias-bg-layer-1); }
-.taskSwitch[aria-checked='true']>span { background: var(--dsw-alias-state-business-primary); }
-.taskSwitch[aria-checked='true']>span::after { left: 12px; }
+.taskDetailControls .taskPlayback { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-state-business-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2)); transition: background .15s, transform .15s; }
+.taskPlayback:not(:disabled):hover { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 9%, var(--dsw-alias-bg-layer-1)); }
+.taskPlayback:not(:disabled):active { transform: scale(.97); }
+.taskPlaybackIcon { width: 14px; height: 14px; flex: none; fill: currentColor; }
+.taskPlayback[data-running='true'] .taskPlaybackIcon { animation: taskPlaybackPulse 1.6s ease-in-out infinite; }
+@keyframes taskPlaybackPulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .taskPlayback[data-running='true'] .taskPlaybackIcon { animation: none; } .taskDetailControls .taskPlayback { transition: none; } }
 .taskControlHint { margin: 6px 0; font-size: 11px; color: var(--dsw-alias-label-secondary); line-height: 1.5; }
 .reviewNote { font-size: 12px; white-space: pre-wrap; color: var(--dsw-alias-label-primary); }
