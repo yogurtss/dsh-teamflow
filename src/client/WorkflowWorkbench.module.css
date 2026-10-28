@@ -100,7 +100,7 @@
 .edges { position: absolute; width: 100%; height: 100%; pointer-events: none; overflow: visible; color: color-mix(in srgb, var(--wb-muted) 65%, var(--wb-border)); }
 .edges>path { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .node { touch-action: none; position: absolute; width: 225px; background: var(--wb-bg); border: 1px solid var(--wb-border); border-radius: 10px; box-shadow: 0 2px 5px color-mix(in srgb, var(--wb-text) 4%, transparent); }
-.node { height: 150px; border-top: 3px solid var(--wb-accent); }
+.node { height: 150px; border-top: 3px solid var(--wb-border); }
 .checkpoint { border-color: color-mix(in srgb, var(--wb-accent) 35%, var(--wb-border)); }
 .drag { cursor: grab; padding: 6px 11px; color: var(--wb-muted); font-size: 10px; border-bottom: 1px solid var(--wb-border); touch-action: none; user-select: none; }
 .workbench .nodeBody { display: flex; flex-direction: column; gap: 7px; width: 100%; text-align: left; border: 0; background: transparent; padding: 11px; border-radius: 0 0 10px 10px; }
@@ -201,7 +201,7 @@
 
 .checkpoint { border: 2px dashed var(--wb-accent); border-radius: 18px; }
 .checkpoint .drag { color: var(--wb-accent); font-weight: 600; }
-.node[data-review-ready='true'] { border-style: solid; outline: 3px solid color-mix(in srgb, var(--wb-accent) 20%, transparent); }
+.node[data-review-ready='true'] { border-style: solid; border-color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 5%, var(--wb-bg)); }
 .reviewNotice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 10px; border: 1px solid var(--wb-accent); border-radius: 10px; background: color-mix(in srgb, var(--wb-accent) 8%, var(--wb-bg)); font-size: 12px; }
 .reviewNotice strong { display: inline-flex; align-items: center; gap: 6px; }
 .reviewNotice small { color: var(--wb-muted); flex-basis: 100%; }
@@ -244,5 +244,11 @@
   .commandBar { padding: 6px 8px; gap: 4px; }.commandBar>strong { display: none; }
   .workbench button { padding: 4px 7px; }.toolbar { padding: 6px; gap: 4px; }
 }
-.checkpoint { border-color: light-dark(#b77c24, #d7ab64); }
-.checkpoint .drag { color: light-dark(#96600f, #e8b35d); }
+.checkpoint { border-color: var(--wb-border); }
+.checkpoint .drag { color: var(--wb-muted); }
+.node[data-status='in_progress'] { border-top-color: var(--wb-accent); }
+.node[data-status='in_progress'] .nodeBody small { color: var(--wb-accent); background: color-mix(in srgb, var(--wb-accent) 10%, var(--wb-bg)); }
+.node[data-status='completed'] .nodeBody small { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, var(--wb-bg)); }
+.node[data-status='failed'] .nodeBody small { color: var(--wb-error); background: color-mix(in srgb, var(--wb-error) 10%, var(--wb-bg)); }
+.node[data-review-ready='true'] .drag, .node[data-review-ready='true'] .nodeBody small { color: var(--dsw-alias-state-warn-primary); }
+.node[data-review-ready='true'] .nodeBody small { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--wb-bg)); }

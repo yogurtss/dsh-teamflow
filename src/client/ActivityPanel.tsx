@@ -528,40 +528,17 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
           <section className={css.taskDetail} data-task-detail={detailTask.id}>
             <span className={css.taskDetailHead}>
               <span className={css.taskDetailId}>{detailTask.id}</span>
-              <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject.replace(/^开发\s*/u, '')}</span>
-              <span className={css.taskDetailBadge} data-state={discarded ? 'cancelled' : taskTone(detailTask.state, detailTask.status)}>
-                {discarded ? t('task.status.notRun') : t(taskControlState(team,detailTask,historic).label)}
+              <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject}</span>
+              <span className={css.taskDetailBadge} data-verdict-stale={detailTask.verdictStale ? 'true' : undefined} data-review-ready={control.reviewReady || undefined} data-state={discarded ? 'cancelled' : taskTone(detailTask.state, detailTask.status)}>
+                <span aria-hidden="true">{detailTask.verdictStale ? '!' : detailTask.status === 'completed' ? '✓' : detailTask.status === 'failed' ? '!' : control.reviewReady ? '◇' : '•'} </span>
+                {discarded ? t('task.status.notRun') : t(control.label)}
               </span>
             </span>
             <span className={css.taskDetailLine}>
-              {detailTask.checkpoint ? t('task.assignee.human') : detailTask.assignee || t('task.assignee.unclaimed')} · {discarded
-                ? t('task.detail.notRun')
-                : detailTask.status === 'completed'
-                ? t('task.detail.completed')
-                : detailTask.status === 'cancelled'
-                  ? t('task.detail.cancelled')
-                : detailTask.status === 'failed'
-                  ? t('task.detail.failed')
-                : detailTask.workflowPaused || detailTask.workflowConfigPending || detailTask.workflowRerunRequired || team.halted || team.phase === 'staged'
-                  ? t(taskControlState(team,detailTask,historic).label)
-                : detailTask.checkpoint
-                  ? taskStatusLabel(detailTask,t)
-                : detailTask.dependencies.length === 0
-                ? t('task.detail.noPrerequisite')
-                : waitingOn.length === 0
-                  ? t('task.detail.ready')
-                  : t('task.detail.waitingOn', { tasks: formatTaskIds(waitingOn, t) })}
+              {detailTask.checkpoint ? t('task.assignee.human') : detailTask.assignee || t('task.assignee.unclaimed')}
+              {detailModel !== '' && <span className={css.taskDetailModel} data-task-model={detailModel}> · {t('task.model', { model: detailModel })}</span>}
+              {detailTask.checkpoint && <span className={css.reviewKind}> · {t('task.control.round',{round:detailTask.checkpoint.round})}</span>}
             </span>
-            {detailModel !== '' && (
-              <span className={css.taskDetailModel} data-task-model={detailModel}>
-                {t('task.model', { model: detailModel })}
-              </span>
-            )}
-            {detailTask.checkpoint && <span className={css.reviewKind}>◇ {t('task.control.human')} · {t('task.control.round',{round:detailTask.checkpoint.round})}</span>}
-            {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
-            <span className={css.taskDetailMeta}>{dependents.length === 0
-              ? t('task.detail.noDownstream')
-              : t('task.detail.unlocks', { tasks: formatTaskIds(dependents.map((task) => task.id), t) })}</span>
             <div className={css.taskDetailControls}>
               {(!control.terminal || control.canRerun) && <button type="button"
                 data-task-action={control.canRerun ? 'rerun' : control.checked ? 'pause' : 'play'}
@@ -579,8 +556,15 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               </button>}
               <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
             </div>
-            {!control.terminal && !control.disabled && <p className={css.taskControlHint}>{t('task.control.hint')}</p>}
-            {control.canRerun && <p className={css.taskControlHint}>{t('task.control.rerunHint')}</p>}
+            {!control.terminal && waitingOn.length > 0 && <p className={css.taskControlHint}>{t('task.detail.waitingOn',{tasks:formatTaskIds(waitingOn,t)})}</p>}
+            {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
+            {detailTask.description && <p className={css.taskDetailDescription} title={detailTask.description}>{detailTask.description}</p>}
+            <details key={detailTask.id} className={css.taskDetailMore}>
+              <summary>{t('task.detail.more')}</summary>
+              <span className={css.taskDetailMeta}>{dependents.length === 0 ? t('task.detail.noDownstream') : t('task.detail.unlocks',{tasks:formatTaskIds(dependents.map(task=>task.id),t)})}</span>
+              {!control.terminal && !control.disabled && <p className={css.taskControlHint}>{t('task.control.hint')}</p>}
+              {control.canRerun && <p className={css.taskControlHint}>{t('task.control.rerunHint')}</p>}
+            </details>
           </section>
         </>
       )}

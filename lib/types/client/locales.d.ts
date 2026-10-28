@@ -147,6 +147,7 @@ export declare const zh: {
     'task.detail.waitingOn': string;
     'task.detail.notRun': string;
     'task.detail.noDownstream': string;
+    'task.detail.more': string;
     'task.detail.unlocks': string;
     'team.ended': string;
     'plan.badge': string;
@@ -401,6 +402,7 @@ export declare const en: {
     'task.detail.waitingOn': string;
     'task.detail.notRun': string;
     'task.detail.noDownstream': string;
+    'task.detail.more': string;
     'task.detail.unlocks': string;
     'team.ended': string;
     'plan.badge': string;
