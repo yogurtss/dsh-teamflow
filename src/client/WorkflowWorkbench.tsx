@@ -1,5 +1,5 @@
 /** Editable task canvas and isolated configuration / human-review discussions. */
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { TeamState, TeamTask } from '../types.ts'
 import type { WorkflowOperation } from '../workflow-types.ts'
@@ -16,6 +16,7 @@ import { TaskRerunPicker } from './TaskRerunPicker.tsx'
 import { rerunImpact, rerunnableTasks } from '../task-rerun.ts'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialEditorDraft, initialWorkbenchView, selectWorkbench, targetDiscussion, type EditorTarget, type WorkbenchTarget, type WorkbenchView } from './workbench-selection.ts'
 import { publishWorkflowActivity, type ActivityTeam } from './activity-monitor.ts'
+import { arrangeTasks, clampZoom, fitGraph } from './workflow-layout.ts'
 
 interface Response { team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string; activity?:ActivityTeam }
 async function request(payload: Record<string, unknown>): Promise<Response | undefined> {
@@ -76,6 +77,12 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   const [goal, setGoal] = useState('')
 
   const [zoom, setZoom] = useState(1)
+  const [library, setLibrary] = useState<'tasks' | 'agents'>('tasks')
+  const [panMode, setPanMode] = useState(false)
+  const [maximized, setMaximized] = useState(false)
+  const [inspectorWidth, setInspectorWidth] = useState(360)
+  const [inspectorExpanded, setInspectorExpanded] = useState(false)
+  const [inspectorHidden, setInspectorHidden] = useState(false)
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [link, setLink] = useState<{ from: string; x: number; y: number; to?: string; issue?: string }>()
   const suppressNodeClick = useRef(false)
@@ -103,26 +110,16 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   const activeTask = team?.tasks.find(t => t.id === selectedTask)
   const terminalEdit = !!editor && editor.type !== 'member' && !!activeTask && !activeTask.checkpoint && ['completed','failed','cancelled'].includes(activeTask.status)
   const member = discussion.startsWith('member:') ? team?.members.find(m => m.name === discussion.slice(7)) : undefined
-  const defaultPositions = useMemo(() => {
-    const tasks = team?.tasks ?? [], depths = new Map<string, number>(), rows = new Map<number, number>()
-    function depth(id: string, seen = new Set<string>()): number {
-      if (depths.has(id)) return depths.get(id)!
-      if (seen.has(id)) return 0
-      const next = new Set(seen).add(id), task = tasks.find(t => t.id === id)
-      const value = task?.dependencies.length ? 1 + Math.max(...task.dependencies.map(dep => depth(dep, next))) : 0
-      depths.set(id, value); return value
-    }
-    return Object.fromEntries(tasks.map(task => {
-      const column = depth(task.id), row = rows.get(column) ?? 0; rows.set(column, row + 1)
-      return [task.id, { x: 32 + column * 270, y: 32 + row * 160 }]
-    }))
-  }, [team?.tasks])
+  const defaultPositions = useMemo(() => arrangeTasks(team?.tasks ?? []), [team?.tasks])
   const taskEditing = !!editor && editor.type !== 'member'
   useEffect(() => { onNativeContext?.(!!data?.currentDiscussion) }, [data?.currentDiscussion, onNativeContext])
   function updateView(update: (current: WorkbenchView) => WorkbenchView): void { const next = update(viewRef.current); viewRef.current = next; setView(next) }
   function choose(target: WorkbenchTarget, overrides?: Record<string,string>): void {
     updateView(current => selectWorkbench(current, target, team, overrides)); setError(''); setFeedback('')
-    setPane(target.type === 'member' ? 'members' : target.type === 'task' || target.type === 'check' || target.type === 'edge' ? 'flow' : 'discussion')
+    setInspectorHidden(false)
+    if (target.type === 'member') setLibrary('agents')
+    if (target.type === 'task' || target.type === 'check') setLibrary('tasks')
+    setPane(target.type === 'member' ? 'discussion' : target.type === 'task' || target.type === 'check' || target.type === 'edge' ? 'flow' : 'discussion')
   }
   const selectDiscussion = (key: string) => choose({ type:'discussion', key })
   function closeWorkbench(): void { updateView(current=>({...current,revision:current.revision+1})); setOpened(false) }
@@ -139,8 +136,10 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   useEffect(() => {
     if (!opened) return
     const previous = document.activeElement as HTMLElement | null
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     dialog.current?.querySelector<HTMLElement>('button, input')?.focus()
-    return () => previous?.focus()
+    return () => { document.body.style.overflow = overflow; previous?.focus() }
   }, [opened])
   useEffect(() => {
     if (editor && !editor.id) dialog.current?.querySelector<HTMLElement>('[data-workflow-editor] input:not(:disabled), [data-workflow-editor] textarea')?.focus()
@@ -235,7 +234,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   }
   function beginNodeDrag(event: ReactPointerEvent<HTMLElement>, task: TeamTask): void {
     suppressNodeClick.current=false
-    if (event.button !== 0 || working || archiveView || !editing || (event.target as HTMLElement).closest('[data-connection-handle]')) return
+    if (panMode || event.button !== 0 || working || archiveView || !editing || (event.target as HTMLElement).closest('[data-connection-handle]')) return
     const target = event.currentTarget, start = point(event), original = pos(task.id)
     let last = original, moved = false
     target.setPointerCapture(event.pointerId)
@@ -270,7 +269,81 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   const graphHeight = Math.max(260, ...team?.tasks.map(t => pos(t.id).y + 170) ?? [], taskEditing ? draftPosition.y + 170 : 0)
   function fitCanvas(): void {
     if (!canvas.current) return
-    setZoom(Math.max(.45, Math.min(1, (canvas.current.clientWidth - 20) / graphWidth)))
+    setZoom(fitGraph(canvas.current.clientWidth, canvas.current.clientHeight, graphWidth, graphHeight))
+    canvas.current.scrollTo(0, 0)
+  }
+  function changeZoom(value: number, clientX?: number, clientY?: number): void {
+    const viewport = canvas.current
+    if (!viewport) return
+    const bounds = viewport.getBoundingClientRect(), next = clampZoom(value)
+    const x = clientX === undefined ? viewport.clientWidth / 2 : clientX - bounds.left
+    const y = clientY === undefined ? viewport.clientHeight / 2 : clientY - bounds.top
+    const left = (viewport.scrollLeft + x) * next / zoom - x
+    const top = (viewport.scrollTop + y) * next / zoom - y
+    setZoom(next)
+    requestAnimationFrame(() => viewport.scrollTo(Math.max(0, left), Math.max(0, top)))
+  }
+  useEffect(() => {
+    const viewport = canvas.current
+    if (!opened || !viewport) return
+    const wheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      changeZoom(zoom * Math.exp(-event.deltaY * .002), event.clientX, event.clientY)
+    }
+    viewport.addEventListener('wheel', wheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', wheel)
+  }, [opened, zoom, !!team])
+  function beginPan(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0 && event.button !== 1) return
+    const blank = event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)
+    if (event.button !== 1 && !panMode && !blank) return
+    event.preventDefault(); event.stopPropagation()
+    const target = event.currentTarget, x = event.clientX, y = event.clientY
+    const left = target.scrollLeft, top = target.scrollTop
+    let moved = false
+    target.setPointerCapture(event.pointerId)
+    target.onpointermove = move => {
+      if (Math.hypot(move.clientX - x, move.clientY - y) > 4) moved = true
+      target.scrollTo(left - move.clientX + x, top - move.clientY + y)
+    }
+    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
+    target.onpointerup = () => { cleanup(); if (!moved && blank && !panMode) selectDiscussion('graph') }
+    target.onpointercancel = cleanup
+  }
+  function resizeInspector(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const target = event.currentTarget, right = target.parentElement!.getBoundingClientRect().right
+    setInspectorExpanded(false)
+    target.setPointerCapture(event.pointerId)
+    target.onpointermove = move => setInspectorWidth(Math.max(300, Math.min(720, right - move.clientX)))
+    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
+    target.onpointerup = cleanup; target.onpointercancel = cleanup
+  }
+  async function arrangeCanvas(): Promise<void> {
+    if (!team || working || archiveView) return
+    const result = await perform('layout', { positions: defaultPositions })
+    if (result) { setPositions({}); setFeedback('已按任务依赖整理布局。') }
+  }
+  async function createNode(type: 'task' | 'check'): Promise<void> {
+    if (!team || working || archiveView) return
+    const revision = viewRef.current.revision
+    const label = type === 'check' ? '人工检查' : '新任务'
+    let number = team.tasks.length + 1
+    while (team.tasks.some(task => task.subject === `${label} ${number}`)) number++
+    const result = await saveEdit([{ action: 'add_task', subject: `${label} ${number}`, checkpoint: type === 'check', dependencies: [] }], `创建${label}`)
+    if (!result || revision !== viewRef.current.revision) return
+    const added = result.team.tasks.find(task => !team.tasks.some(old => old.id === task.id))
+    if (!added) return
+    setEditing(true); setPanMode(false)
+    updateView(current => selectWorkbench(current, { type, id: added.id }, result.team))
+    setLibrary('tasks'); setPane('flow'); setInspectorHidden(false)
+    setFeedback('节点已创建，可直接连线；名称与要求可稍后修改。')
+    requestAnimationFrame(() => {
+      const p = result.team.workflow?.positions[`task:${added.id}`]
+      if (p) canvas.current?.scrollTo({ left: Math.max(0, p.x * zoom - 48), top: Math.max(0, p.y * zoom - 48), behavior: 'smooth' })
+    })
   }
   async function openReview(id: string): Promise<void> {
     selectDiscussion(`check:${id}`)
@@ -318,12 +391,12 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       {proposal && !opened && <section className={css.contextProposal} aria-label="待确认修改">{renderProposalReview()}<button onClick={() => { setPane('discussion'); setOpened(true) }}>在画布查看 ↗</button></section>}
       <WorkflowContext team={team} discussion={discussion} onSelect={selectDiscussion} openExecution={openExecution} />
     </section>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label="TeamFlow 编排工作台" onKeyDown={event => {
       if (!archiveView && editing && (event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) cancelEdit(); else closeWorkbench() }
       if (event.key === 'Tab') {
         const scope = dialog.current
-        const items = [...scope?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary') ?? []].filter(el => el.getClientRects().length)
+        const items = [...scope?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex="0"]') ?? []].filter(el => el.getClientRects().length)
         const first = items[0], last = items.at(-1)
         if (event.shiftKey && (document.activeElement === first || !scope?.contains(document.activeElement))) { event.preventDefault(); last?.focus() }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
@@ -332,8 +405,13 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       <header className={css.header}><div className={css.title}><img src={LEAD_ART} alt="" /><div><strong>{team?.name ?? '创建团队'}</strong><span>{archiveView ? '归档画布 · 成果与详情完整保留' : team?.phase === 'staged' ? '准备流程 · 确认后开始执行' : '团队工作台'}</span></div></div>
         <div>{archiveView ? <button className={css.primary} disabled={working} onClick={() => void perform('restore_archive')}>恢复并编辑流程</button> : <button aria-pressed={editing} onClick={() => {setEditing(!editing);updateView(current=>({...current,revision:current.revision+1}))}}>{editing ? '查看流程' : '编辑流程'}</button>}
           {!archiveView && team?.phase === 'staged' && <button className={css.primary} disabled={working || !!editor || pendingCount > 0} title={editor ? '请先保存或取消当前编辑' : pendingCount ? '请先处理待确认的修改' : undefined} onClick={() => void perform('start')}>确认并启动</button>}
+          <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}>{maximized ? '退出全屏' : '全屏'}</button>
           <button onClick={closeWorkbench} aria-label="关闭编排工作台">关闭</button></div></header>
-      {team && <nav className={css.paneTabs} aria-label="工作台视图">{(['members', 'flow', 'discussion'] as const).map(value => <button key={value} aria-pressed={pane === value} onClick={() => setPane(value)}>{value === 'members' ? `成员 ${team.members.filter(m => m.status !== 'removed').length}` : value === 'flow' ? '任务流程' : '修改与验收'}{value === 'discussion' && proposal && <i aria-label="有待确认的修改" />}</button>)}</nav>}
+      {team && <nav className={css.commandBar} aria-label="创建与视图">
+        <strong>创建</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}>＋ 任务节点</button><button disabled={working || archiveView} onClick={() => void createNode('check')}>◇ 人工节点</button><button disabled={working || archiveView} onClick={() => edit('member')}>＋ Agent</button>
+        <span className={css.commandSpacer} /><button aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? '显示右侧面板' : '收起右侧面板'}</button>
+      </nav>}
+      {team && <nav className={css.paneTabs} aria-label="工作台视图">{(['members', 'flow', 'discussion'] as const).map(value => <button key={value} aria-pressed={pane === value} onClick={() => { setPane(value); setInspectorExpanded(false); if (value === 'discussion') setInspectorHidden(false) }}>{value === 'members' ? '对象列表' : value === 'flow' ? '任务流程' : '修改与验收'}{value === 'discussion' && proposal && <i aria-label="有待确认的修改" />}</button>)}</nav>}
       {pendingNotice}
       {!!team?.tasks.some(task => task.workflowRerunRequired) && <details className={css.suspendedNotice} open><summary>上游已重跑 · {team.tasks.filter(task => task.workflowRerunRequired).length} 个下游节点等待你确认</summary><p>此前结果已失效。上游完成后，点击节点可修改要求，再确认执行或重新验收。</p>{team.tasks.filter(task => task.workflowRerunRequired).map(task => <button key={task.id} onClick={() => { edit(task.checkpoint ? 'check' : 'task', task.id) }}>{task.subject} · {task.dependencies.every(id => team.tasks.find(item => item.id === id)?.status === 'completed') ? '可确认' : '等待上游'}</button>)}</details>}
       {error && <div className={css.error} role="alert">{error}</div>}
@@ -342,20 +420,25 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       {!activeId ? <form className={css.create} onSubmit={e => { e.preventDefault(); void createFlow() }}>
         <h2>描述目标，一起规划团队</h2><label>团队名称<input required value={name} onChange={e => setName(e.target.value)} /></label>
         <label>团队目标<textarea required value={goal} onChange={e => setGoal(e.target.value)} /></label><button className={css.primary} disabled={working}>在 DSH 中讨论方案 ↗</button>
-      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} data-approving={!!proposal && !editor && !activeTask && !selectedEdge} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
-        <aside className={css.roster}><h3>成员 <button disabled={archiveView} aria-label="添加成员" onClick={() => edit('member')}>＋ 添加</button></h3>
+      </form> : !team ? <p role="status">正在读取团队…</p> : <div className={css.columns} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties} data-inspector-hidden={inspectorHidden} data-inspector-expanded={inspectorExpanded} data-pane={pane} data-editing={!!editor || !!selectedEdge || !!activeTask}>
+        <aside className={css.roster} aria-label="对象列表">
+          <nav className={css.libraryTabs} aria-label="对象分类"><button aria-pressed={library === 'tasks'} onClick={() => setLibrary('tasks')}>▤ 任务 {team.tasks.length}</button><button aria-pressed={library === 'agents'} onClick={() => setLibrary('agents')}>◉ Agent {team.members.filter(m => archiveView || m.status !== 'removed').length}</button></nav>
+          {library === 'tasks' ? <section className={css.taskList}><h3>任务流程</h3><p className={css.hint}>任务决定做什么，Agent 决定由谁执行。</p>{team.tasks.map(task => <button key={task.id} data-kind={task.checkpoint ? 'check' : 'task'} aria-pressed={selectedTask === task.id} onClick={() => {
+            choose({ type: task.checkpoint ? 'check' : 'task', id: task.id }); setPane('flow')
+            requestAnimationFrame(() => { const p = pos(task.id); canvas.current?.scrollTo({ left: Math.max(0, p.x * zoom - 48), top: Math.max(0, p.y * zoom - 48), behavior: 'smooth' }) })
+          }}><small>{task.checkpoint ? '◇ 人工节点' : '▤ 任务节点'} · {task.id}</small><strong>{task.subject}</strong><span>{taskStatus(task, data.ready)}</span></button>)}{!team.tasks.length && <p className={css.hint}>从顶部创建任务节点或人工节点。</p>}</section> : <><h3>Agent 成员 <button disabled={working || archiveView} aria-label="添加成员" onClick={() => edit('member')}>＋ 添加</button></h3>
           {team.members.filter(m => archiveView || m.status !== 'removed').map(m => <article key={m.name} className={relatedMember === m.name ? css.selected : ''} onClick={event => { if (!(event.target as HTMLElement).closest('button')) { edit('member', m.name) } }}>
             <button className={css.member} aria-pressed={selection.type === 'member' && selection.id === m.name} onClick={() => { edit('member', m.name) }}><img src={memberArtUrl(m.name, m.role ?? '')} alt="" /><span><strong>{m.name}</strong><span>{m.summary || m.role || '尚未填写职责概述'}</span></span></button>
-            <small>{m.model || '继承队长模型'}</small><div><button disabled={working || archiveView} onClick={() => prepareDiscussion(m.name)}>讨论调整 ↗</button>
+            <small>◉ Agent · {m.model || '继承队长模型'}</small><div><button disabled={working || archiveView} onClick={() => prepareDiscussion(m.name)}>讨论调整 ↗</button>
               {m.id && openExecution && <button onClick={() => { openExecution(m.id, team.captainSessionId); closeWorkbench() }}>执行对话 ↗</button>}
               {openExecution && m.previousSessionIds?.map((id, i) => <button key={id} onClick={() => { openExecution(id, team.captainSessionId); closeWorkbench() }}>历史执行 {i + 1} ↗</button>)}</div>
           </article>)}
-          <p className={css.hint}>{archiveView ? '点击成员查看保存的配置与执行记录；恢复并编辑后可调整。' : '点击成员卡片直接编辑；讨论调整默认继续该成员的独立讨论，保留历史上下文。'}</p>
+          <p className={css.hint}>{archiveView ? '点击成员查看保存的配置与执行记录；恢复并编辑后可调整。' : '点击成员卡片直接编辑；讨论调整默认继续该成员的独立讨论，保留历史上下文。'}</p></>}
         </aside>
         <main className={css.graphArea}>
-          <nav className={css.toolbar}><button disabled={archiveView} onClick={() => edit('task')}>＋ 任务</button><button disabled={archiveView} onClick={() => edit('check')}>＋ 人工检查</button><button aria-label="缩小画布" onClick={() => setZoom(value => Math.max(.45, value - .1))}>−</button><button aria-label="放大画布" onClick={() => setZoom(value => Math.min(1.5, value + .1))}>＋</button><button onClick={fitCanvas}>适应画布</button><span role={link || taskEditing ? 'status' : undefined}>{link ? link.issue ?? (link.to ? '已吸附到输入端 · 松开连接' : '靠近下一节点以连接 · Esc 取消') : archiveView || !editing ? '点击节点查看要求与成果；进入编辑流程可调整成员、任务与连接' : '拖动节点右侧中心连接柄建立交接；点击节点编辑属性、点击连线查看；Delete 删除选中对象'}</span></nav>
+          <nav className={css.toolbar} aria-label="画布工具"><button aria-pressed={!panMode} onClick={() => setPanMode(false)}>↖ 选择</button><button aria-pressed={panMode} onClick={() => setPanMode(true)}>✥ 平移</button><button aria-label="缩小画布" disabled={zoom <= .1} onClick={() => changeZoom(zoom - .1)}>−</button><button title="恢复 100%" aria-label={`缩放 ${Math.round(zoom * 100)}%，点击恢复 100%`} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label="放大画布" disabled={zoom >= 2} onClick={() => changeZoom(zoom + .1)}>＋</button><button onClick={fitCanvas}>适应画布</button><button disabled={working || archiveView || !team.tasks.length} onClick={() => void arrangeCanvas()}>自动整理</button></nav>
           {reviewNotice}
-          <div className={css.canvas} ref={canvas} onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)) { selectDiscussion('graph') } }}>
+          <div className={css.canvas} data-pan={panMode} ref={canvas} onPointerDownCapture={beginPan}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
               <svg className={css.edges} aria-label="任务交接连线"><defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor" /></marker></defs>
                 {team.tasks.flatMap(t => t.dependencies.map(dep => { const a = pos(dep), b = pos(t.id); const path = `M${a.x + 225},${a.y + 55} C${a.x + 260},${a.y + 55} ${b.x - 35},${b.y + 55} ${b.x},${b.y + 55}`; return <g key={`${dep}-${t.id}`} data-selected={selectedEdge?.from === dep && selectedEdge.to === t.id} className={css.edge}>
@@ -365,9 +448,9 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
                 {link && <path d={`M${pos(link.from).x + 225},${pos(link.from).y + 55} C${pos(link.from).x + 280},${pos(link.from).y + 55} ${link.x - 55},${link.y} ${link.x},${link.y}`} />}
               </svg>
               {team.tasks.map(task => { const p = pos(task.id); return <article key={task.id} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && data.ready.includes(task.id)} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${task.checkpoint ? css.checkpoint : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
-                <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工验收' : '执行任务'} · {task.id}</div>
+                <div className={css.drag}>⠿ {task.checkpoint ? '◇ 人工节点' : '▤ 任务节点'} · {task.id}</div>
                 <button className={css.nodeBody} >
-                  <strong>{task.subject}</strong><span className={css.taskOwner}><img src={task.checkpoint ? REVIEW_ART : memberArtUrl(task.assignee ?? '', team.members.find(m => m.name === task.assignee)?.role ?? '')} alt="" />{task.checkpoint ? '验收 Agent 与你' : task.assignee || '自动分配成员'}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
+                  <strong title={task.subject}>{task.subject}</strong><span className={css.taskOwner} title={task.assignee}>{task.checkpoint ? '人工验收 · 由你确认' : `执行 Agent · ${task.assignee || '自动分配'}`}</span><small data-ready={data.ready.includes(task.id)}>{taskStatus(task, data.ready)}</small></button>
                 <button className={`${css.port} ${css.input}`} data-connection-handle data-input-id={task.id} aria-label={`${task.subject} 输入端`} />
                 <button className={`${css.port} ${css.output}`} data-connection-handle aria-label={`${task.subject} 输出端`} disabled={working || archiveView || !editing || (taskEditing && !editor?.id)} title="从这里拖出连接线" onPointerDown={event => {
                   if (event.button !== 0) return
@@ -401,7 +484,10 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
               {!team.tasks.length && !editor && <p className={css.empty}>添加任务或人工检查，或让 AI 根据目标提出流程方案。</p>}
             </div>
           </div>
+          <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? '已吸附 · 松开连接' : '拖到下游节点 · Esc 取消') : `${team.tasks.length} 个任务节点 · 拖动空白处平移 · Ctrl / ⌘ + 滚轮缩放${editing ? ' · 拖动右侧箭头连线 · Delete 删除' : ' · 点击节点查看详情'}`}</footer>
         </main>
+        <div className={css.resizeHandle} role="separator" aria-label="调整右侧面板宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
+        <section className={css.inspector} aria-label="属性与讨论面板"><header className={css.inspectorHeader}><strong>{editor ? '编辑属性' : activeTask || selectedEdge ? '节点与连接' : '讨论与验收'}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? '还原面板' : '放大面板'}</button></header>
           {selectedEdge && <aside className={css.editor} aria-label="交接详情"><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>删除连线</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? '人工验收属性' : '任务属性'}><h3>{activeTask.checkpoint ? '人工验收属性' : '任务属性'}</h3><strong>{activeTask.subject}</strong><p>{activeTask.description || '暂无任务说明'}</p><p>{taskStatus(activeTask,data.ready)} · {activeTask.id}</p>{activeTask.checkpoint && <p>第 {activeTask.checkpoint.round} 轮 · {activeTask.checkpoint.note || '暂无验收意见'}</p>}<div>
             {!archiveView && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>修改负责人并重跑此任务</button>}
@@ -449,7 +535,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'}</h3>
         {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '执行指令 / PE', true)}</>
           : <>{field('subject', '任务名称')}{field('description', '任务要求 / 验收要求', true)}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
-            <p className={css.hint}>保存节点后，直接拖动画布中的连接柄建立关系。点击连线可查看两端并删除。</p></>}
+            <p className={css.hint}>节点已在画布中，可直接拖动右侧箭头连线。修改名称或要求后点击保存。</p></>}
         {editor.type !== 'member' && activeTask && <TaskRecord task={activeTask} team={team} expanded />}
         {terminalEdit && activeTask && <><p className={css.notice}>保存将覆盖此任务的当前结果，并挂起下游：{rerunImpact(team.tasks,activeTask.id).descendants.map(task=>task.subject).join('、') || '无'}。其他分支保留；下游需逐个确认。{team.phase === 'staged' ? '请先查看流程并确认启动团队，再重跑。' : ''}</p></>}
         {editor.type === 'member' && editor.id && <TaskRerunPicker tasks={team.tasks} member={editor.id} taskId={draft['rerunTaskId'] ?? ''} instructions={draft['rerunInstructions'] ?? ''} disabled={working} onTask={id => setDraft(prev => ({ ...prev, rerunTaskId: id }))} onInstructions={text => setDraft(prev => ({ ...prev, rerunInstructions: text }))} />}
@@ -462,6 +548,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
           {editor.type === 'check' && editor.id && data.ready.includes(editor.id) && <button type="button" disabled={working} onClick={() => void openReview(editor.id!)}>开始验收 ↗</button>}<button type="button" onClick={cancelEdit}>放弃修改</button>
           {editor.type === 'member' && editor.id && <button type="button" disabled={working} onClick={() => void saveEdit([{ action: 'remove_member', name: editor.id! }], `移除 ${editor.id}`, true)}>移除成员</button>}</footer>
       </form>}
+        </section>
       </div>}
     </section>, document.body)}
   </>

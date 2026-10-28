@@ -177,10 +177,16 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           let team = await load()
           const state = workflowState(team)
           if (action === 'layout') {
-            if (!team.tasks.some(t => t.id === body['taskId'])) throw new Error('任务不存在')
-            const x = body['x'], y = body['y']
-            if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 10000 || y > 10000) throw new Error('节点位置超出范围')
-            state.positions[`task:${String(body['taskId'])}`] = { x, y }
+            const positions = body['positions'] ?? { [String(body['taskId'])]: { x: body['x'], y: body['y'] } }
+            if (!positions || typeof positions !== 'object' || Array.isArray(positions)) throw new Error('无效节点布局')
+            const validated: Record<string, { x: number; y: number }> = {}
+            for (const [id, point] of Object.entries(positions)) {
+              if (!team.tasks.some(t => t.id === id)) throw new Error('任务不存在')
+              const { x, y } = (point ?? {}) as { x?: unknown; y?: unknown }
+              if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 10000 || y > 10000) throw new Error('节点位置超出范围')
+              validated[`task:${id}`] = { x, y }
+            }
+            Object.assign(state.positions, validated)
           } else if (action === 'preview') {
             discussionOf(team, key).proposal = proposeWorkflow(team, string(body['title'], '标题'), body['operations'], config.maxMembers)
           } else if (action === 'apply' || action === 'edit') {

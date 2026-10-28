@@ -17,6 +17,7 @@ import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/ses
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
+import { arrangeTasks, fitGraph } from '../lib/client/workflow-layout.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
@@ -465,6 +466,42 @@ test('direct graph edits persist atomically, reject stale bases and cycles, and 
   assert.equal(status, 200); assert.deepEqual(result.team.tasks[1].dependencies, [])
   await send([{ action: 'add_task', subject: 'Wire before running', dependencies: [] }], result.base)
   assert.equal(status, 200); assert.equal(result.team.tasks.at(-1).workflowPaused, true)
+  const addedId = result.team.tasks.at(-1).id
+  await send([{ action: 'update_task', id: addedId, dependencies: ['t2'] }], result.base)
+  assert.equal(status, 200)
+  current = await readTeam(join(root, '.agent-teams'), 'demo')
+  assert.equal(current.tasks.find(task => task.id === addedId).subject, 'Wire before running')
+  assert.deepEqual(current.tasks.find(task => task.id === addedId).dependencies, ['t2'])
+  assert.equal(current.tasks.find(task => task.id === addedId).workflowPaused, true)
+  const beforeLayout = workflowFingerprint(current)
+  async function layout(positions) {
+    const req = Readable.from([JSON.stringify({ sessionId: captain.id, teamId: 'demo', action: 'layout', positions })]); req.method = 'POST'; req.headers = {}
+    await route.handler(req, { writeHead: code => { status = code }, end: body => { result = JSON.parse(body) } })
+  }
+  const arranged = arrangeTasks(current.tasks)
+  await layout(arranged)
+  assert.equal(status, 200)
+  assert.equal(workflowFingerprint(result.team), beforeLayout, 'layout must not change execution or invalidate proposals')
+  assert.deepEqual(result.team.workflow.positions[`task:${addedId}`], arranged[addedId])
+  await layout({ t1: { x: 9, y: 9 }, t2: { x: -1, y: 0 } })
+  assert.equal(status, 409)
+  current = await readTeam(join(root, '.agent-teams'), 'demo')
+  assert.deepEqual(current.workflow.positions['task:t1'], arranged.t1, 'invalid batch cannot partially move nodes')
+  await layout({ missing: { x: 0, y: 0 } })
+  assert.equal(status, 409)
+})
+
+test('canvas layout separates branching cards and fits tall as well as wide graphs', () => {
+  const tasks = [task('a'), task('b'), task('c', ['a']), task('d', ['a', 'b']), task('e', ['c', 'd'])]
+  const points = arrangeTasks(tasks)
+  for (const a of tasks) for (const b of tasks) {
+    if (a.id === b.id) continue
+    assert.ok(Math.abs(points[a.id].x - points[b.id].x) >= 225 || Math.abs(points[a.id].y - points[b.id].y) >= 150)
+  }
+  for (const item of tasks) for (const dep of item.dependencies) assert.ok(points[item.id].x > points[dep].x)
+  assert.ok(fitGraph(800, 400, 600, 1200) * 1200 <= 368)
+  assert.ok(fitGraph(400, 800, 1200, 600) * 1200 <= 368)
+  assert.equal(fitGraph(1200, 800, 600, 400), 1)
 })
 
 test('opening a new review round refreshes the native conversation once', async t => {
