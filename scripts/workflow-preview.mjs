@@ -112,11 +112,16 @@ createServer(async (req, res) => {
       if(task.workflowRerunRequired && task.dependencies.some(id=>team.tasks.find(item=>item.id===id)?.status!=='completed')) throw Error('请先等待所有上游任务完成')
       task.workflowPaused=false;task.workflowRerunRequired=false
     }
-    if (body.action === 'set_task_enabled') {
+    if (body.action === 'stop_task' || body.action === 'set_task_enabled') {
       const task=team.tasks.find(task=>task.id===body.taskId);
-      if(!task || task.updatedAt!==body.updatedAt || typeof body.enabled!=='boolean') throw Error('节点状态已变化，请刷新后重试');
+      if(!task || body.action==='set_task_enabled' && (task.updatedAt!==body.updatedAt || typeof body.enabled!=='boolean')) throw Error('节点状态已变化，请刷新后重试');
       if(['completed','failed','cancelled'].includes(task.status) || task.checkpoint?.decision || task.workflowConfigPending || task.workflowRerunRequired) throw Error('请在节点属性中处理');
-      task.workflowPaused=!body.enabled;task.updatedAt=Date.now();
+      const stopping=body.action==='stop_task' || body.enabled===false;
+      if(stopping && !task.checkpoint) {
+        task.stoppedAttempts??=[];task.stoppedAttempts.push({attemptId:task.attemptId,output:task.output,at:Date.now()});
+        task.status='pending';task.attempt=0;task.attemptId=undefined;task.reassigning=false;
+      }
+      task.workflowPaused=stopping;task.updatedAt=Date.now();
     }
     // Explicit fixture mode: simulate successful work; never calls a real model.
     if (process.env.TEAMFLOW_PREVIEW_RERUN) for(const task of team.tasks) if(task.status==='pending' && !task.checkpoint && !task.workflowPaused && task.dependencies.every(id=>team.tasks.find(item=>item.id===id)?.status==='completed')) {task.status='completed';task.attempt=(task.attempt??0)+1;task.output='模拟重跑结果：已按最新要求重新执行。'}

@@ -822,6 +822,36 @@ test('switching off running work drains only its child, fences the old attempt a
   assert.equal(stopped.stoppedAttempts[0].output,'Partial result');assert.equal(response.team.members[0].id,'');assert.deepEqual(response.team.members[0].previousSessionIds,['child'])
 })
 
+test('an already-paused running task must finish stopping before canvas deletion', async t => {
+  for (const child of ['', 'child']) for(const action of ['stop_task','set_task_enabled']) {
+    const root=mkdtempSync(join(tmpdir(),'workflow-paused-delete-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+    const stateRoot=join(root,'.agent-teams'),source=team()
+    Object.assign(source.tasks[0],{status:'in_progress',workflowPaused:true,attempt:1,attemptId:'old-attempt',output:'Partial result'})
+    Object.assign(source.members[0],{id:child,status:'working'})
+    source.tasks.push(task('down',['t1']))
+    await createTeamDir(stateRoot,source)
+    const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}},drained=[]
+    let route,status,response
+    const ctx={agents:{get:id=>id===captain.id?captain:undefined},subagents:{drainChildren:async(parent,ids)=>drained.push(...ids)},effect:fn=>fn(),logger:{warn(){}}}
+    installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},{kickTeam:async()=>{}},{register:value=>{route=value;return()=>{}}})
+    const call=async(action,fields)=>{
+      const req=Readable.from([JSON.stringify({action,sessionId:captain.id,teamId:'demo',...fields})]);req.method='POST';req.headers={}
+      await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})
+    }
+    await call('edit',{base:workflowFingerprint(source),title:'Delete before stop',operations:[{action:'update_task',id:'down',dependencies:[]},{action:'remove_task',id:'t1'}]})
+    assert.equal(status,409,'pause intent alone must not bypass the running guard')
+    await call(action,{taskId:'t1',enabled:false,updatedAt:1})
+    assert.equal(status,200,JSON.stringify(response));assert.equal(response.team.tasks[0].status,'pending')
+    assert.equal(response.activity.tasks[0].workflowPaused,true);assert.equal(response.team.tasks[0].attemptId,undefined)
+    assert.deepEqual(drained,child?[child]:[])
+    assert.equal(response.team.tasks[0].stoppedAttempts[0].output,'Partial result')
+    await call('edit',{base:response.base,title:'Delete stopped node',operations:[{action:'update_task',id:'down',dependencies:[]},{action:'remove_task',id:'t1'}]})
+    assert.equal(status,200,JSON.stringify(response));assert.deepEqual(response.team.tasks.map(task=>task.id),['down'])
+    assert.deepEqual(response.team.tasks[0].dependencies,[])
+    assert.deepEqual((await readTeam(stateRoot,'demo')).tasks.map(task=>task.id),['down'])
+  }
+})
+
 test('first human review opens an isolated conversation with checklist and stored evidence before the model responds', async t => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-review-intro-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = withGate(); source.tasks[0].status = 'completed'; source.tasks[0].output = 'Implemented login validation'
