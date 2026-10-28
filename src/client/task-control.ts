@@ -21,5 +21,6 @@ export function taskControlState(team: Pick<ActivityTeam,'tasks'|'phase'|'halted
     : task.status === 'claimed' ? 'task.status.claimed'
     : waiting.length ? 'task.control.waiting'
     : task.checkpoint ? 'task.status.reviewReady' : 'task.control.queued'
-  return {disabled,checked,label,waiting,reviewReady,stopping}
+  const canRerun = terminal && !task.checkpoint && !historic && !team.halted && team.phase !== 'staged'
+  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun}
 }

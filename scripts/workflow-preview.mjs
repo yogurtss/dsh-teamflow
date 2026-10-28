@@ -52,6 +52,13 @@ if (process.env.TEAMFLOW_PREVIEW_RERUN) {
   Object.assign(team.tasks[2],{status:'completed',attempt:1,output:'模拟已完成的实现结果'})
   team.tasks.push({id:'t4',subject:'独立文档整理',assignee:'developer',dependencies:[],status:'completed',attempt:1,output:'独立分支结果保持不变',createdAt:1,updatedAt:1}); team.taskSeq=4
 }
+if (process.env.TEAMFLOW_PREVIEW_CANCELLED) {
+  Object.assign(team.tasks[0], { status: 'cancelled', output: '用户取消了上一轮任务；保留需求草稿。' })
+}
+if (process.env.TEAMFLOW_PREVIEW_RUNNING) {
+  team.tasks.push({id:'t4',subject:'运行中的独立任务',assignee:'developer',dependencies:[],status:'in_progress',attempt:1,attemptId:'preview-running',createdAt:1,updatedAt:1})
+  team.taskSeq=4
+}
 if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && !process.env.TEAMFLOW_PREVIEW_ARCHIVED) {
   const key = 'member:researcher'
   workflowState(team).discussions[`discussion:${key}`] = { key, messages: [], calls: [], proposal: proposeWorkflow(team, '调整研究成员职责', [{ action: 'update_member', name: 'researcher', summary: '整理需求并明确每项验收标准。', role: '需求与验收分析师' }]) }
@@ -117,6 +124,6 @@ createServer(async (req, res) => {
       discussion.native = { sessionId: `session-at-discussion-preview-${key}`, label: key };
     }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, base: workflowFingerprint(team), ...(['restore_archive','review','set_task_enabled','state'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
+    send(res, 200, { team, base: workflowFingerprint(team), ...(['restore_archive','review','set_task_enabled','state','edit','apply','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
   } catch (error) { send(res, 409, { error: error.message }); }
 }).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));

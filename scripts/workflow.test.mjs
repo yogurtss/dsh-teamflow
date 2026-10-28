@@ -286,12 +286,13 @@ test('rerun rejects active work and invalid targets without partially saving mem
   assert.deepEqual(parseWorkflowOperations([{action:'rerun_task',id:'t1',instructions:' fix ',output:'untrusted'}]),[{action:'rerun_task',id:'t1',instructions:'fix'}])
 })
 
-test('rerun route dispatches one task; downstream waits for manual confirmation and new human approval', async t => {
+for (const initialStatus of ['completed','cancelled','failed']) test(`rerun ${initialStatus} route dispatches one task; downstream waits for manual confirmation and new human approval`, async t => {
   const root=mkdtempSync(join(tmpdir(),'workflow-rerun-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
   const source=withGate();Object.assign(source.tasks[0],{status:'completed',output:'OLD RESULT',attempt:1,attemptId:'old-capability'})
   source.members.push({...member,name:'other'})
   Object.assign(source.tasks[2],{status:'completed',output:'OLD DOWNSTREAM',attempt:1,assignee:'other'})
   decideCheckpoint(source,'gate','approve','old','old','previous approval')
+  source.tasks[0].status=initialStatus
   source.tasks.push({...task('parallel'),assignee:'other',status:'completed',output:'UNRELATED'})
   await createTeamDir(join(root,'.agent-teams'),source)
   const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
@@ -303,7 +304,12 @@ test('rerun route dispatches one task; downstream waits for manual confirmation 
   async function send(action,extra={}) {const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...action==='resume_task'?{base:workflowFingerprint(await read())}:{},...extra})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
   await send('edit',{base:workflowFingerprint(source),title:'Edit and rerun',operations:[{action:'update_member',name:'worker',role:'Adjusted role'},{action:'rerun_task',id:'t1'}]})
   assert.equal(status,200,JSON.stringify(response));assert.equal(dispatched.length,1);assert.equal(dispatched[0][2],'worker');assert.match(dispatched[0][3],/Task: t1/)
+  assert.equal(response.activity.tasks.find(task=>task.id==='t1').status,'claimed')
+  assert.equal(response.activity.tasks.find(task=>task.id==='gate').workflowRerunRequired,true)
   let saved=await read();assert.equal(saved.tasks[0].attempt,2);assert.notEqual(saved.tasks[0].attemptId,'old-capability');assert.equal(saved.members[0].role,'Adjusted role')
+  assert.match(saved.tasks[0].stoppedAttempts.at(-1).output,/OLD RESULT/)
+  assert.equal(saved.tasks[0].stoppedAttempts.at(-1).attemptId,'old-capability')
+  assert.match(saved.tasks[0].stoppedAttempts.at(-1).output,new RegExp(initialStatus==='cancelled'?'已取消':initialStatus==='completed'?'已完成':'失败'))
   await send('resume_task',{taskId:'gate'});assert.equal(status,409);assert.match(response.error,/上游/)
   saved=await read();Object.assign(saved.tasks[0],{status:'completed',output:'NEW RESULT'});saved.members[0].status='idle';await writeTeam(join(root,'.agent-teams'),saved)
   await scheduler.kickTeam(root,'demo',captain);assert.equal(dispatched.length,1,'completion alone cannot release descendants')

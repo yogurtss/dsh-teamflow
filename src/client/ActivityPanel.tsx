@@ -40,6 +40,8 @@ import {
   activityPanelExpandedForSession,
   activityPanelShouldAutoExpand,
   compactDagLayout,
+  COMPACT_DAG_NODE_WIDTH,
+  COMPACT_DAG_NODE_HEIGHT,
   compactModelLabel,
   dependencyFocusTaskId,
   memberRouteLabel,
@@ -398,7 +400,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   readonly historic?: boolean
   readonly controlBusy?: string
   readonly onToggle: (task: ActivityTask, enabled: boolean) => void
-  readonly onOpenTask: (task: ActivityTask, review: boolean) => void
+  readonly onOpenTask: (task: ActivityTask, review: boolean, rerun?: boolean) => void
   readonly tasks: readonly ActivityTask[]
   readonly members: readonly ActivityMember[]
   readonly t: AgentTeamsTranslate
@@ -412,10 +414,10 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focusedTaskId = dependencyFocusTaskId(pinnedTaskId, keyboardTaskId, hoverTaskId)
-  const nodeWidth = workspace ? 212 : 172
-  const nodeHeight = workspace ? 154 : 142
+  const nodeWidth = workspace ? 164 : COMPACT_DAG_NODE_WIDTH
+  const nodeHeight = workspace ? 76 : COMPACT_DAG_NODE_HEIGHT
   const layout = useMemo(() => compactDagLayout(tasks,
-    { nodeWidth, nodeHeight, columnGap: 36, rowGap: 20 }), [tasks, nodeWidth, nodeHeight])
+    workspace ? { nodeWidth: 164, nodeHeight: 76, columnGap: 36, rowGap: 16 } : undefined), [tasks, workspace])
   const parallel = useMemo(() => usesParallelTaskGrid(tasks), [tasks])
   const related = useMemo(
     () => focusedTaskId === null ? null : relatedTaskIds(focusedTaskId, tasks),
@@ -451,6 +453,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
     ?? tasks.find((task) => task.state === 'claimed')
     ?? tasks[0]!
   const detailTask = tasks.find((task) => task.id === focusedTaskId) ?? fallbackTask
+  const control = taskControlState(team, detailTask, historic)
   const detailModel = taskModelLabel(detailTask, members)
   const waitingOn = detailTask.dependencies.filter((dependency) => (
     tasks.find((task) => task.id === dependency)?.status !== 'completed'
@@ -468,7 +471,6 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
       </header>
       {open && (
         <>
-          <p className={css.taskControlHint}>{t('task.control.hint')}</p>
           <div className={css.dagViewport}>
             <div
               className={css.dagCanvas}
@@ -485,8 +487,11 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                 const model = taskModelLabel(task, members)
                 const control = taskControlState(team,task,historic)
                 return (
-                  <article
+                  <button
                     key={task.id}
+                    type="button"
+                    aria-pressed={pinnedTaskId === task.id}
+                    onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
                     className={css.dagNode}
                     style={parallel
                       ? { height: nodeHeight }
@@ -505,9 +510,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <button type="button" className={css.dagSelect} aria-pressed={pinnedTaskId === task.id} onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}>
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{workspace && !task.checkpoint && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
-                    {task.checkpoint && <span className={css.reviewKind}>◇ {t('task.control.human')} · {t('task.control.round',{round:task.checkpoint.round})}</span>}
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}>◇ {t('task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
@@ -517,13 +520,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                         <WorkGlyph active />
                       </span>
                     )}
-                    </button>
-                    <span className={css.dagExecutionState} title={control.waiting.length ? t('task.detail.waitingOn',{tasks:formatTaskIds(control.waiting,t)}) : t(control.label)}>{discarded ? t('task.status.notRun') : t(control.label)}</span>
-                    <div className={css.dagControls}>
-                      <button type="button" role="switch" aria-checked={control.checked} aria-label={t('task.control.switch',{task:task.subject})} className={css.taskSwitch} disabled={control.disabled || control.stopping || !!controlBusy} title={control.disabled || control.stopping ? t(control.label) : t('task.control.hint')} onClick={() => onToggle(task,!control.checked)}><span aria-hidden="true" />{control.disabled || control.stopping ? t(control.label) : control.checked ? t('task.control.enabled') : t('task.control.paused')}</button>
-                      <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(task,false) : onOpenTask(task,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
-                    </div>
-                  </article>
+                  </button>
                 )
               })}
             </div>
@@ -560,10 +557,18 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                 {t('task.model', { model: detailModel })}
               </span>
             )}
+            {detailTask.checkpoint && <span className={css.reviewKind}>◇ {t('task.control.human')} · {t('task.control.round',{round:detailTask.checkpoint.round})}</span>}
             {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
             <span className={css.taskDetailMeta}>{dependents.length === 0
               ? t('task.detail.noDownstream')
               : t('task.detail.unlocks', { tasks: formatTaskIds(dependents.map((task) => task.id), t) })}</span>
+            <div className={css.taskDetailControls}>
+              {!control.terminal && <button type="button" role="switch" aria-checked={control.checked} aria-label={t('task.control.switch',{task:detailTask.subject})} className={css.taskSwitch} disabled={control.disabled || control.stopping || !!controlBusy} title={control.disabled || control.stopping ? t(control.label) : t('task.control.hint')} onClick={() => onToggle(detailTask,!control.checked)}><span aria-hidden="true" />{control.disabled || control.stopping ? t(control.label) : control.checked ? t('task.control.enabled') : t('task.control.paused')}</button>}
+              {control.canRerun && <button type="button" data-rerun-action disabled={!!controlBusy} onClick={()=>onOpenTask(detailTask,false,true)}>{t('task.control.rerun')}</button>}
+              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
+            </div>
+            {!control.terminal && !control.disabled && <p className={css.taskControlHint}>{t('task.control.hint')}</p>}
+            {control.canRerun && <p className={css.taskControlHint}>{t('task.control.rerunHint')}</p>}
           </section>
         </>
       )}
@@ -586,7 +591,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
   const [controlBusy,setControlBusy] = useState<string>()
   const controlPending = useRef(false)
   const [controlError,setControlError] = useState('')
-  const [taskEntry,setTaskEntry] = useState<{taskId:string;review:boolean}>()
+  const [taskEntry,setTaskEntry] = useState<{taskId:string;review:boolean;rerun?:boolean}>()
   async function toggleTask(task: ActivityTask, enabled: boolean): Promise<void> {
     if (controlPending.current || taskControlState(team,task,historic).disabled) return
     controlPending.current = true; setControlBusy(task.id); setControlError('')
@@ -850,7 +855,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
 
       {controlBusy && <p role="status" className={css.taskControlHint}>{t('task.control.saving')}</p>}
       {controlError && <p role="alert" className={css.stopModalError}>{controlError}</p>}
-      <DependencyMap team={team} tasks={team.tasks} members={team.members} t={t} historic={historic} discarded={discarded} workspace={workspace} onSelectTask={setSelectedTaskId} controlBusy={controlBusy} onToggle={(task,enabled)=>void toggleTask(task,enabled)} onOpenTask={(task,review)=>setTaskEntry({taskId:task.id,review})} />
+      <DependencyMap team={team} tasks={team.tasks} members={team.members} t={t} historic={historic} discarded={discarded} workspace={workspace} onSelectTask={setSelectedTaskId} controlBusy={controlBusy} onToggle={(task,enabled)=>void toggleTask(task,enabled)} onOpenTask={(task,review,rerun)=>setTaskEntry({taskId:task.id,review,rerun})} />
       {taskEntry && <WorkflowWorkbench key={taskEntry.taskId} sessionId={team.captainSessionId} teamId={team.teamId} archived={historic} entryTarget={taskEntry} onClose={()=>setTaskEntry(undefined)} modelDirectory={modelDirectory} t={t} openExecution={(id,parent)=>onNavigate((parent??team.captainSessionId) as SessionId,id as SessionId)} openConversation={id=>openWorkflowConversation(onNavigate,id as SessionId)} />}
       {workspace && <WorkspaceSummary team={team} t={t} discarded={discarded} />}
       </section>

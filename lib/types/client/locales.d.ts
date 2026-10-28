@@ -3,6 +3,8 @@
 export declare const AGENT_TEAMS_LOCALE_NAMESPACE = "agentTeams";
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export declare const zh: {
+    'task.control.rerun': string;
+    'task.control.rerunHint': string;
     'task.control.enabled': string;
     'task.control.paused': string;
     'task.control.waiting': string;
@@ -250,6 +252,8 @@ export declare const zh: {
 export type AgentTeamsLocaleKey = keyof typeof zh;
 /** English dictionary, checked complete against the Chinese source key set. */
 export declare const en: {
+    'task.control.rerun': string;
+    'task.control.rerunHint': string;
     'task.control.enabled': string;
     'task.control.paused': string;
     'task.control.waiting': string;

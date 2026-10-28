@@ -5,6 +5,8 @@ export const AGENT_TEAMS_LOCALE_NAMESPACE = 'agentTeams'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'task.control.rerun': '修改并重跑',
+  'task.control.rerunHint': '重跑前可修改任务要求；原有记录保留，受影响的下游挂起待确认。',
   'task.control.enabled': '已启用',
   'task.control.paused': '已暂停',
   'task.control.waiting': '已启用 · 等待上游',
@@ -255,6 +257,8 @@ export type AgentTeamsLocaleKey = keyof typeof zh
 
 /** English dictionary, checked complete against the Chinese source key set. */
 export const en = {
+  'task.control.rerun': 'Edit and rerun',
+  'task.control.rerunHint': 'Review requirements before rerunning. Previous records remain available; affected downstream tasks await confirmation.',
   'task.control.enabled': 'Enabled',
   'task.control.paused': 'Paused',
   'task.control.waiting': 'Enabled · waiting for upstream',

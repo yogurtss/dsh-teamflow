@@ -28,18 +28,19 @@ const render = (team, dict, extra = {}) => renderToStaticMarkup(React.createElem
   team, workspace: true, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
 }))
 
-test('dependency cards distinguish human reviews and expose independent accessible scheduling switches',()=>{
+test('compact dependency cards distinguish human reviews and put controls in the selected detail',()=>{
   const tasks=[{...task('up','pending','open'),workflowPaused:true},{...task('review','pending','blocked'),checkpoint:{round:2,history:[]},dependencies:['up']},{...task('down','pending','blocked'),dependencies:['review']},task('done','completed')]
   const team={...base,tasks}
   const html=render(team,zh)
   assert.match(html,/data-checkpoint="true"/);assert.ok(html.includes('人工审核'));assert.ok(html.includes('第 2 轮'))
-  assert.equal((html.match(/role="switch"/g)||[]).length,4)
-  assert.match(html,/role="switch" aria-checked="false" aria-label="启用／暂停 · done"[^>]*disabled/)
+  assert.equal((html.match(/role="switch"/g)||[]).length,1)
+  assert.match(html,/role="switch" aria-checked="true" aria-label="启用／暂停 · review"/)
+  assert.match(html,/width:164px;height:76px/)
   assert.ok(html.includes('已启用 · 等待上游'));assert.ok(!html.includes('data-review-action="true"'))
   const waiting=taskControlState(team,tasks[2]);assert.equal(waiting.checked,true);assert.deepEqual(waiting.waiting,['review'])
   assert.equal(taskControlState(team,tasks[1]).reviewReady,false)
   tasks[0].status='completed';assert.equal(taskControlState(team,tasks[1]).reviewReady,true)
-  assert.ok(render(team,en).includes('Start review'))
+  assert.ok(render({...team,tasks:[tasks[0],tasks[1]]},en).includes('Start review'))
   assert.equal(taskControlState(team,{...tasks[1],workflowPaused:true}).reviewReady,false)
   assert.equal(taskControlState(team,{...tasks[1],workflowConfigPending:true}).disabled,true)
   assert.equal(taskControlState(team,{...tasks[2],workflowRerunRequired:true}).disabled,true)
@@ -47,6 +48,29 @@ test('dependency cards distinguish human reviews and expose independent accessib
   assert.equal(taskControlState(team,tasks[1],true).disabled,true)
   const draining=taskControlState(team,{...tasks[2],status:'in_progress',workflowPaused:true})
   assert.equal(draining.stopping,true);assert.equal(draining.label,'task.control.stopping')
+})
+
+test('completed, cancelled and failed execution tasks expose rerun instead of a disabled switch',()=>{
+  for (const status of ['completed','cancelled','failed']) {
+    const item=task('terminal',status), team={...base,tasks:[item]}
+    for(const dict of [zh,en]) {
+      const html=render(team,dict)
+      assert.ok(html.includes(dict['task.control.rerun']))
+      assert.match(html,/data-rerun-action="true"/)
+      assert.doesNotMatch(html,/role="switch"/)
+    }
+    assert.equal(taskControlState(team,item).canRerun,true)
+    assert.equal(taskControlState(team,item,true).canRerun,false)
+    assert.equal(taskControlState({...team,halted:true},item).canRerun,false)
+    assert.equal(taskControlState({...team,phase:'staged'},item).canRerun,false)
+    assert.equal(taskControlState(team,{...item,checkpoint:{round:1,history:[],decision:'approve'}}).canRerun,false)
+  }
+})
+
+test('running dependency cards keep the animated work glyph, idle cards do not',()=>{
+  const html=render({...base,tasks:[task('running','in_progress','running'),task('waiting','pending','open')]},zh)
+  assert.equal((html.match(/class="dagRunningState"/g)||[]).length,1)
+  assert.match(html,/class="workGlyph"[^>]*data-active="true"/)
 })
 
 test('finished canvas task details expose submitted results and verification records without starting work',()=>{

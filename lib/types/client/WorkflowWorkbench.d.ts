@@ -4,6 +4,7 @@ export declare function WorkflowWorkbench({ sessionId, teamId, archived, waiting
     entryTarget?: {
         taskId: string;
         review?: boolean;
+        rerun?: boolean;
     };
     onClose?: () => void;
     archived?: boolean;

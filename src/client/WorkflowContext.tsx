@@ -21,7 +21,7 @@ export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; t
     {task.commandsRun?.map((item, i) => <p key={`cmd:${i}`}><strong>{item.status === 'passed' ? '报告通过' : '报告失败'}：</strong>{item.command}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
     {task.acceptanceResults?.map((item, i) => <p key={`result:${i}`}>{item.criterion} · {item.status === 'passed' ? '报告通过' : '报告失败'}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
     {!!task.findings?.length && <details><summary>审查发现</summary><pre>{JSON.stringify(task.findings, null, 2)}</pre></details>}
-    {!!task.stoppedAttempts?.length && <details><summary>停止前的记录 · {task.stoppedAttempts.length} 次</summary>{task.stoppedAttempts.map((attempt, i) => <p key={i}>{attempt.output || '本次停止前未提交结果'}</p>)}</details>}
+    {!!task.stoppedAttempts?.length && <details><summary>历史执行记录 · {task.stoppedAttempts.length} 次</summary>{task.stoppedAttempts.map((attempt, i) => <p key={i}>{attempt.output || '本次停止前未提交结果'}</p>)}</details>}
   </details>
 }
 

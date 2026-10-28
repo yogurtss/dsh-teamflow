@@ -7,4 +7,6 @@ export declare function taskControlState(team: Pick<ActivityTeam, 'tasks' | 'pha
     waiting: string[];
     reviewReady: boolean;
     stopping: boolean;
+    terminal: boolean;
+    canRerun: boolean;
 };

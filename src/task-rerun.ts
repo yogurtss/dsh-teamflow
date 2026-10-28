@@ -15,6 +15,11 @@ export function rerunnableTasks(tasks: readonly TeamTask[], memberName: string):
 }
 /** Keep the contract, identity and monotonic generation; invalidate old capabilities and evidence. */
 export function resetTaskForRerun(task: TeamTask, suspended: boolean, now: number): void {
+  if (['completed','failed','cancelled'].includes(task.status)) {
+    task.stoppedAttempts ??= []
+    const status = task.status === 'completed' ? '已完成' : task.status === 'cancelled' ? '已取消' : '失败'
+    task.stoppedAttempts.push({ attemptId: task.attemptId, output: `${status} · ${task.output || '未提交结果'}`, at: now })
+  }
   task.status='pending'; task.workflowPaused=suspended; task.workflowRerunRequired=suspended; task.updatedAt=now
   for (const key of ['output','attemptId','handoffId','handoffFromMemberId','reassigning','verdict','findings','changedPaths','acceptanceResults','commandsRun','supplementalEvidence','reviewedAttempt','reviewedArtifacts','reviewedGaps','reviewedScope','reviewedDuringDrift','verdictStartSnapshot'] as const) delete task[key]
   if(task.checkpoint) task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
