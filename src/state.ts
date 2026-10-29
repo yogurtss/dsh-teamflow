@@ -21,7 +21,7 @@ import type { MemberToolFilter } from './tool-policies.ts'
 import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES, type ReviewFinding, type TaskStatus, type TeamMember, type TeamMessage, type TeamProfileSnapshot, type TeamState, type TeamTask } from './types.ts'
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
-import { isCheckpoint, isStoppedAttempts, isWorkflowState } from './workflow-validation.ts'
+import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
 
 export {
   amendTaskContract,
@@ -945,6 +945,7 @@ export function describeTeamStateDefect(raw: unknown, expectedId: string): strin
 /** The first task-contract violation, or `undefined` when the task is valid. */
 function describeTaskDefect(task: Record<string, unknown>): string | undefined {
   if (task['checkpoint'] !== undefined && !isCheckpoint(task['checkpoint'])) return 'checkpoint is invalid'
+  if (task['workflowRerunContext'] !== undefined && !isWorkflowRerunContext(task['workflowRerunContext'])) return 'workflowRerunContext is invalid'
   if (task['stoppedAttempts'] !== undefined && !isStoppedAttempts(task['stoppedAttempts'])) return 'stoppedAttempts is invalid'
   if (typeof task['id'] !== 'string') return 'id must be a string'
   if (!isOptionalString(task['profileSeedId'])) return 'profileSeedId must be a string'
@@ -1051,6 +1052,7 @@ export function isTeamTask(value: unknown): value is TeamTask {
     && (value['workflowAwaitingStart'] === undefined || typeof value['workflowAwaitingStart'] === 'boolean')
     && (value['workflowConfigPending'] === undefined || typeof value['workflowConfigPending'] === 'boolean')
     && (value['checkpoint'] === undefined || isCheckpoint(value['checkpoint']))
+    && (value['workflowRerunContext'] === undefined || isWorkflowRerunContext(value['workflowRerunContext']))
     && (value['stoppedAttempts'] === undefined || isStoppedAttempts(value['stoppedAttempts']))
     && isOptionalString(value['profileSeedId'])
     && (value['profileSeedId'] === undefined || value['profileSeedId'].trim() !== '')

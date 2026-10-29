@@ -20,9 +20,18 @@ const hook = registerHooks({ resolve(specifier, context, next) {
 } })
 const { TeamSection } = await import('../lib/client/ActivityPanel.js')
 const { TaskRecord } = await import('../lib/client/WorkflowContext.js')
+const { ProposalReview } = await import('../lib/client/ProposalReview.js')
 const { taskControlState } = await import('../lib/client/task-control.js')
 hook.deregister()
 const base = { workspace: '', teamId: 'summary', name: 'Summary', captainSessionId: 'captain', phase: 'running', members: [], tasks: [], messageCount: 0, captainInbox: [] }
+test('rerun proposal shows the previous result and requires new instructions before approval',()=>{
+  const team={members:[],tasks:[{id:'done',subject:'Done',status:'completed',dependencies:[],output:'Previous delivery'}]}
+  const renderProposal=instructions=>renderToStaticMarkup(React.createElement(ProposalReview,{team,proposal:{title:'Rerun',base:'v1',operations:[{action:'rerun_task',id:'done',instructions}]},base:'v1',busy:false,onApply(){},onDismiss(){},onChange(){}}))
+  assert.match(renderProposal(' '),/class="apply" disabled=""/)
+  assert.match(renderProposal(' '),/Previous delivery/)
+  assert.match(renderProposal(' '),/填写重跑的新要求/)
+  assert.doesNotMatch(renderProposal('Check current output'),/class="apply" disabled=""/)
+})
 const task = (id, status, state = status) => ({ id, subject: id, status, state, assignee: '', dependencies: [], depth: 0 })
 const render = (team, dict, extra = {}) => renderToStaticMarkup(React.createElement(TeamSection, {
   team, workspace: true, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
@@ -96,6 +105,30 @@ test('waiting downstream never advertises execution pause and all summaries use 
   const summary=paused.slice(paused.indexOf('class="completionTasks"'))
   assert.ok(summary.includes('已暂停'))
   assert.ok(!summary.includes('待领取'))
+})
+
+test('every lifecycle state is visible on unselected diagram cards in compact and workspace panels',()=>{
+  const cases=[
+    [{workflowConfigPending:true},'configurationPending'],[{workflowPaused:true,workflowAwaitingStart:true},'awaitingStart'],
+    [{workflowPaused:true,workflowAwaitingStart:false},'paused'],[{workflowRerunRequired:true},'rerunRequired'],
+    [{dependencies:['up']},'waiting'],[{},'queued'],[{status:'claimed'},'claimed'],[{status:'in_progress'},'inProgress'],
+    [{status:'in_progress',workflowPaused:true},'stopping'],[{status:'completed'},'completed'],[{status:'failed'},'failed'],
+    [{status:'cancelled'},'cancelled'],[{checkpoint:{round:1,history:[]}},'reviewReady'],
+    [{checkpoint:{round:1,history:[],decision:'reject'}},'reviewRejected'],
+    [{status:'completed',checkpoint:{round:1,history:[],decision:'approve'}},'reviewPassed'],
+  ]
+  for(const workspace of [false,true]) for(const [patch,visual] of cases) {
+    const item={...task('target','pending','open'),...patch}
+    const html=render({...base,tasks:[task('other','pending','blocked'),item]},zh,{workspace})
+    const graph=html.slice(html.indexOf('class="dagCanvas"'),html.indexOf('class="taskDetail"'))
+    assert.ok(graph.includes(`data-lifecycle="${visual}"`),`${workspace}: ${visual}`)
+    assert.ok(graph.includes(zh[taskControlState({...base,tasks:[item]},item).label]),visual)
+    assert.ok(graph.includes('class="symbol"'),visual)
+  }
+  for(const [teamPatch,visual] of [[{phase:'staged'},'staged'],[{halted:true},'stopped']]) {
+    const html=render({...base,...teamPatch,tasks:[task('target','pending','open')]},zh,{workspace:false})
+    assert.ok(html.includes(`data-lifecycle="${visual}"`))
+  }
 })
 
 test('new work awaits configuration or its first start while explicit pauses remain distinct',()=>{

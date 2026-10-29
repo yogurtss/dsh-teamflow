@@ -1116,6 +1116,8 @@
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
+.dagState { margin-top: 3px; font-size: 9px; line-height: 12px; padding: 1px 3px; }
+.team[data-workspace-team] .dagState { font-size: 10px; line-height: 14px; margin-top: 4px; }
 
 .dagNode:hover,
 .dagNode[data-focused='true'] {
@@ -2320,15 +2322,6 @@
   padding-right: 38px;
 }
 
-.dagClaimedState {
-  position: absolute;
-  top: 4px;
-  right: 5px;
-  color: var(--dsw-alias-state-business-primary);
-  font-size: 8px;
-  line-height: 10px;
-}
-.team[data-workspace-team] .dagClaimedState { top: auto; bottom: 6px; left: 11px; right: 11px; font-size: 10px; line-height: 12px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dsw-alias-label-secondary); }
 
 .assignmentChip[data-state='claimed'],
 .taskDetailBadge[data-state='claimed'] {
@@ -2360,6 +2353,7 @@
 .team[data-workspace-team] .dagRunningState { top: 8px; right: 7px; width: 14px; height: 14px; }
 .team[data-workspace-team] .dagRunningState .workGlyph { width: 14px; height: 14px; }
 .team[data-workspace-team] .dagNode[data-state='running'] .dagNodeHead { padding-right: 14px; }
+.dagNode[data-lifecycle], .team[data-workspace-team] .dagNode[data-lifecycle] { border-left-color: var(--task-state-color); border-left-width: 3px; }
 .taskDetailControls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .taskDetailControls button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; background: var(--dsw-alias-bg-layer-1); color: inherit; cursor: pointer; white-space: nowrap; }
 .taskDetailControls button svg { width: 14px; height: 14px; flex: none; }

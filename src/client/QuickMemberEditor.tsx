@@ -17,7 +17,7 @@ async function request(payload: Record<string, unknown>): Promise<Details> {
   if (!response.ok) throw new Error(value.error ?? `HTTP ${response.status}`)
   return value
 }
-export function QuickMemberEditor({ team, member, directory, t, close }: { team: ActivityTeam; member: ActivityMember; directory: ModelDirectory; t: AgentTeamsTranslate; close: () => void }) {
+export function QuickMemberEditor({ team, member, directory, t, close, onRerun }: { team: ActivityTeam; member: ActivityMember; directory: ModelDirectory; t: AgentTeamsTranslate; close: () => void; onRerun:(taskId:string)=>void }) {
   const [base, setBase] = useState('')
   const [role, setRole] = useState(member.role)
   const [route, setRoute] = useState({ provider: '', model: '', reasoningEffort: '' })
@@ -26,7 +26,6 @@ export function QuickMemberEditor({ team, member, directory, t, close }: { team:
   const [error, setError] = useState('')
   const [tasks, setTasks] = useState<TeamTask[]>([])
   const [rerunId, setRerunId] = useState('')
-  const [instructions, setInstructions] = useState('')
   useEffect(() => {
     let live = true
     setBusy(true); setError('')
@@ -41,11 +40,9 @@ export function QuickMemberEditor({ team, member, directory, t, close }: { team:
     setBusy(true); setError('')
     try {
       const operations: WorkflowOperation[] = [{ action: 'update_member', name: member.name, role, ...(routeChanged ? { ...route, reasoningEffort: route.reasoningEffort || 'default' } : {}) }]
-      if (rerun) {
-        if (!rerunId) throw new Error('请选择重跑任务')
-        operations.push({ action: 'rerun_task', id: rerunId, instructions })
-      }
-      await request({ action: 'edit', sessionId: team.captainSessionId, teamId: team.teamId, title: `调整 ${member.name} 的配置${rerun ? '并单独重跑任务' : ''}`, base, operations })
+      if (rerun && !rerunId) throw new Error('请选择重跑任务')
+      await request({ action: 'edit', sessionId: team.captainSessionId, teamId: team.teamId, title: `调整 ${member.name} 的配置${rerun ? '并进入任务编辑' : ''}`, base, operations })
+      if(rerun) onRerun(rerunId)
       close()
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) } finally { setBusy(false) }
   }
@@ -53,8 +50,8 @@ export function QuickMemberEditor({ team, member, directory, t, close }: { team:
     <strong>配置 · {member.name}</strong>
     <StagedModelPicker directory={directory} t={t} {...route} busy={busy || !base} onChange={value => { setRoute(value); setRouteChanged(true) }} />
     <label>职责<textarea value={role} disabled={busy || !base} onChange={event => setRole(event.target.value)} /></label>
-    <TaskRerunPicker tasks={tasks} member={member.name} taskId={rerunId} instructions={instructions} disabled={busy || !base} onTask={setRerunId} onInstructions={setInstructions} />
+    <TaskRerunPicker tasks={tasks} member={member.name} taskId={rerunId} disabled={busy || !base} onTask={setRerunId} />
     {error && <p role="alert">{error}</p>}
-    <div><button type="submit" disabled={busy || !base}>保存</button>{rerunId && <button type="submit" data-rerun="true" disabled={busy || !base}>保存并仅重跑所选任务</button>}<button type="button" disabled={busy} onClick={close}>取消</button></div>
+    <div><button type="submit" disabled={busy || !base}>保存</button>{rerunId && <button type="submit" data-rerun="true" disabled={busy || !base}>保存成员并编辑重跑要求</button>}<button type="button" disabled={busy} onClick={close}>取消</button></div>
   </form>
 }

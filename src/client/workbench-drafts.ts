@@ -39,7 +39,7 @@ export const draftStorageKey = (sessionId: string, teamId: string) => `teamflow:
 export function propertyOperation(team: TeamState, target: EditorTarget, entry: EditorDraft): WorkflowOperation {
   if (entry.source !== draftSource(team,target)) throw new Error('有对象已变化，请逐项核对草稿后再保存全部。')
   const value = entry.values
-  if (['rerunTaskId','rerunInstructions'].some(key => (value[key] ?? '') !== (entry.baseline?.[key] ?? initialEditorDraft(team,target).values[key] ?? ''))) throw new Error('重跑设置需在对应成员中单独确认，保存全部不会执行或丢弃重跑设置。')
+  if (['rerunTaskId','rerunInstructions'].some(key => (value[key] ?? '') !== (entry.baseline?.[key] ?? initialEditorDraft(team,target).values[key] ?? ''))) throw new Error('重跑设置需在对应任务中单独确认，保存全部不会执行或丢弃重跑设置。')
   if (target.type === 'member') {
     if (target.id && !team.members.some(m => m.name === target.id && m.status !== 'removed')) throw new Error(`成员 ${target.id} 已移除，草稿保留。`)
     const route = value['routeChanged'] ? {provider:value['provider'],model:value['model'],reasoningEffort:value['reasoningEffort'] || 'default'} : {}

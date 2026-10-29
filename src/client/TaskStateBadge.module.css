@@ -1,0 +1,12 @@
+.state { --task-state-color: light-dark(#52647b, #afc0d5); }
+.state[data-lifecycle='inProgress'] { --task-state-color: light-dark(#1763cb, #7db5ff); }
+.state[data-lifecycle='claimed'], .state[data-lifecycle='queued'] { --task-state-color: light-dark(#36549e, #a1baff); }
+.state[data-lifecycle='waiting'], .state[data-lifecycle='reviewReady'], .state[data-lifecycle='stopping'] { --task-state-color: light-dark(#88600a, #edc26e); }
+.state[data-lifecycle='configurationPending'], .state[data-lifecycle='rerunRequired'], .state[data-lifecycle='paused'] { --task-state-color: light-dark(#8051aa, #d6a5fb); }
+.state[data-lifecycle='failed'], .state[data-lifecycle='reviewRejected'], .state[data-lifecycle='blocked'], .state[data-lifecycle='stale'] { --task-state-color: light-dark(#b23b39, #ff9f99); }
+.state[data-lifecycle='completed'], .state[data-lifecycle='reviewPassed'] { --task-state-color: light-dark(#197557, #7cd5ad); }
+.node[data-lifecycle] { border-left: 3px solid var(--task-state-color); }
+.node[data-lifecycle='configurationPending'], .node[data-lifecycle='awaitingStart'], .node[data-lifecycle='staged'], .node[data-lifecycle='rerunRequired'] { border-left-style: dashed; }
+.badge { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; max-width: 100%; box-sizing: border-box; border-radius: 4px; padding: 2px 5px; font-size: 10px; line-height: 14px; color: var(--task-state-color); background: color-mix(in srgb, var(--task-state-color) 10%, transparent); white-space: nowrap; }
+.badge>span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.symbol { flex: none; min-width: 10px; text-align: center; font-weight: 700; }

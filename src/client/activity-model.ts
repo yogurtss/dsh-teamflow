@@ -36,8 +36,8 @@ export interface CompactDagLayout<T extends RelationshipTask> {
 }
 
 /** Reference-panel geometry: narrow nodes with enough room for curved edges. */
-export const COMPACT_DAG_NODE_WIDTH = 92
-export const COMPACT_DAG_NODE_HEIGHT = 30
+export const COMPACT_DAG_NODE_WIDTH = 112
+export const COMPACT_DAG_NODE_HEIGHT = 56
 export const COMPACT_DAG_COLUMN_GAP = 26
 export const COMPACT_DAG_ROW_GAP = 8
 

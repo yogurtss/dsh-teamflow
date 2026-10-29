@@ -182,8 +182,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (!owner || owner.stopping || team.tasks.some(task => task.assignee === owner.name && (['claimed', 'in_progress'].includes(task.status) || task.reassigning))) throw new Error('执行成员不可用或仍在运行，请先停止该成员的任务')
       const impact = rerunImpact(team.tasks, original.id)
       if (impact.active.length) throw new Error('受影响的下游任务仍在运行，请先停止后重跑')
+      const instructions = op.instructions?.trim()
+      if (!instructions) throw new Error('请在编辑任务中填写本次重跑要求')
+      const rerunContext = { instructions, previousStatus: original.status as 'completed'|'failed'|'cancelled', previousOutput: original.output, previousAttemptId: original.attemptId, requestedAt: now }
       resetTaskForRerun(original, false, now)
-      if (op.instructions) original.description = `${original.description ?? ''}\n\n本次重跑要求：${op.instructions}`
+      original.workflowRerunContext = rerunContext
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== original.id) }, original)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
       for (const task of impact.descendants) {

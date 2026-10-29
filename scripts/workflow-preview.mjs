@@ -35,7 +35,7 @@ const archived = {...example,name:'6/7 人工验收归档恢复示例',workflowE
 function Preview() {const snapshots=React.useSyncExternalStore(subscribeActivitySnapshots,getActivitySnapshotsSnapshot);const restored=snapshots.teams.find(team=>team.teamId==='preview');
   React.useEffect(()=>{if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) void fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'state',sessionId:'preview',teamId:'preview'})}).then(res=>res.json()).then(value=>publishWorkflowActivity(value.activity));},[]);
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_ACTIVITY)}) return <><main data-phase="active" style={{minHeight:500}}><header><h3>当前团队对话</h3><TeamChatEntry sessionId={'preview' as any} t={t} openMember={()=>{}}/></header><p>团队已建立。右上角的小圆点可打开成员、依赖与执行进度。</p>{restored && <AgentTeamsSummary data={{teamId:restored.teamId,teamName:restored.name,captainSessionId:'preview',members:restored.members}} sessionId="preview" openMember={()=>{}} t={t}/>}</main><div data-shell-overlay style={{position:'fixed',inset:0,pointerEvents:'none'}}><div style={{pointerEvents:'auto'}}><ActivitySurface state={activityState} sessionsList={sessionStore} modelDirectories={modelDirectories} openMember={()=>{}} t={t}/></div></div></>;
-  if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) return restored ? <TeamSection team={restored} workspace modelDirectory={modelDirectory} t={t} onNavigate={()=>{}}/> : <p>正在加载依赖图…</p>;
+  if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) return restored ? <TeamSection team={restored} workspace={!${Boolean(process.env.TEAMFLOW_PREVIEW_COMPACT)}} modelDirectory={modelDirectory} t={t} onNavigate={()=>{}}/> : <p>正在加载依赖图…</p>;
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_ARCHIVED)}) return <><WorkflowWorkbench sessionId="preview" teamId="preview" archived={!restored} embeddedContext modelDirectory={modelDirectory} t={t}/><TeamSection team={restored??archived} workspace historic={!restored} modelDirectory={modelDirectory} onNavigate={()=>{}} t={t}/></>;
   return <><WorkflowWorkbench sessionId="preview" embeddedContext modelDirectory={modelDirectory} t={t} teamId={location.search.includes('blank') ? undefined : 'preview'} waitingCount={location.search.includes('blank') ? 0 : 1} /><TeamSection team={example} workspace modelDirectory={modelDirectory} onNavigate={() => {}} t={t} /></>}
 createRoot(document.getElementById('root')!).render(<Preview/>);`);
@@ -68,6 +68,16 @@ if (process.env.TEAMFLOW_PREVIEW_CANCELLED) {
 if (process.env.TEAMFLOW_PREVIEW_RUNNING) {
   team.tasks.push({id:'t4',subject:'运行中的独立任务',assignee:'developer',dependencies:[],status:'in_progress',attempt:1,attemptId:'preview-running',createdAt:1,updatedAt:1})
   team.taskSeq=4
+}
+if (process.env.TEAMFLOW_PREVIEW_STATES) {
+  const variants = [
+    {subject:'等待明确开始',workflowPaused:true,workflowAwaitingStart:true},
+    {subject:'人工暂停的任务',workflowPaused:true,workflowAwaitingStart:false},
+    {subject:'需要补充配置',workflowConfigPending:true,workflowPaused:true},
+    {subject:'失败后待修改',status:'failed',output:'上次检查发现验收遗漏。'},
+    {subject:'等待确认返工',workflowRerunRequired:true,workflowPaused:true},
+  ];
+  for (const item of variants) team.tasks.push({id:'t'+(++team.taskSeq),assignee:'researcher',status:'pending',dependencies:[],attempt:0,createdAt:1,updatedAt:1,...item});
 }
 if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && !process.env.TEAMFLOW_PREVIEW_ARCHIVED) {
   const key = 'member:researcher'

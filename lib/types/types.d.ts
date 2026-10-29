@@ -121,6 +121,14 @@ export interface TaskEvidence {
 }
 /** One task of a team's task list. */
 export interface TeamTask {
+    /** Explicit rerun context, kept separate from the durable task contract. */
+    workflowRerunContext?: {
+        instructions: string;
+        previousStatus: 'completed' | 'failed' | 'cancelled';
+        previousOutput?: string;
+        previousAttemptId?: string;
+        requestedAt: number;
+    };
     /** Upstream rerun invalidated this task; explicit human confirmation is required. */
     workflowRerunRequired?: boolean;
     workflowPaused?: boolean;

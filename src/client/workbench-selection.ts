@@ -22,13 +22,13 @@ export function draftSource(team: TeamState | undefined, target: EditorTarget): 
   if(!target.id) return ''
   const member=team?.members.find(item=>item.name===target.id)
   const task=team?.tasks.find(item=>item.id===target.id)
-  return JSON.stringify(target.type==='member'?member && [member.name,member.summary,member.role,member.executionPrompt,member.provider,member.model,member.reasoningEffort,member.status==='removed']:task && [task.id,task.subject,task.description,task.assignee,task.kind])??''
+  return JSON.stringify(target.type==='member'?member && [member.name,member.summary,member.role,member.executionPrompt,member.provider,member.model,member.reasoningEffort,member.status==='removed']:task && [task.id,task.subject,task.description,task.assignee,task.kind,task.status,task.attemptId,task.output])??''
 }
 export function initialEditorDraft(team: TeamState | undefined, target: EditorTarget): EditorDraft {
   const m=team?.members.find(item=>item.name===target.id), t=team?.tasks.find(item=>item.id===target.id)
   const values: Record<string,string> = target.type==='member'
     ? {name:m?.name??'',summary:m?.summary??m?.role??'',role:m?.role??'',executionPrompt:m?.executionPrompt??'',provider:m?.provider??'',model:m?.model??'',reasoningEffort:m?.reasoningEffort??'',routeChanged:'',rerunTaskId:m?rerunnableTasks(team?.tasks??[],m.name).at(-1)?.id??'':'',rerunInstructions:''}
-    : {subject:t?.subject??'',description:t?.description??'',assignee:t?.assignee??''}
+    : {subject:t?.subject??'',description:t?.description??'',assignee:t?.assignee??'',rerunInstructions:''}
   return {source:draftSource(team,target), values, baseline:values}
 }
 export function selectWorkbench(view: WorkbenchView, target: WorkbenchTarget, team: TeamState | undefined, overrides?: Record<string,string>): WorkbenchView {

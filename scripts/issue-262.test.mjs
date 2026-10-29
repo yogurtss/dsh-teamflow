@@ -61,10 +61,10 @@ test('snapshot reaches sidebar and workspace legends, summary, DAG and assignmen
     const html = render(projected, dict, { workspace })
     if (process.env.ISSUE262_CAPTURE_DIR && dict === en && workspace) await writeFile(join(process.env.ISSUE262_CAPTURE_DIR, 'panel.html'), html)
     assert.match(html, /data-task-id="t1" data-state="claimed"/)
-    assert.match(html, new RegExp(`<span data-state="claimed">■ ${dict === en ? 'Claimed 1' : '已认领 1'}</span>`))
-    assert.match(html, new RegExp(dict === en ? 'Claimed: t1' : '已认领：t1'))
+    assert.match(html, new RegExp(`<span data-state="claimed">■ ${dict === en ? 'Preparing 1' : '准备执行 1'}</span>`))
+    assert.match(html, new RegExp(dict === en ? 'Preparing to run: t1' : '准备执行：t1'))
     assert.doesNotMatch(html, new RegExp(dict === en ? 'Ready: t1' : 't1.*等待领取'))
-    assert.match(html, new RegExp(`<span class="dagClaimedState">${dict['task.status.claimed']}</span>`))
+    assert.match(html, new RegExp(`data-lifecycle="claimed"[^>]*>[\\s\\S]*?${dict['task.status.claimed']}`))
     assert.match(html, /data-task-id="t2" data-state="open"/)
     assert.match(html, /data-task-id="t3" data-state="blocked"/)
     assert.match(html, /class="assignmentChip"[^>]*data-state="claimed"/)
@@ -79,7 +79,7 @@ test('in_progress and terminal states keep their meanings', async t => {
     const html = render(team)
     assert.match(html, new RegExp(`data-task-id="t1" data-state="${visual}"`))
     assert.match(html, new RegExp(`In progress ${status === 'in_progress' ? 1 : 0}`))
-    assert.doesNotMatch(html, /Claimed 1|Claimed: t1/)
+    assert.doesNotMatch(html, /Preparing 1|Preparing to run: t1/)
   }
 })
 
@@ -87,7 +87,7 @@ test('discarded staged plans never claim an active task', async t => {
   const { projected } = await snapshot(t)
   const html = render({ ...projected, phase: 'staged' }, en, { historic: true })
   assert.match(html, /data-task-id="t1" data-state="cancelled"/)
-  assert.doesNotMatch(html, /Claimed 1|Claimed: t1/)
+  assert.doesNotMatch(html, /Preparing 1|Preparing to run: t1/)
 })
 
 test('claimed precedence and mixed failed work do not masquerade as blocked or settled', async t => {
@@ -95,6 +95,6 @@ test('claimed precedence and mixed failed work do not masquerade as blocked or s
   const { projected } = await snapshot(t)
   const team = { ...projected, tasks: [projected.tasks[0], { ...projected.tasks[1], status: 'failed', state: 'failed' }] }
   const html = render(team)
-  assert.match(html, /Claimed: t1/)
+  assert.match(html, /Preparing to run: t1/)
   assert.doesNotMatch(html, /automatic loop has stopped/)
 })

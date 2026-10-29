@@ -17,16 +17,18 @@ export function ProposalReview({ team, proposal, base, busy, onApply, onDismiss,
   const included = draft?.included ?? proposal.operations.map(() => true)
   const effective = reviewedOperations(original, operations, included)
   const stale = base !== proposal.base
+  const missingRerunInstructions = effective.some(operation => operation.action === 'rerun_task' && !operation.instructions?.trim())
   const edited = JSON.stringify(operations) !== JSON.stringify(proposal.operations) || included.some(value => !value)
   return <section className={css.review} aria-label="审批修改对照">
     <header><strong>{proposal.title}</strong><p>绿色 + 新增 · 红色 − 删除 · = 相同。可直接编辑「之后」，确认后生效。</p></header>
-    <div className={css.actions}><button type="button" className={css.apply} disabled={busy || stale || effective.length === 0} onClick={() => onApply(effective)}>{edited ? '确认应用编辑后的内容' : '确认应用'}</button><button type="button" disabled={busy} onClick={onDismiss}>放弃修改</button>{edited && <button type="button" disabled={busy} onClick={() => onChange({ operations: structuredClone(proposal.operations), included: proposal.operations.map(() => true) })}>恢复 AI 建议</button>}</div>
+    <div className={css.actions}><button type="button" className={css.apply} disabled={busy || stale || missingRerunInstructions || effective.length === 0} onClick={() => onApply(effective)}>{edited ? '确认应用编辑后的内容' : '确认应用'}</button><button type="button" disabled={busy} onClick={onDismiss}>放弃修改</button>{edited && <button type="button" disabled={busy} onClick={() => onChange({ operations: structuredClone(proposal.operations), included: proposal.operations.map(() => true) })}>恢复 AI 建议</button>}</div>
+    {missingRerunInstructions && <p role="alert">请在「本次要求」中填写重跑的新要求后再确认。</p>}
     {stale && <p role="alert">团队已变化，此提案已过期。请与 AI 重新确认，避免覆盖新结果。</p>}
     {!effective.length && <p role="status">当前没有要应用的改动，可以继续编辑或放弃修改。</p>}
     {operations.map((operation, index) => {
       const comparison = reviewFields(original, operation)
       return <article key={index} className={css.operation} data-included={included[index]}><label className={css.include}><input type="checkbox" checked={included[index]} disabled={busy} onChange={event => onChange({ operations, included: included.map((value, i) => i === index ? event.target.checked : value) })} />应用此项 · {comparison.title}</label>
-        {operation.action === 'rerun_task' && <TaskRerunImpact tasks={original.tasks} taskId={operation.id} />}
+        {operation.action === 'rerun_task' && <><p>上一轮结果（自动提供给 Agent）：</p><pre>{original.tasks.find(task=>task.id===operation.id)?.output || '上一轮未提交结果'}</pre><TaskRerunImpact tasks={original.tasks} taskId={operation.id} /></>}
         {comparison.fields.map(field => {
           const same = field.before === field.after
           return <section key={field.key} className={css.field} data-change={same ? 'same' : !field.before ? 'added' : !field.after ? 'removed' : 'changed'}><div className={css.fieldHeading}><strong>{field.label}</strong><span>{same ? '= 相同' : !field.before ? '+ 新增' : !field.after ? '− 删除' : '± 修改'}</span></div>

@@ -7,6 +7,7 @@ import { taskReadiness } from './task-readiness.ts'
 export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; team: TeamState; expanded?: boolean }) {
   return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {taskReadiness(team,task).label}</summary>
     <p>{task.description || '未单独填写任务说明'}</p>
+    {task.workflowRerunContext && <details><summary>本轮重跑依据</summary><p><strong>上一轮结果：</strong>{task.workflowRerunContext.previousOutput || '上一轮未提交结果'}</p><p><strong>本轮新增要求：</strong>{task.workflowRerunContext.instructions}</p></details>}
     {task.workflowRerunRequired && <p><strong>上游已重跑：</strong>当前节点已挂起，请在画布中确认后执行。此前结果已失效。</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>
     {task.objective && <p><strong>目标：</strong>{task.objective}</p>}

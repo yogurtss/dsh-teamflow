@@ -5,8 +5,8 @@ export const AGENT_TEAMS_LOCALE_NAMESPACE = 'agentTeams'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'task.control.rerun': '重新运行',
-  'task.control.rerunTask': '重新运行 · {task}',
+  'task.control.rerun': '修改并重跑',
+  'task.control.rerunTask': '编辑重跑要求 · {task}',
   'task.control.start': '开始',
   'task.control.pause': '暂停',
   'task.control.dequeue': '取消排队',
@@ -18,7 +18,7 @@ export const zh = {
   'flow.control.hint': '开始全部会启用已配置节点，按依赖顺序执行；不会通过人工审核或确认返工。暂停全部会停止当前执行并取消后续排队。',
   'task.control.startTask': '开始 · {task}',
   'task.control.pauseTask': '暂停 · {task}',
-  'task.control.rerunHint': '点击后确认任务要求并重跑；原有记录保留，受影响的下游挂起待确认。',
+  'task.control.rerunHint': '进入任务编辑，查看上一轮结果并填写本轮要求后确认重跑；受影响的下游挂起待确认。',
   'task.control.enabled': '已启用',
   'task.control.paused': '已暂停',
   'task.control.awaitingStart': '待启动',
@@ -272,8 +272,8 @@ export type AgentTeamsLocaleKey = keyof typeof zh
 
 /** English dictionary, checked complete against the Chinese source key set. */
 export const en = {
-  'task.control.rerun': 'Run again',
-  'task.control.rerunTask': 'Run again · {task}',
+  'task.control.rerun': 'Edit and rerun',
+  'task.control.rerunTask': 'Edit rerun requirements · {task}',
   'task.control.start': 'Start',
   'task.control.pause': 'Pause',
   'task.control.dequeue': 'Remove from queue',
@@ -285,7 +285,7 @@ export const en = {
   'flow.control.hint': 'Start all enables configured nodes in dependency order; reviews and rework still require confirmation. Pause all stops current executions and removes queued work.',
   'task.control.startTask': 'Start · {task}',
   'task.control.pauseTask': 'Pause · {task}',
-  'task.control.rerunHint': 'Click to confirm requirements and rerun. Previous records remain available; affected downstream tasks await confirmation.',
+  'task.control.rerunHint': 'Open the task editor, review the previous result and add new requirements before rerunning. Affected downstream tasks await confirmation.',
   'task.control.enabled': 'Enabled',
   'task.control.paused': 'Paused',
   'task.control.awaitingStart': 'Awaiting start',

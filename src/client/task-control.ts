@@ -31,7 +31,8 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
   const queued = checked && !active
   const actionLabel: AgentTeamsLocaleKey = stopping ? 'task.control.retryStop'
     : !checked ? 'task.control.start' : active ? 'task.control.pause' : 'task.control.dequeue'
-  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel}
+  const visual = label.slice(label.lastIndexOf('.') + 1)
+  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel,visual}
 }
 
 /** Optimistic concurrency token shared by the canvas, activity view and route. */

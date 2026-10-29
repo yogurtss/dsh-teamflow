@@ -73,6 +73,35 @@ test('manual and approved AI additions share the first-start boundary for work a
   }
 })
 
+test('explicit rerun dispatch carries the previous result and new requirements without changing the contract', async t => {
+  const source=withGate()
+  Object.assign(source.tasks[0],{status:'completed',description:'Original contract',output:'Previous delivered result',attemptId:'old',attempt:1})
+  const f=await lifecycleFixture(t,source)
+  let response=await f.call('edit',{base:workflowFingerprint(source),title:'Rerun',operations:[{action:'rerun_task',id:'t1'}]})
+  assert.equal(response.code,409)
+  assert.match(response.error,/本次重跑要求/)
+  assert.equal((await f.read()).tasks[0].status,'completed')
+  response=await f.call('edit',{base:workflowFingerprint(source),title:'Rerun with context',operations:[{action:'rerun_task',id:'t1',instructions:'Add failure coverage',workflowRerunContext:{previousOutput:'forged'}}]})
+  assert.equal(response.code,200,response.error)
+  const dispatched=f.dispatched[0][3]
+  for(const value of ['Original contract','Previous delivered result','Add failure coverage','historical source material']) assert.ok(dispatched.includes(value),value)
+  assert.ok(!dispatched.includes('forged'))
+  let saved=await f.read()
+  assert.equal(saved.tasks[0].description,'Original contract')
+  assert.equal(saved.tasks[0].workflowRerunContext.previousOutput,'Previous delivered result')
+  assert.equal(saved.tasks[0].workflowRerunContext.previousAttemptId,'old')
+  assert.equal(saved.tasks[1].workflowRerunRequired,true)
+  Object.assign(saved.tasks[0],{status:'completed',output:'Second result'});saved.members[0].status='idle';await f.save(saved)
+  response=await f.call('edit',{base:workflowFingerprint(saved),title:'Next rerun',operations:[{action:'rerun_task',id:'t1',instructions:'Check accessibility'}]})
+  assert.equal(response.code,200,response.error)
+  saved=await f.read()
+  assert.equal(saved.tasks[0].workflowRerunContext.previousOutput,'Second result')
+  assert.equal(saved.tasks[0].workflowRerunContext.instructions,'Check accessibility')
+  assert.equal(saved.tasks[0].description,'Original contract')
+  assert.ok(f.dispatched[1][3].includes('Second result'))
+  assert.ok(!f.dispatched[1][3].includes('Add failure coverage'))
+})
+
 test('pause all fences the entire chain before draining, retains results and recovers failed drains', async t => {
   const source=withGate()
   Object.assign(source.tasks[0],{status:'in_progress',attempt:1,attemptId:'run-a',output:'Partial A'})
@@ -268,7 +297,7 @@ test('completed canvas tasks edit and rerun atomically while preserving unrelate
   source.tasks[2].status='completed';source.tasks[2].output='downstream old'
   source.tasks.push({...task('unrelated'),status:'completed',output:'preserved'})
   source.members.push({...member,name:'replacement'})
-  const before=structuredClone(source), operation=parseWorkflowOperations([{action:'rerun_task',id:'t1',subject:'Revised task',description:'New requirement',assignee:'replacement',output:'ignore forged result'}])[0]
+  const before=structuredClone(source), operation=parseWorkflowOperations([{action:'rerun_task',id:'t1',instructions:'Use the previous result and check the new requirement',subject:'Revised task',description:'New requirement',assignee:'replacement',output:'ignore forged result'}])[0]
   assert.equal(editorTarget(source,{type:'task',id:'t1'},true).type,'task')
   const result=applyWorkflowOperations(source,[operation])
   assert.deepEqual(source,before);assert.equal(result.tasks[0].subject,'Revised task');assert.equal(result.tasks[0].description,'New requirement');assert.equal(result.tasks[0].assignee,'replacement')
@@ -359,7 +388,7 @@ test('rerun overwrites the same task, suspends all transitive dependents and pre
   const selected=result.tasks[0]
   assert.equal(selected.status,'pending'); assert.equal(selected.workflowPaused,false); assert.equal(selected.attempt,3,'generation stays monotonic')
   assert.equal(selected.attemptId,undefined); assert.equal(selected.output,undefined); assert.equal(selected.supplementalEvidence,undefined)
-  assert.equal(selected.commandsRun,undefined); assert.match(selected.description,/Check again/)
+  assert.equal(selected.commandsRun,undefined); assert.equal(selected.workflowRerunContext.instructions,'Check again'); assert.equal(selected.description,source.tasks[0].description)
   assert.equal(selected.profileSeedId,'seed'); assert.deepEqual(selected.deliverables,['report.md']); assert.deepEqual(selected.coverageOf,['goal'])
   for(const id of ['gate','after','future']) {
     const item=result.tasks.find(t=>t.id===id)
@@ -379,7 +408,7 @@ test('rerun rejects active work and invalid targets without partially saving mem
   for(const mutate of [s=>s.tasks[0].status='pending',s=>s.phase='staged',s=>s.halted=true,s=>s.members[0].status='removed',s=>s.members[0].stopping=true,s=>s.tasks[2].status='in_progress',s=>s.tasks.push({...task('busy'),status:'claimed'})]) {
     const source=withGate();source.tasks[0].status='completed';mutate(source)
     const before=structuredClone(source)
-    assert.throws(()=>applyWorkflowOperations(source,[{action:'update_member',name:'worker',summary:'must not save'},{action:'rerun_task',id:'t1'}]))
+    assert.throws(()=>applyWorkflowOperations(source,[{action:'update_member',name:'worker',summary:'must not save'},{action:'rerun_task',id:'t1',instructions:'Recheck the previous result'}]))
     assert.deepEqual(source,before)
   }
   const source=withGate();source.tasks[0].status='completed'
@@ -405,7 +434,7 @@ for (const initialStatus of ['completed','cancelled','failed']) test(`rerun ${in
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},scheduler,{register:value=>{route=value;return()=>{}}})
   const read=()=>readTeam(join(root,'.agent-teams'),'demo')
   async function send(action,extra={}) {const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...action==='resume_task'?{base:workflowFingerprint(await read())}:{},...extra})]);req.method='POST';req.headers={};await route.handler(req,{writeHead:code=>{status=code},end:body=>{response=JSON.parse(body)}})}
-  await send('edit',{base:workflowFingerprint(source),title:'Edit and rerun',operations:[{action:'update_member',name:'worker',role:'Adjusted role'},{action:'rerun_task',id:'t1'}]})
+  await send('edit',{base:workflowFingerprint(source),title:'Edit and rerun',operations:[{action:'update_member',name:'worker',role:'Adjusted role'},{action:'rerun_task',id:'t1',instructions:'Recheck the previous result'}]})
   assert.equal(status,200,JSON.stringify(response));assert.equal(dispatched.length,1);assert.equal(dispatched[0][2],'worker');assert.match(dispatched[0][3],/Task: t1/)
   assert.equal(response.activity.tasks.find(task=>task.id==='t1').status,'claimed')
   assert.equal(response.activity.tasks.find(task=>task.id==='gate').workflowRerunRequired,true)
@@ -430,14 +459,14 @@ for (const initialStatus of ['completed','cancelled','failed']) test(`rerun ${in
   await send('resume_task',{taskId:'after'});assert.equal(status,200);assert.equal(dispatched.length,2);assert.equal(dispatched[1][2],'other');assert.match(dispatched[1][3],/NEW RESULT/);assert.doesNotMatch(dispatched[1][3],/OLD RESULT/)
   saved=await read();assert.equal(saved.tasks[2].attempt,2);assert.deepEqual(saved.tasks.find(t=>t.id==='parallel'),source.tasks.find(t=>t.id==='parallel'))
   Object.assign(saved.tasks[0],{status:'completed',output:'NEW RESULT'});saved.members[0].status='idle';saved.tasks[2].status='completed';saved.members[1].status='idle';await writeTeam(join(root,'.agent-teams'),saved)
-  await send('edit',{base:workflowFingerprint(saved),title:'Rerun again',operations:[{action:'rerun_task',id:'t1'}]})
+  await send('edit',{base:workflowFingerprint(saved),title:'Rerun again',operations:[{action:'rerun_task',id:'t1',instructions:'Recheck the previous result'}]})
   assert.equal(status,200);assert.equal(dispatched.length,3);assert.equal((await read()).tasks.length,source.tasks.length,'repeated reruns overwrite in place')
 })
 
 test('suspension survives reload and malformed confirmation flags fail the durable boundary', async t => {
   const root=mkdtempSync(join(tmpdir(),'workflow-rerun-state-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
   const source=withGate();source.tasks[0].status='completed'
-  const updated=applyWorkflowOperations(source,[{action:'rerun_task',id:'t1'}]);await createTeamDir(root,updated)
+  const updated=applyWorkflowOperations(source,[{action:'rerun_task',id:'t1',instructions:'Recheck the previous result'}]);await createTeamDir(root,updated)
   assert.equal((await readTeam(root,'demo')).tasks[1].workflowRerunRequired,true)
   const cancelled=structuredClone(updated.tasks[2]);cancelUnfinishedTask(cancelled,'stop')
   assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.workflowPaused,false);assert.equal(cancelled.workflowRerunRequired,false,'stopping the team must remove pending confirmation badges')

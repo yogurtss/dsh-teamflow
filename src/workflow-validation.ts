@@ -54,3 +54,8 @@ export function isCheckpoint(value: unknown): boolean {
 export function isStoppedAttempts(value: unknown): boolean {
   return Array.isArray(value) && value.every(item => record(item) && optionalString(item['attemptId']) && optionalString(item['output']) && number(item['at']))
 }
+export function isWorkflowRerunContext(value: unknown): boolean {
+  return record(value) && string(value['instructions']) && !!value['instructions'].trim()
+    && ['completed','failed','cancelled'].includes(value['previousStatus'] as string)
+    && optionalString(value['previousOutput']) && optionalString(value['previousAttemptId']) && number(value['requestedAt'])
+}

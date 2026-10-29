@@ -18,6 +18,7 @@ export declare function taskControlState(team: ControlTeam, task: ControlTask, h
     active: boolean;
     queued: boolean;
     actionLabel: "task.control.start" | "task.control.pause" | "task.control.dequeue" | "task.control.retryStop";
+    visual: string;
 };
 /** Optimistic concurrency token shared by the canvas, activity view and route. */
 export declare function flowControlVersion(team: ControlTeam): string;

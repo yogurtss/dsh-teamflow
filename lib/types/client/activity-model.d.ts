@@ -30,8 +30,8 @@ export interface CompactDagLayout<T extends RelationshipTask> {
     readonly edges: readonly CompactDagEdge[];
 }
 /** Reference-panel geometry: narrow nodes with enough room for curved edges. */
-export declare const COMPACT_DAG_NODE_WIDTH = 92;
-export declare const COMPACT_DAG_NODE_HEIGHT = 30;
+export declare const COMPACT_DAG_NODE_WIDTH = 112;
+export declare const COMPACT_DAG_NODE_HEIGHT = 56;
 export declare const COMPACT_DAG_COLUMN_GAP = 26;
 export declare const COMPACT_DAG_ROW_GAP = 8;
 /** Compact `provider/model` route, or just the model when the provider is absent. */

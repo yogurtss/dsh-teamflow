@@ -3,6 +3,13 @@ import assert from 'node:assert/strict'
 import { awaitsFirstStart } from '../lib/task-start-state.js'
 import { isTeamTask } from '../lib/state.js'
 import { taskReadiness } from '../lib/client/task-readiness.js'
+import { isWorkflowRerunContext } from '../lib/workflow-validation.js'
+
+test('rerun context survives persistence and rejects malformed saved requirements or result types',()=>{
+  const context={instructions:'Use the prior result',previousStatus:'completed',previousOutput:'Result',previousAttemptId:'old',requestedAt:1}
+  assert.equal(isWorkflowRerunContext(JSON.parse(JSON.stringify(context))),true)
+  for(const patch of [{instructions:''},{instructions:42},{previousStatus:'in_progress'},{previousOutput:{}},{requestedAt:'now'}]) assert.equal(isWorkflowRerunContext({...context,...patch}),false)
+})
 
 test('first-start intent survives saved state and distinguishes legacy drafts from execution stops',()=>{
   const task={id:'new',subject:'New task',kind:'work',status:'pending',dependencies:[],attempt:0,createdAt:1,updatedAt:1,workflowPaused:true,workflowAwaitingStart:true}

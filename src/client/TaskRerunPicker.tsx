@@ -10,11 +10,10 @@ export function TaskRerunImpact({ tasks, taskId }: { tasks: readonly TeamTask[];
     {!!impact.active.length&&<p role="alert">请先停止受影响的运行任务：{impact.active.map(task=>task.subject).join('、')}</p>}
   </div>
 }
-export function TaskRerunPicker({ tasks, member, taskId, instructions, onTask, onInstructions, disabled }: { tasks: readonly TeamTask[]; member: string; taskId: string; instructions: string; onTask: (id:string)=>void; onInstructions:(text:string)=>void; disabled:boolean }) {
+export function TaskRerunPicker({ tasks, member, taskId, onTask, disabled }: { tasks: readonly TeamTask[]; member: string; taskId: string; onTask: (id:string)=>void; disabled:boolean }) {
   const candidates=rerunnableTasks(tasks,member)
   if(!candidates.length) return null
   return <fieldset className={css.picker}><legend>单独重跑</legend><label className={css.field}>重跑任务<select value={taskId} disabled={disabled} onChange={event=>onTask(event.target.value)}>{candidates.map(task=><option key={task.id} value={task.id}>{task.subject}（{task.id}）</option>)}</select></label>
-    <label className={css.field}>本次要求（可选）<textarea value={instructions} disabled={disabled} onChange={event=>onInstructions(event.target.value)} placeholder="例如：按调整后的职责重新检查，并补充证据。" /></label>
-    <TaskRerunImpact tasks={tasks} taskId={taskId} />
+    <p>保存成员后进入任务编辑，查看上一轮结果并填写本轮要求，再确认重跑。</p>
   </fieldset>
 }

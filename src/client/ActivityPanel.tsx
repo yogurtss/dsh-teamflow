@@ -19,6 +19,7 @@
 
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
+import { TaskStateBadge, taskStateNodeClass } from './TaskStateBadge.tsx'
 import { QuickMemberEditor } from './QuickMemberEditor.tsx'
 import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
@@ -473,7 +474,8 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     type="button"
                     aria-pressed={pinnedTaskId === task.id}
                     onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
-                    className={css.dagNode}
+                    className={`${css.dagNode} ${taskStateNodeClass}`}
+                    data-lifecycle={discarded ? 'notRun' : task.verdictStale ? 'stale' : control.visual}
                     style={parallel
                       ? { height: nodeHeight }
                       : { left: x, top: y, width: nodeWidth, height: nodeHeight }}
@@ -495,7 +497,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
-                    {!discarded && (workspace || task.status === 'claimed') && <span className={css.dagClaimedState} title={task.status === 'claimed' ? t('task.control.claimedHint') : t(control.label)}>{t(control.label)}</span>}
+                    <TaskStateBadge control={control} t={t} className={css.dagState} discarded={discarded} stale={!!task.verdictStale} detail={task.status === 'claimed' ? t('task.control.claimedHint') : undefined} />
                     {task.state === 'running' && (
                       <span className={css.dagRunningState} aria-label={t('task.runningAria')}>
                         <WorkGlyph active />
@@ -808,7 +810,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
                   </span>
                   <span className={css.memberCount}>{member.done}/{member.total}</span>
                 </button>
-                {editingMember === member.name && modelDirectory && !historic && <QuickMemberEditor key={member.name} team={team} member={member} directory={modelDirectory} t={t} close={() => setEditingMember(undefined)} />}
+                {editingMember === member.name && modelDirectory && !historic && <QuickMemberEditor key={member.name} team={team} member={member} directory={modelDirectory} t={t} close={() => setEditingMember(undefined)} onRerun={taskId=>setTaskEntry({taskId,review:false,rerun:true})} />}
                 {!historic && modelDirectory && member.id !== '' && <button type="button" className={css.quickTranscript} onClick={() => onNavigate(team.captainSessionId as SessionId, member.id as SessionId)}>执行对话 ↗</button>}
                 <div className={css.assignmentLine}>
                   <span className={css.assignmentLabel}>{t(discarded
