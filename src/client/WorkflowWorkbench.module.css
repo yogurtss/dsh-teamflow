@@ -111,6 +111,11 @@
 .drag { cursor: grab; padding: 6px 11px; color: var(--wb-muted); font-size: 10px; border-bottom: 1px solid var(--wb-border); touch-action: none; user-select: none; }
 .drag [data-node-playback] { margin-left: auto; padding: 1px 5px; font-size: 10px; line-height: 16px; min-height: 20px; cursor: pointer; }
 .nodeControls { display: flex; padding: 8px 12px; gap: 8px; }
+.nodeControls { flex-wrap: wrap; flex-shrink: 0; }
+.canvasTaskActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--wb-border); background: var(--wb-bg); flex-shrink: 0; }
+.canvasTaskActions>strong { font-size: 12px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvasTaskActions>div { display: flex; flex-wrap: wrap; gap: 6px; }
+.canvasTaskActions>span { font-size: 12px; }
 .drag [data-node-rerun] { margin-left: auto; padding: 1px 5px; font-size: 10px; line-height: 16px; min-height: 20px; cursor: pointer; }
 .rerunContext { border: 1px solid var(--wb-border); border-radius: 8px; padding: 12px; margin-block: 12px; background: var(--wb-base); }
 .rerunContext label { display: flex; flex-direction: column; gap: 6px; }

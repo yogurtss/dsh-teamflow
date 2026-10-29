@@ -20,7 +20,7 @@ import { publishWorkflowActivity, type ActivityTeam } from './activity-monitor.t
 import { arrangeTasks, clampZoom, fitGraph } from './workflow-layout.ts'
 import { decodeDrafts, draftStorageKey, pendingDrafts, propertyOperation } from './workbench-drafts.ts'
 import { taskReadiness } from './task-readiness.ts'
-import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
+import { flowControlState, flowControlVersion, taskControlState, taskPlaybackDisabled } from './task-control.ts'
 import { zh } from './locales.ts'
 import { awaitsFirstStart } from '../task-start-state.ts'
 import { IconBranchOutline16, WorkflowIcon } from './icons.tsx'
@@ -302,10 +302,28 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     if (control.canRerun) return <button type="button" data-node-rerun disabled={working} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();edit('task',task.id)}}>修改并重跑</button>
     if (control.terminal || control.disabled) return null
     const label = t ? t(control.actionLabel) : zh[control.actionLabel]
-    return <button type="button" data-node-playback disabled={working || unsaved.some(item => item.target.id === task.id)}
+    return <button type="button" data-node-playback disabled={taskPlaybackDisabled(control,working,unsaved.some(item => item.target.id === task.id))}
       aria-label={`${label} · ${task.subject}`} title={zh['task.control.hint']}
       onPointerDown={event => event.stopPropagation()}
       onClick={event => { event.stopPropagation(); void perform('set_task_enabled', {taskId:task.id,enabled:control.stopping ? false : !control.checked,updatedAt:task.updatedAt}) }}>{label}</button>
+  }
+  async function pauseAndEdit(task: TeamTask): Promise<void> {
+    const revision = viewRef.current.revision
+    const saved = await perform('set_task_enabled', {taskId:task.id,enabled:false,updatedAt:task.updatedAt})
+    if (!saved || !mounted.current || revision !== viewRef.current.revision) return
+    const stopped = saved.team.tasks.find(item => item.id === task.id)
+    if (!stopped || !editorTarget(saved.team,{type:'task',id:task.id},true)) return
+    setEditing(true)
+    updateView(current => selectWorkbench(current,{type:'task',id:task.id},saved.team))
+    setInspectorHidden(false)
+    setFeedback('当前执行已停止。修改任务要求后，点击「保存并重新开始」；本轮停止记录已保留。')
+  }
+  function renderTaskEditControl(task: TeamTask) {
+    if (!team || archiveView || team.halted) return null
+    const control = taskControlState(team,task)
+    if (control.active && !task.checkpoint) return <button type="button" disabled={working || control.stopping} onClick={() => void pauseAndEdit(task)}>暂停并修改</button>
+    if (!control.canRerun && editorTarget(team,{type:task.checkpoint?'check':'task',id:task.id},true)) return <button type="button" disabled={working} onClick={() => edit(task.checkpoint?'check':'task',task.id)}>{task.workflowPaused && !awaitsFirstStart(task) && !task.checkpoint ? '修改后重新开始' : '编辑节点'}</button>
+    return null
   }
   async function startEmbedded(key: string, targetId = activeId, fresh = false): Promise<void> {
     selectDiscussion(key)
@@ -566,6 +584,9 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         </aside>
         <main className={css.graphArea}>
           <nav className={css.toolbar} aria-label="画布工具"><button aria-pressed={!panMode} onClick={() => setPanMode(false)}><WorkflowIcon name="select" />选择</button><button aria-pressed={panMode} onClick={() => setPanMode(true)}><WorkflowIcon name="pan" />平移</button><button aria-label="缩小画布" disabled={zoom <= .1} onClick={() => changeZoom(zoom - .1)}>−</button><button title="恢复 100%" aria-label={`缩放 ${Math.round(zoom * 100)}%，点击恢复 100%`} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label="放大画布" disabled={zoom >= 2} onClick={() => changeZoom(zoom + .1)}>＋</button><button onClick={fitCanvas}><WorkflowIcon name="fit" />适应画布</button><button disabled={working || archiveView || !team.tasks.length} onClick={() => void arrangeCanvas()}><WorkflowIcon name="arrange" />自动整理</button></nav>
+          <section className={css.canvasTaskActions} aria-label="画布任务操作">
+            {activeTask ? <><strong title={activeTask.subject}>{activeTask.subject}</strong><TaskStateBadge control={taskControlState(team,{...activeTask,workflowAwaitingStart:awaitsFirstStart(activeTask)},archiveView)} t={t} /><div>{renderTaskControl(activeTask)}{renderTaskEditControl(activeTask)}</div></> : <span>点击任务节点，在这里暂停、修改或重跑，无需退出画布。</span>}
+          </section>
           {reviewNotice}
           <div className={css.canvas} data-pan={panMode || !editing || archiveView} data-linking={!!link} ref={canvas} onPointerDownCapture={beginPan} onClickCapture={event=>{if(suppressPanClick.current) {suppressPanClick.current=false;event.preventDefault();event.stopPropagation()}}}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
@@ -617,7 +638,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         </main>
         <div className={css.resizeHandle} role="separator" aria-label="调整右侧面板宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
         <section className={css.inspector} aria-label="属性与讨论面板"><header className={css.inspectorHeader}><strong>{editor ? '编辑属性' : activeTask || selectedEdge ? '节点与连接' : '讨论与验收'}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? '还原面板' : '放大面板'}</button></header>
-          {activeTask && !terminalEdit && <div className={css.nodeControls}>{renderTaskControl(activeTask)}</div>}
+          {activeTask && !terminalEdit && <div className={css.nodeControls}>{renderTaskControl(activeTask)}{renderTaskEditControl(activeTask)}</div>}
           {selectedEdge && <aside className={css.editor} aria-label="交接详情"><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>删除连线</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? '人工验收属性' : '任务属性'}><h3>{activeTask.checkpoint ? '人工验收属性' : '任务属性'}</h3><strong>{activeTask.subject}</strong>{renderReadiness(activeTask)}<p>{activeTask.description || '暂无任务说明'}</p><p>{taskStatus(activeTask,data.ready)} · {activeTask.id}</p>{activeTask.checkpoint && <p>第 {activeTask.checkpoint.round} 轮 · {activeTask.checkpoint.note || '暂无验收意见'}</p>}<div>
             {!archiveView && !activeTask.checkpoint && <button className={css.primary} disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />与 AI 讨论任务</button>}
@@ -678,7 +699,7 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
         {feedback && <p role="status">{feedback}</p>}<p className={css.hint}>属性需点击保存；草稿保存在此标签页，刷新可恢复。Esc 退出编辑并保留草稿。</p>{draftStale && <p role="alert">当前对象已变化，草稿仍保留。<button type="button" onClick={() => { if(draftId) updateView(current=>{const drafts={...current.drafts};delete drafts[draftId];return {...current,drafts}}) }}>重新载入</button></p>}
         <footer><button className={css.primary} disabled={working || (terminalEdit && (team.phase === 'staged' || !draft['rerunInstructions']?.trim()))}>{terminalEdit ? '保存并重跑此任务' : activeTask?.workflowConfigPending && editor.type !== 'member' ? '保存并完成配置' : '保存'}</button>
           {editor.type === 'member' && editor.id && rerunnableTasks(team.tasks,editor.id).some(task=>task.id===draft['rerunTaskId']) && <button type="submit" data-rerun="true" disabled={working}>保存成员并编辑重跑要求</button>}
-          {editor.id && editor.type !== 'member' && !terminalEdit && !activeTask?.workflowConfigPending && team.tasks.find(task => task.id === editor.id)?.workflowPaused && <button type="submit" data-resume="true" disabled={working || (activeTask?.workflowRerunRequired && activeTask.dependencies.some(id => team.tasks.find(task => task.id === id)?.status !== 'completed'))}>{activeTask?.workflowRerunRequired ? editor.type === 'check' ? '使用新结果重新验收' : '使用新结果执行' : editor.type === 'check' ? '保存并开始验收' : '保存并开始执行'}</button>}
+          {editor.id && editor.type !== 'member' && !terminalEdit && !activeTask?.workflowConfigPending && team.tasks.find(task => task.id === editor.id)?.workflowPaused && <button type="submit" data-resume="true" disabled={working || (activeTask?.workflowRerunRequired && activeTask.dependencies.some(id => team.tasks.find(task => task.id === id)?.status !== 'completed'))}>{activeTask?.workflowRerunRequired ? editor.type === 'check' ? '使用新结果重新验收' : '使用新结果执行' : editor.type === 'check' ? '保存并开始验收' : activeTask && !awaitsFirstStart(activeTask) ? '保存并重新开始' : '保存并开始执行'}</button>}
           {editor.id && editor.type !== 'member' && !terminalEdit && <button type="button" disabled={working} onClick={() => void deleteNode(editor.id!)}>删除节点</button>}
           {editor.type === 'check' && editor.id && data.ready.includes(editor.id) && <button type="button" disabled={working} onClick={() => void openReview(editor.id!)}>开始验收 ↗</button>}<button type="button" onClick={cancelEdit}>放弃修改</button>
           {editor.type === 'member' && editor.id && <button type="button" disabled={working} onClick={() => void saveEdit([{ action: 'remove_member', name: editor.id! }], `移除 ${editor.id}`, true)}>移除成员</button>}</footer>

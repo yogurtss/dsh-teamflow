@@ -35,6 +35,11 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
   return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel,visual}
 }
 
+/** Unsaved properties may block starting old work, but never block stopping it. */
+export function taskPlaybackDisabled(control: ReturnType<typeof taskControlState>, busy: boolean, dirty: boolean): boolean {
+  return control.disabled || busy || (dirty && !control.checked && !control.stopping)
+}
+
 /** Optimistic concurrency token shared by the canvas, activity view and route. */
 export function flowControlVersion(team: ControlTeam): string {
   return JSON.stringify([team.phase ?? 'running', !!team.halted, team.tasks.map(task => [task.id, task.updatedAt, task.status, !!task.workflowPaused, !!task.workflowConfigPending, !!task.workflowRerunRequired, task.checkpoint?.decision, task.dependencies])])

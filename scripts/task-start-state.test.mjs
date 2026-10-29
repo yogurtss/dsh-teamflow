@@ -4,6 +4,17 @@ import { awaitsFirstStart } from '../lib/task-start-state.js'
 import { isTeamTask } from '../lib/state.js'
 import { taskReadiness } from '../lib/client/task-readiness.js'
 import { isWorkflowRerunContext } from '../lib/workflow-validation.js'
+import { taskControlState, taskPlaybackDisabled } from '../lib/client/task-control.js'
+
+test('drafts prevent starting stale work but never prevent pausing or retrying a stop',()=>{
+  const task={id:'t1',status:'in_progress',dependencies:[]}, team={tasks:[task],phase:'running'}
+  assert.equal(taskPlaybackDisabled(taskControlState(team,task),false,true),false)
+  assert.equal(taskPlaybackDisabled(taskControlState(team,{...task,workflowPaused:true}),false,true),false)
+  assert.equal(taskPlaybackDisabled(taskControlState(team,{...task,status:'pending'}),false,true),false)
+  assert.equal(taskPlaybackDisabled(taskControlState(team,{...task,status:'pending',workflowPaused:true}),false,true),true)
+  assert.equal(taskPlaybackDisabled(taskControlState(team,task),true,false),true)
+  assert.equal(taskPlaybackDisabled(taskControlState(team,{...task,status:'completed'}),false,false),true)
+})
 
 test('rerun context survives persistence and rejects malformed saved requirements or result types',()=>{
   const context={instructions:'Use the prior result',previousStatus:'completed',previousOutput:'Result',previousAttemptId:'old',requestedAt:1}

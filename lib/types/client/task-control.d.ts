@@ -20,6 +20,8 @@ export declare function taskControlState(team: ControlTeam, task: ControlTask, h
     actionLabel: "task.control.start" | "task.control.pause" | "task.control.dequeue" | "task.control.retryStop";
     visual: string;
 };
+/** Unsaved properties may block starting old work, but never block stopping it. */
+export declare function taskPlaybackDisabled(control: ReturnType<typeof taskControlState>, busy: boolean, dirty: boolean): boolean;
 /** Optimistic concurrency token shared by the canvas, activity view and route. */
 export declare function flowControlVersion(team: ControlTeam): string;
 export declare function flowControlState(team: ControlTeam): {
