@@ -1,12 +1,12 @@
 /** Persistent human-controlled workflow and isolated discussion contracts. */
 export type WorkflowOperation =
-  | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
-  | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
+  | { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
+  | { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string }
   | { action: 'remove_member'; name: string }
-  | { action: 'add_task'; id?: string; subject: string; description?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean }
-  | { action: 'update_task'; id: string; subject?: string; description?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; layers?: import('./task-layers.ts').TaskLayers; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean }
+  | { action: 'update_task'; id: string; subject?: string; description?: string; layers?: import('./task-layers.ts').TaskLayers; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean }
   | { action: 'remove_task'; id: string }
-  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; assignee?: string }
+  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; layers?: import('./task-layers.ts').TaskLayers; adaptationIssue?: string; assignee?: string }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
 
 export interface Checkpoint {
@@ -29,6 +29,7 @@ export interface WorkflowProposal {
 }
 export interface DiscussionMessage { role: 'user' | 'assistant'; text: string; at: number }
 export interface WorkflowDiscussion {
+  templateDraft?: { base: string; definition: import('./templates.ts').TemplateDefinition }
   key: string
   native?: { sessionId: string; label: string; reviewEvidence?: string }
   contextBase?: string
@@ -41,6 +42,7 @@ export interface WorkflowDiscussion {
   materialsRound?: number
 }
 export interface WorkflowState {
+  templateSource?: import('./templates.ts').TemplateSource
   /** Accepted for old saved teams; no longer controls behavior. */
   mode?: 'manual' | 'assisted'
   positions: Record<string, { x: number; y: number }>

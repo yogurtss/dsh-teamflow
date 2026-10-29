@@ -60,6 +60,7 @@ export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents', 's
 
 /** Plugin configuration. */
 export interface Config {
+  templateDirectory?: string
   /**
    * State directory name under the captain's workspace; team state lives at
    * `<workspace>/<stateDir>/<teamId>/` (default `.agent-teams`).
@@ -133,6 +134,7 @@ const toolPolicyConfig = z.union([
 
 export const Config: z<Config> = z.object({
   stateDir: z.string().default('.agent-teams'),
+  templateDirectory: z.string(),
   memberProvider: z.string().default('spawn'),
   memberModel: z.string(),
   memberLlmProvider: z.string(),
@@ -198,6 +200,7 @@ Tools: ${toolNames}${profilesText === '' ? '' : `\n\n${profilesText}`}`
 export function apply(ctx: Context, config: Config): void {
   const resolved: ToolsConfig = {
     stateDir: config.stateDir ?? '.agent-teams',
+    templateDirectory: config.templateDirectory,
     memberProvider: config.memberProvider ?? 'spawn',
     memberModel: config.memberModel,
     memberLlmProvider: config.memberLlmProvider,

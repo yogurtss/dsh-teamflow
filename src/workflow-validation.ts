@@ -1,4 +1,6 @@
 /** Validate saved workflow data before native recovery or browser rendering. */
+import { isTaskLayers } from './task-layers.ts'
+import { parseTemplate } from './templates.ts'
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const string = (value: unknown): value is string => typeof value === 'string'
 const optionalString = (value: unknown) => value === undefined || string(value)
@@ -8,6 +10,8 @@ const strings = (value: unknown) => Array.isArray(value) && value.every(string)
 
 function operation(value: unknown): boolean {
   if (!record(value)) return false
+  if(value['layers']!==undefined && !isTaskLayers(value['layers']))return false
+  if(!optionalString(value['specificPrompt']) || !optionalString(value['adaptationIssue']))return false
   if (['id', 'name', 'subject', 'summary', 'role', 'executionPrompt', 'description', 'assignee', 'provider', 'model', 'reasoningEffort', 'instructions'].some(key => !optionalString(value[key]))) return false
   if (value['dependencies'] !== undefined && !strings(value['dependencies'])) return false
   if (['configurationPending', 'confirmConfiguration'].some(key => value[key] !== undefined && typeof value[key] !== 'boolean')) return false
@@ -29,6 +33,7 @@ function proposal(value: unknown): boolean {
 }
 function discussion(value: unknown): boolean {
   if (!record(value) || !string(value['key'])) return false
+  if(value['templateDraft']!==undefined){const d=value['templateDraft'];if(!record(d)||!string(d['base']))return false;try{parseTemplate(d['definition'])}catch{return false}}
   if (!['contextBase', 'materials', 'evidence'].every(key => optionalString(value[key]))) return false
   if (value['materialsRound'] !== undefined && !positive(value['materialsRound'])) return false
   if (value['native'] !== undefined) {
@@ -40,6 +45,7 @@ function discussion(value: unknown): boolean {
     && Array.isArray(value['calls']) && value['calls'].every(item => record(item) && ['system', 'input', 'provider', 'model'].every(key => string(item[key])) && optionalString(item['output']) && optionalString(item['error']) && number(item['at']))
 }
 export function isWorkflowState(value: unknown): boolean {
+  if(record(value) && value['templateSource']!==undefined){const s=value['templateSource'];if(!record(s)||!string(s['id'])||!string(s['name'])||!positive(s['version']))return false}
   return record(value) && [undefined, 'manual', 'assisted'].includes(value['mode'] as string | undefined)
     && record(value['positions']) && Object.values(value['positions']).every(point => record(point) && number(point['x']) && number(point['y']))
     && record(value['discussions']) && Object.values(value['discussions']).every(discussion)

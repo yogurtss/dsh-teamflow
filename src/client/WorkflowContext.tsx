@@ -2,11 +2,12 @@
 import type { TeamState, TeamTask } from '../types.ts'
 import css from './WorkflowWorkbench.module.css'
 import { taskReadiness } from './task-readiness.ts'
+import { TaskLayersView } from './TaskLayersEditor.tsx'
 
 
 export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; team: TeamState; expanded?: boolean }) {
   return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {taskReadiness(team,task).label}</summary>
-    <p>{task.description || '未单独填写任务说明'}</p>
+    {task.layers?<TaskLayersView layers={task.layers} issue={task.adaptationIssue}/>:<p>{task.description || '未单独填写任务说明'}</p>}
     {task.workflowRerunContext && <details><summary>本轮重跑依据</summary><p><strong>上一轮结果：</strong>{task.workflowRerunContext.previousOutput || '上一轮未提交结果'}</p><p><strong>本轮新增要求：</strong>{task.workflowRerunContext.instructions}</p></details>}
     {task.workflowRerunRequired && <p><strong>{taskReadiness(team,task).label}：</strong>{taskReadiness(team,task).detail}</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>
@@ -39,7 +40,7 @@ export function WorkflowContext({ team, discussion, onSelect, openExecution }: {
       <section><h4>{member.name} · 当前配置</h4><p>{member.summary || member.role || '尚未填写职责概述'}</p><dl>
         <dt>长期职责</dt><dd>{member.role || '未单独设置'}</dd>
         <dt>PE · 成员执行指令</dt><dd>{member.executionPrompt || '未单独设置；执行时可能沿用团队或插件指令'}</dd>
-        <dt>模型</dt><dd>{member.activeModel ?? member.model ?? '未记录'}{member.fallbackActive ? '（已切换备用模型）' : ''}</dd>
+        <dt>本次补充指令</dt><dd>{member.specificPrompt||'未设置'}</dd><dt>模型</dt><dd>{member.activeModel ?? member.model ?? '未记录'}{member.fallbackActive ? '（已切换备用模型）' : ''}</dd>
       </dl></section>
       <details><summary>本次执行的角色提示词快照</summary>
         <p className={css.hint}>由插件按团队目标、角色、执行指令和协作规则组装；不等于完整模型请求。</p>

@@ -1,0 +1,97 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { mkdtemp, writeFile, mkdir, readFile, rm } from 'node:fs/promises'
+const tmpdir = () => join(process.cwd(), 'output')
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { parseTemplate, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
+import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from '../lib/template-store.js'
+import { taskText, emptyBrief, taskNeedsConfiguration } from '../lib/task-layers.js'
+import { applyWorkflowOperations, workflowFingerprint, checkpointReady } from '../lib/workflow.js'
+import { isTeamTask, createTeamDir, readTeam } from '../lib/state.js'
+import { installWorkflowWorkbench } from '../lib/workflow-runtime.js'
+import { isWorkflowState } from '../lib/workflow-validation.js'
+import { memberPersona } from '../lib/members.js'
+import { reviewedOperations, reviewFields, setReviewField } from '../lib/client/proposal-review.js'
+import { initialEditorDraft } from '../lib/client/workbench-selection.js'
+import { propertyOperation } from '../lib/client/workbench-drafts.js'
+
+const general={requirements:'按已确认规格实现目标算子',deliverables:'实现与说明',acceptance:'通过独立验证'}
+const definition=()=>({name:'算子流程',description:'适合算子开发',tags:['开发'],inputs:'参考实现与精度目标',members:[{name:'worker',summary:'实现',role:'开发',executionPrompt:'遵循项目约定'}],tasks:[{id:'t1',subject:'实现',assignee:'worker',dependencies:[],checkpoint:false,general:{...general}},{id:'gate',subject:'人工验收',assignee:'',dependencies:['t1'],checkpoint:true,general:{...general,requirements:'检查提交证据'}}],positions:{'task:t1':{x:20,y:20}}})
+const template=()=>({...definition(),id:'11111111-1111-4111-8111-111111111111',version:1,createdAt:1,updatedAt:1})
+const team=()=>instantiateTemplate(template(),'new-team','captain','算子 B','实现算子 B')
+const adaptation=t=>t.tasks.map(task=>({action:'update_task',id:task.id,layers:{general:task.layers.general,specific:{requirements:`本次处理算子 B：${task.subject}`,deliverables:'B 的交付物',acceptance:'B 的验收要求'}},adaptationIssue:'',confirmConfiguration:true}))
+
+test('export and instantiation keep structure but never reuse execution/session/route data',()=>{
+  const source=team();Object.assign(source.tasks[0],{output:'A secret result',attempt:5,status:'completed',attemptId:'old',changedPaths:['A.cpp']});Object.assign(source.members[0],{id:'old-session',provider:'old-provider',specificPrompt:'A ONLY'});source.workflow.discussions={};
+  source.workflow.positions['task:deleted']={x:12,y:12};source.members[0].status='removed';
+  const saved=templateSeed(source),fresh=instantiateTemplate({...saved,...template()},'b','new-captain','B','B goal')
+  assert.equal(templateTopology(saved),templateTopology(definition()))
+  assert.ok(!JSON.stringify(saved).includes('A secret'));assert.ok(!JSON.stringify(saved).includes('old-session'));assert.ok(!JSON.stringify(saved).includes('old-provider'));assert.ok(!JSON.stringify(saved).includes('A ONLY'))
+  assert.equal(fresh.tasks[0].output,undefined);assert.equal(fresh.tasks[0].attempt,0);assert.equal(fresh.members[0].id,'');assert.equal(fresh.phase,'staged');assert.equal(fresh.tasks[1].checkpoint.decision,undefined)
+  assert.ok(fresh.tasks.every(t=>t.workflowConfigPending));assert.equal(fresh.tasks[0].layers.specific.requirements,'');assert.ok(isWorkflowState(fresh.workflow));assert.ok(fresh.tasks.every(isTeamTask))
+  fresh.tasks[0].layers.general.requirements='changed';assert.equal(saved.tasks[0].general.requirements,general.requirements)
+})
+test('template parser rejects cycles, missing references, unsafe ids, invalid layers and strips runtime fields',()=>{
+  for(const change of [d=>d.tasks[0].dependencies=['gate'],d=>d.tasks[0].assignee='missing',d=>d.tasks[1].dependencies=['missing'],d=>d.tasks[0].id='../escape',d=>d.tasks[0].general.requirements=7,d=>d.tasks[1].assignee='worker',d=>d.tasks[0].id='t999999999999999999999']){const d=definition();change(d);assert.throws(()=>parseTemplate(d))}
+  assert.equal(parseTemplate({...definition(),captainSessionId:'old'}).captainSessionId,undefined)
+  const changed=definition();changed.tasks.pop();assert.throws(()=>extractedTemplate(team(),changed),/保留/)
+  const old=team();delete old.tasks[0].layers;old.tasks[0].description='Implement operator A';assert.equal(templateSeed(old).tasks[0].general.requirements,'')
+})
+test('unified adaptation preserves all nodes, members and generic requirements',()=>{
+  const current=team(),ops=adaptation(current);validateAdaptation(current,ops)
+  assert.throws(()=>validateAdaptation(current,ops.slice(1)),/所有节点/)
+  assert.throws(()=>validateAdaptation(current,[...ops,{action:'add_task',subject:'extra',dependencies:[]}]),/增删/)
+  assert.throws(()=>validateAdaptation(current,[{...ops[0],assignee:'captain'},ops[1]]),/负责人/)
+  const changed=structuredClone(ops);changed[0].layers.general.requirements='skip tests';assert.throws(()=>validateAdaptation(current,changed),/通用/)
+  const ready=applyWorkflowOperations(current,ops);assert.ok(ready.tasks.every(t=>!taskNeedsConfiguration(t)))
+  const cleared=structuredClone(ready.tasks[0].layers);cleared.specific.requirements='';const incomplete=applyWorkflowOperations(ready,[{action:'update_task',id:'t1',layers:cleared}]);assert.equal(incomplete.tasks[0].workflowConfigPending,true);
+  assert.match(taskText(ready.tasks[0]),/通用任务/);assert.match(taskText(ready.tasks[0]),/算子 B/)
+})
+test('non-applicable nodes stay blocked; explicit resolution and changed generic layer require confirmation',()=>{
+  let current=team(),ops=adaptation(current);ops[0].adaptationIssue='当前项目没有 GPU';ops[0].confirmConfiguration=false
+  current=applyWorkflowOperations(current,ops);assert.ok(taskNeedsConfiguration(current.tasks[0]))
+  assert.throws(()=>applyWorkflowOperations(current,[{action:'update_task',id:'t1',confirmConfiguration:true}]),/先处理/)
+  current=applyWorkflowOperations(current,[{action:'update_task',id:'t1',adaptationIssue:'',confirmConfiguration:true}]);assert.ok(!taskNeedsConfiguration(current.tasks[0]))
+  const layers=structuredClone(current.tasks[0].layers);layers.general.acceptance='增加独立审查'
+  current=applyWorkflowOperations(current,[{action:'update_task',id:'t1',layers}]);assert.ok(current.tasks[0].workflowConfigPending)
+  assert.match(current.tasks[0].layers.specific.requirements,/算子 B/)
+  current=applyWorkflowOperations(current,[{action:'update_task',id:'t1',confirmConfiguration:true}]);assert.ok(!taskNeedsConfiguration(current.tasks[0]))
+  current.phase='running';current.tasks[0].status='completed';current.tasks[1].adaptationIssue='缺少证据';assert.equal(checkpointReady(current,current.tasks[1]),false)
+})
+test('layered drafts, human proposal edits and member prompts preserve both layers',()=>{
+  const current=team(),ops=adaptation(current),target={type:'task',id:'t1'}
+  let fields=reviewFields(current,ops[0]).fields;assert.ok(fields.some(f=>f.label==='本次验收要求'))
+  ops[0]=setReviewField(ops[0],fields.find(f=>f.key==='layers.specific.acceptance'),'用户要求验证误差')
+  const selected=reviewedOperations(current,ops,[true,true]);assert.equal(selected.length,2);assert.equal(selected[0].confirmConfiguration,true)
+  const updated=applyWorkflowOperations(current,selected),draft=initialEditorDraft(updated,target);assert.match(draft.values.description,/算子 B/);assert.ok(!draft.values.description.includes('通用任务：'))
+  draft.values.specificDeliverables='新交付';const op=propertyOperation(updated,target,draft);assert.equal(op.layers.general.requirements,general.requirements);assert.equal(op.layers.specific.deliverables,'新交付')
+  const m={...updated.members[0],specificPrompt:'关注 B 的低精度'};const prompt=memberPersona(updated,m,'.agent-teams');assert.match(prompt,/遵循项目约定/);assert.match(prompt,/关注 B 的低精度/)
+  assert.ok(!isTeamTask({...updated.tasks[0],layers:{general:{},specific:{}}}))
+})
+test('personal library is durable, versioned, concurrent-safe and deletion does not mutate instances',async(t)=>{
+  const root=await mkdtemp(join(tmpdir(),'teamflow-library-'));t.after(()=>rm(root,{recursive:true,force:true}))
+  assert.deepEqual(await listTemplates(root),{templates:[],warnings:[]})
+  const one=await saveTemplate(root,definition()),copy=instantiateTemplate(one,'copy','captain','Copy','goal')
+  const attempts=await Promise.allSettled([saveTemplate(root,{...definition(),name:'new version'},{id:one.id,version:1}),saveTemplate(root,definition(),{id:one.id,version:1})])
+  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.equal((await getTemplate(root,one.id)).version,2)
+  assert.equal((await getTemplate(root,one.id,1)).name,'算子流程');assert.equal(copy.workflow.templateSource.version,1)
+  await assert.rejects(()=>deleteTemplate(root,one.id,1),/变化/);await deleteTemplate(root,one.id,2);assert.equal((await listTemplates(root)).templates.length,0);await assert.rejects(()=>getTemplate(root,one.id),/删除/)
+  assert.equal(copy.tasks.length,2)
+  await writeFile(join(root,'22222222-2222-4222-8222-222222222222.json'),'{broken');assert.equal((await listTemplates(root)).warnings.length,1)
+  await assert.rejects(()=>getTemplate(root,'../escape'))
+})
+test('authenticated workflow handler applies templates once and leaves the source unchanged',async(t)=>{
+  const workspace=await mkdtemp(join(tmpdir(),'teamflow-api-')),library=join(workspace,'library'),state=join(workspace,'.agent-teams');await mkdir(state);t.after(()=>rm(workspace,{recursive:true,force:true}))
+  const template=await saveTemplate(library,definition()),source=team();source.id='source';source.captainSessionId='another-captain';await createTeamDir(state,source)
+  const before=await readFile(join(state,'source','team.json'),'utf8')
+  const captain={id:'captain',options:{provider:'fixture',model:'test'},session:{header:{cwd:workspace},requestHeader:()=>undefined,ownEvents:()=>[]}}
+  const ctx={agents:{get:id=>id==='captain'?captain:undefined},llm:{resolveCallConfig:async v=>v},effect:fn=>fn()};let route
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',templateDirectory:library,maxMembers:8},{},{register:r=>{route=r;return()=>{}}})
+  async function call(action,fields={}){const req=Readable.from([JSON.stringify({sessionId:'captain',action,...fields})]);req.method='POST';let status,value;await route.handler(req,{writeHead:s=>{status=s},end:v=>{value=JSON.parse(v)}});return {status,...value}}
+  assert.equal((await call('template_list')).templates.length,1)
+  const result=await call('template_apply',{templateId:template.id,version:1,name:'B',description:'实现 B'});assert.equal(result.status,200,result.error);assert.equal(result.team.phase,'staged');assert.ok(result.team.tasks.every(t=>t.workflowConfigPending));assert.equal(result.team.members[0].model,'test')
+  assert.equal((await call('template_apply',{templateId:template.id,version:1,name:'duplicate',description:'B'})).status,409)
+  assert.equal(await readFile(join(state,'source','team.json'),'utf8'),before);assert.ok(await readTeam(state,result.team.id))
+  const renamed=structuredClone(result.team);renamed.description='new target';assert.notEqual(workflowFingerprint(renamed),result.base)
+})

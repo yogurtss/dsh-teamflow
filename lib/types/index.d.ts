@@ -26,6 +26,7 @@ export declare const name = "teamflow";
 export declare const inject: string[];
 /** Plugin configuration. */
 export interface Config {
+    templateDirectory?: string;
     /**
      * State directory name under the captain's workspace; team state lives at
      * `<workspace>/<stateDir>/<teamId>/` (default `.agent-teams`).

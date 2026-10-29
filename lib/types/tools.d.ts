@@ -16,6 +16,8 @@ import { type TeamState, type TeamTask } from './types.ts';
 export { steerCaptainReport } from './members.ts';
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
+    /** Optional personal library location; defaults to ~/.dsh-teamflow/templates. */
+    templateDirectory?: string;
     /** State directory name under the captain's workspace. */
     stateDir: string;
     /** Member subagent provider name. */

@@ -22,6 +22,7 @@ import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
+import { isTaskLayers } from './task-layers.ts'
 
 export {
   amendTaskContract,
@@ -769,6 +770,7 @@ function isFiniteNumber(value: unknown): value is number {
 
 /** Validate one member record at the durable JSON boundary. */
 function isTeamMember(value: unknown): value is TeamMember {
+  if (isRecord(value) && !isOptionalString(value['specificPrompt'])) return false
   if (!isRecord(value)) return false
   return typeof value['id'] === 'string'
     && typeof value['name'] === 'string'
@@ -1046,6 +1048,7 @@ function describeFindingDefect(finding: unknown): string | undefined {
 }
 export function isTeamTask(value: unknown): value is TeamTask {
   if (!isRecord(value)) return false
+  if(value['layers']!==undefined && !isTaskLayers(value['layers']) || !isOptionalString(value['adaptationIssue']))return false
   return typeof value['id'] === 'string'
     && (value['workflowRerunRequired'] === undefined || typeof value['workflowRerunRequired'] === 'boolean')
     && (value['workflowPaused'] === undefined || typeof value['workflowPaused'] === 'boolean')

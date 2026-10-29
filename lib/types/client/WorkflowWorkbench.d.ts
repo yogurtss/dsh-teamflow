@@ -20,4 +20,4 @@ export declare function WorkflowWorkbench({ sessionId, teamId, archived, waiting
     teamId?: string;
     waitingCount?: number;
     openExecution?: (memberId: string, parentId?: string) => void | Promise<void>;
-}): import("react").JSX.Element | null;
+}): import("react").JSX.Element;

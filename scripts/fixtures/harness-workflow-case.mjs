@@ -52,6 +52,9 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   ] });
   assert.equal(readTeam().tasks.length, 1);
   result = await post('apply', { proposalId: result.team.workflow.discussions['discussion:graph'].proposal.id });
+  assert.deepEqual(result.ready, []);
+  await post('resume_task',{taskId:'g1'});
+  result=await post('resume_task',{taskId:'g2'});
   assert.deepEqual(result.ready, ['g1']);
   await post('preview', { title: '模型不得批准', operations: [{ action: 'approve', id: 'g1' }] }, 409);
   await post('review', { taskId: 'g1', decision: 'approve', evidence: 'unseen' }, 409);
@@ -112,6 +115,35 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   const nativeId = result.team.workflow.discussions['discussion:graph'].native.sessionId;
   writeFileSync('workflow-resume.json', JSON.stringify({ teamId: activeTeam, captainId: activeSession, nativeId }));
   await ctx.sessions.flush(automatic.agent.session);
+  // Template extraction and adaptation use the real isolated native sessions.
+  const sourceBefore=JSON.stringify(result.team.tasks);
+  result=await nativeDiscussion('template');
+  const extracted=result.team.workflow.discussions['discussion:template'].templateDraft;
+  assert.ok(extracted?.definition.tasks[0].general.requirements);
+  assert.equal(JSON.stringify(result.team.tasks),sourceBefore,'Extraction must not mutate source tasks');
+  const saved=await post('template_save',{definition:extracted.definition});
+  const library=await post('template_list');assert.ok(library.templates.some(t=>t.id===saved.template.id));
+  const appliedCaptain=await ctx.agents.create({sessionId:'session-template-'+Date.now(),meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
+  ctx.effect(()=>()=>appliedCaptain.dispose());await appliedCaptain.agent.whenIdle();activeSession=appliedCaptain.agent.id;activeTeam='';
+  result=await post('template_apply',{templateId:saved.template.id,version:saved.template.version,name:'Operator B',description:'Implement operator B'});activeTeam=result.team.id;
+  assert.ok(result.team.tasks.every(t=>t.workflowConfigPending));assert.ok(result.team.members.every(m=>!m.id));
+  await post('start',{},409);
+  result=await nativeDiscussion('adapt');
+  assert.ok(result.team.tasks.every(t=>t.layers.specific.requirements===''),'Generation stays a proposal');
+  const adapted=result.team.workflow.discussions['discussion:adapt'].proposal;
+  result=await post('apply',{discussion:'adapt',proposalId:adapted.id});
+  assert.ok(result.team.tasks.every(t=>!t.workflowConfigPending && t.layers.specific.requirements==='Implement operator B'));
+  assert.ok(result.team.members.every(m=>!m.id),'Applying a proposal must not execute staged tasks');
+  const generic=result.team.tasks[0].layers.general.requirements;
+  const v2=await post('template_save',{definition:{...saved.template,name:'Updated template'},templateId:saved.template.id,version:1});
+  assert.equal(v2.template.version,2);
+  result=await post('state');assert.equal(result.team.workflow.templateSource.version,1);assert.equal(result.team.tasks[0].layers.general.requirements,generic);
+  result=await post('start');
+  const templateDeadline=Date.now()+20000;
+  do{result=await post('state');if(result.team.tasks[0].status==='completed')break;await new Promise(r=>setTimeout(r,50))}while(Date.now()<templateDeadline);
+  assert.equal(result.team.tasks[0].status,'completed');
+  record({event:'workflow-template-passed',extraction:true,fixedGraph:true,unifiedAdaptation:true,independentVersion:true,execution:true,
+    snapshot:{task:result.team.tasks[0].layers,sourceVersion:result.team.workflow.templateSource.version,templateVersion:v2.template.version}});
   record({ event: 'workflow-workbench-passed', proposalIsolation: true, nativeScopedDiscussion: true, humanApproval: true, rejectionBlocks: true });
   process.stdout.write('WORKFLOW_WORKBENCH_OK\n');
 }

@@ -14,6 +14,7 @@ export declare function taskDiscussionContext(team: TeamState, id: string): {
         summary: string | undefined;
         role: string | undefined;
         executionPrompt: string | undefined;
+        specificPrompt: string | undefined;
         provider: string | undefined;
         model: string | undefined;
     } | undefined;

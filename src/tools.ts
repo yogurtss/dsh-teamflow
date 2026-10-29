@@ -18,6 +18,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
+import { taskNeedsConfiguration } from './task-layers.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import {
   amendTaskContract,
@@ -96,6 +97,8 @@ export { steerCaptainReport } from './members.ts'
 
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
+  /** Optional personal library location; defaults to ~/.dsh-teamflow/templates. */
+  templateDirectory?: string
   /** State directory name under the captain's workspace. */
   stateDir: string
   /** Member subagent provider name. */
@@ -299,7 +302,7 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
   if (task.checkpoint) throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
-  if (task.workflowConfigPending) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
+  if (taskNeedsConfiguration(task)) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
   if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
   return task
 }
@@ -396,7 +399,7 @@ function validateStagedGraph(team: TeamState, requireRunnable: boolean): void {
   const memberNames = new Set(members.map((member) => member.name))
   const taskIds = new Set(team.tasks.map((task) => task.id))
   for (const task of team.tasks) {
-    if (requireRunnable && task.workflowConfigPending) throw new Error(`请先完成节点配置：${task.subject}（${task.id}）`)
+    if (requireRunnable && taskNeedsConfiguration(task)) throw new Error(`请先完成节点配置：${task.subject}（${task.id}）`)
     if (task.subject.trim() === '') throw new Error(`task "${task.id}" must have a subject`)
     if (task.assignee !== undefined && task.assignee !== CAPTAIN_KEY && !memberNames.has(task.assignee)) {
       throw new Error(`task "${task.id}" assignee "${task.assignee}" is not an active member`)
@@ -763,6 +766,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           }
         } else if (mutation.action === 'update_task') {
           const task = requireTask(fresh, mutation.taskId)
+          if(task.layers)throw new Error('分层任务请在 Teamflow 画布中编辑通用层和本次层')
           if (task.status !== 'pending' || (task.attempt ?? 0) !== 0 || task.reassigning === true) {
             throw new Error(`task "${task.id}" has already started and cannot be edited`)
           }

@@ -1,0 +1,6 @@
+Approved ImageGen reference family, 2026-10-30.
+Direction: simple purple monoline icons, rounded strokes and small circular accents, matching the user-provided orbit reference.
+teamflow.png: orbital collaboration mark.
+gallery.png: four-module template collection.
+save-template.png: bookmark/save workflow mark.
+These are original generated reference assets. Runtime implementation: src/client/BrandIcon.tsx.

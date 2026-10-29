@@ -16,6 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { join } from 'node:path'
+import { taskText, taskNeedsConfiguration } from './task-layers.ts'
 import { deliverToMember } from './members.ts'
 import { isCurrentMail, mailboxPrompt } from './mailbox.ts'
 import {
@@ -202,7 +203,7 @@ function ownedOpenTask(tasks: readonly TeamTask[], memberName: string): TeamTask
 
 function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
   const ready = tasks.filter(task => task.status === 'pending'
-    && task.checkpoint === undefined && task.workflowPaused !== true && task.workflowConfigPending !== true
+    && task.checkpoint === undefined && task.workflowPaused !== true && !taskNeedsConfiguration(task)
     && task.reassigning !== true
     && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
   return ready.find(task => task.assignee === memberName)
@@ -422,7 +423,7 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
             ...previousAttempt === undefined ? {} : { previousAttempt },
             ...previousAttemptId === undefined ? {} : { previousAttemptId },
             subject: task.subject,
-            description: task.description,
+            description: taskText(task),
             workflowRerunContext: task.workflowRerunContext,
             teamDescription: fresh.description,
             ...protocol === undefined ? {} : { profileProtocol: protocol },
