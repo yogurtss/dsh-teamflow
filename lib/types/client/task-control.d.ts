@@ -9,7 +9,7 @@ export interface ControlTeam {
 export declare function taskControlState(team: ControlTeam, task: ControlTask, historic?: boolean): {
     disabled: boolean;
     checked: boolean;
-    label: "task.control.paused" | "task.control.awaitingStart" | "task.control.waiting" | "task.control.blocked" | "task.control.queued" | "task.control.staged" | "task.control.stopped" | "task.control.rerunRequired" | "task.control.stopping" | "task.status.reviewPassed" | "task.status.configurationPending" | "task.status.reviewRejected" | "task.status.reviewReady" | "task.status.claimed" | "task.status.inProgress" | "task.status.completed" | "task.status.failed" | "task.status.cancelled";
+    label: "task.control.paused" | "task.control.awaitingStart" | "task.control.waiting" | "task.control.blocked" | "task.control.queued" | "task.control.staged" | "task.control.stopped" | "task.control.rerunRequired" | "task.control.rerunWaiting" | "task.control.reviewRequired" | "task.control.stopping" | "task.status.reviewPassed" | "task.status.configurationPending" | "task.status.reviewRejected" | "task.status.reviewReady" | "task.status.claimed" | "task.status.inProgress" | "task.status.completed" | "task.status.failed" | "task.status.cancelled";
     waiting: string[];
     reviewReady: boolean;
     stopping: boolean;

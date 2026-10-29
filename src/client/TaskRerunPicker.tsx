@@ -6,7 +6,7 @@ export function TaskRerunImpact({ tasks, taskId }: { tasks: readonly TeamTask[];
   const impact=rerunImpact(tasks,taskId)
   return <div className={css.impact}>
     <p>所选任务开启新一轮执行，原有状态和提交结果保存在历史执行记录中。旧验证证据不作为本轮证据，无关分支保持不变。</p>
-    {!!impact.descendants.length&&<p>以下下游节点会重置并挂起，待你逐个确认后执行或重新验收：{impact.descendants.map(task=>task.subject).join('、')}</p>}
+    {!!impact.descendants.length&&<p>以下下游节点会等待上游新结果；新结果就绪后，由你逐个启动执行或重新验收：{impact.descendants.map(task=>task.subject).join('、')}。此前结果与验收不再用于本轮。</p>}
     {!!impact.active.length&&<p role="alert">请先停止受影响的运行任务：{impact.active.map(task=>task.subject).join('、')}</p>}
   </div>
 }

@@ -130,3 +130,20 @@ test('readiness distinguishes upstream failures, pauses, busy members and host d
   source.members=[];assert.equal(taskReadiness(source,next).label,'缺少执行 Agent')
   source.phase='staged';assert.equal(taskReadiness(source,next).label,'等待团队启动')
 })
+
+test('downstream rerun labels explain waiting versus work or review ready for new inputs', () => {
+  const source=team(), next={...task('next',['t1']),workflowPaused:true,workflowRerunRequired:true}
+  source.tasks.push(next)
+  assert.equal(taskReadiness(source,next).label,'等待上游新结果')
+  assert.deepEqual(taskReadiness(source,next).dependencies,['t1'])
+  source.tasks[0].status='completed'
+  assert.equal(taskReadiness(source,next).label,'需要重新执行')
+  assert.match(taskReadiness(source,next).detail,/使用新结果执行/)
+  next.checkpoint={round:2,history:[]}
+  assert.equal(taskReadiness(source,next).label,'需要重新验收')
+  assert.match(taskReadiness(source,next).detail,/旧验收不能沿用/)
+  source.tasks[0].status='failed'
+  assert.equal(taskReadiness(source,next).label,'等待上游新结果')
+  assert.match(taskReadiness(source,next).detail,/失败/)
+  assert.equal(next.workflowPaused,true,'wording changes must not silently resume downstream work')
+})

@@ -355,7 +355,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
               <span className={css.completionDot} aria-hidden>{task.verdictStale !== undefined ? '!' : !discarded && task.status === 'completed' ? '✓' : '·'}</span>
               <span className={css.completionTaskId}>{task.id}</span>
               <span className={css.completionTaskSubject} title={task.subject}>{task.subject}</span>
-              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : t(taskControlState(team, task).label)}</span>
+              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : t(taskControlState(team, task).label)}</span>
             </li>)}
           </ul>}
         </div>

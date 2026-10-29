@@ -111,6 +111,8 @@ test('every lifecycle state is visible on unselected diagram cards in compact an
   const cases=[
     [{workflowConfigPending:true},'configurationPending'],[{workflowPaused:true,workflowAwaitingStart:true},'awaitingStart'],
     [{workflowPaused:true,workflowAwaitingStart:false},'paused'],[{workflowRerunRequired:true},'rerunRequired'],
+    [{workflowRerunRequired:true,dependencies:['up']},'rerunWaiting'],
+    [{workflowRerunRequired:true,checkpoint:{round:2,history:[]}},'reviewRequired'],
     [{dependencies:['up']},'waiting'],[{},'queued'],[{status:'claimed'},'claimed'],[{status:'in_progress'},'inProgress'],
     [{status:'in_progress',workflowPaused:true},'stopping'],[{status:'completed'},'completed'],[{status:'failed'},'failed'],
     [{status:'cancelled'},'cancelled'],[{checkpoint:{round:1,history:[]}},'reviewReady'],

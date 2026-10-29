@@ -26,6 +26,8 @@ export declare const zh: {
     'task.control.staged': string;
     'task.control.stopped': string;
     'task.control.rerunRequired': string;
+    'task.control.rerunWaiting': string;
+    'task.control.reviewRequired': string;
     'task.control.switch': string;
     'task.control.hint': string;
     'task.control.saving': string;
@@ -290,6 +292,8 @@ export declare const en: {
     'task.control.staged': string;
     'task.control.stopped': string;
     'task.control.rerunRequired': string;
+    'task.control.rerunWaiting': string;
+    'task.control.reviewRequired': string;
     'task.control.switch': string;
     'task.control.hint': string;
     'task.control.saving': string;
