@@ -839,6 +839,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     const approved = await withTeamLock(teamLockKey(stateRoot, teamId), async () => {
       const fresh = await requireFreshCaptainTeam(ctx, stateRoot, teamId, captain.id)
       requireStagedTeam(fresh)
+      if (Object.values(fresh.workflow?.discussions ?? {}).some(d => d.proposal?.status === 'pending')) throw new Error('请先在画布中处理待确认的修改，再启动流程')
       // A staged removal has no child session to retain in history. Drop those
       // placeholders before transitioning to the stricter running shape.
       fresh.members = fresh.members.filter((member) => member.status !== 'removed')

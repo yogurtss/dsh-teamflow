@@ -18,11 +18,114 @@ import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
 import { arrangeTasks, fitGraph } from '../lib/client/workflow-layout.js'
+import { flowControlVersion, flowControlState, taskControlState } from '../lib/client/task-control.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
 const task = (id, dependencies = []) => ({ id, subject: id, assignee: 'worker', dependencies, status: 'pending', attempt: 0, kind: 'work', createdAt: 1, updatedAt: 1 })
 const team = () => ({ id: 'demo', name: 'Demo', captainSessionId: 'captain-id', members: [{ ...member }], tasks: [task('t1')], taskSeq: 1, createdAt: 1, phase: 'running' })
 const withGate = () => applyWorkflowOperations(team(), [{ action: 'add_task', id: 'gate', subject: 'Human review', checkpoint: true, dependencies: ['t1'] }, { action: 'add_task', id: 'after', subject: 'After', dependencies: ['gate'], assignee: 'worker' }])
+
+async function lifecycleFixture(t, source, options = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-lifecycle-'))
+  t.after(() => rmSync(root, {recursive:true,force:true}))
+  const stateRoot = join(root, '.agent-teams')
+  await createTeamDir(stateRoot, source)
+  const captain = {id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
+  const dispatched = []
+  let route
+  const ctx = {agents:{get:id=>id===captain.id?captain:undefined}, on(){}, effect:fn=>fn(), logger:{warn(){}}, subagents:{drainChildren:options.drain ?? (async()=>{})}}
+  const scheduler = installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async(...args)=>{dispatched.push(args);return true}})
+  installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},scheduler,{register:value=>{route=value;return()=>{}}})
+  const read = () => readTeam(stateRoot,'demo')
+  const call = async (action, fields = {}) => {
+    const req=Readable.from([JSON.stringify({sessionId:captain.id,teamId:'demo',action,...fields})]);req.method='POST';req.headers={}
+    let code, value
+    await route.handler(req,{writeHead:c=>{code=c},end:body=>{value=JSON.parse(body)}})
+    return {code,...value}
+  }
+  return {read,call,dispatched,save:state=>writeTeam(stateRoot,state)}
+}
+
+test('manual and approved AI additions share the first-start boundary for work and reviews', async t => {
+  for (const action of ['edit','apply']) {
+    const source=team();source.tasks[0].status='completed'
+    const f=await lifecycleFixture(t,source)
+    const operations=[{action:'add_task',id:'b',subject:'Inserted work',assignee:'worker',dependencies:['t1']},{action:'add_task',id:'review',subject:'Inserted review',checkpoint:true,dependencies:['b']}]
+    let fields={title:'Add nodes',operations,base:workflowFingerprint(source)}
+    if(action==='apply') {
+      const preview=await f.call('preview',fields)
+      assert.equal(preview.code,200,preview.error)
+      fields={proposalId:preview.team.workflow.discussions['discussion:graph'].proposal.id}
+    }
+    const added=await f.call(action,fields)
+    assert.equal(added.code,200,added.error)
+    for(const item of added.team.tasks.slice(1)) {
+      assert.equal(item.workflowPaused,true)
+      assert.equal(item.workflowAwaitingStart,true)
+      assert.equal(taskControlState(added.team,item).label,'task.control.awaitingStart')
+    }
+    assert.equal(f.dispatched.length,0)
+    const started=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(added.activity)})
+    assert.equal(started.code,200,started.error)
+    assert.equal(f.dispatched.length,1)
+    assert.equal(started.team.tasks[2].checkpoint.decision,undefined)
+    assert.equal(started.ready.includes('review'),false)
+  }
+})
+
+test('pause all fences the entire chain before draining, retains results and recovers failed drains', async t => {
+  const source=withGate()
+  Object.assign(source.tasks[0],{status:'in_progress',attempt:1,attemptId:'run-a',output:'Partial A'})
+  Object.assign(source.members[0],{id:'child-a',status:'working'})
+  let f,fail=true
+  f=await lifecycleFixture(t,source,{drain:async()=>{
+    const during=await f.read()
+    assert.ok(during.tasks.every(item=>item.workflowPaused),'all nodes fenced before the first child stops')
+    assert.equal(checkpointReady(during,during.tasks[1]),false)
+    const race=await f.call('set_task_enabled',{taskId:'after',enabled:true,updatedAt:during.tasks[2].updatedAt})
+    assert.equal(race.code,409,'a second page cannot undo a bulk stop midway through its drain')
+    if(fail) {fail=false;throw Error('drain failed')}
+  }})
+  let response=await f.call('set_flow_enabled',{enabled:false,version:flowControlVersion(source)})
+  assert.equal(response.code,409)
+  let current=await f.read()
+  assert.equal(taskControlState(current,current.tasks[0]).stopping,true)
+  assert.equal(flowControlState(current).canStart,false)
+  response=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(current)})
+  assert.equal(response.code,409,'resume cannot race the outstanding stop')
+  response=await f.call('set_flow_enabled',{enabled:false,version:flowControlVersion(current)})
+  assert.equal(response.code,200,response.error)
+  current=response.team
+  assert.equal(current.tasks[0].status,'pending')
+  assert.equal(current.tasks[0].attemptId,undefined)
+  assert.equal(current.tasks[0].stoppedAttempts[0].output,'Partial A')
+  assert.equal(current.tasks[0].stoppedAttempts.length,1,'retry does not invent another execution')
+  assert.equal(current.members[0].id,'')
+  assert.equal(f.dispatched.length,0)
+  response=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(response.activity)})
+  assert.equal(response.code,200,response.error)
+  assert.equal(f.dispatched.length,1,'only the root is eligible after restarting')
+})
+
+test('start all preserves configuration, rejected reviews, rerun confirmation and terminal results', async t => {
+  const source=withGate();source.tasks[0].status='completed';source.tasks[0].output='Keep result'
+  source.tasks[1].checkpoint.decision='reject'
+  source.tasks[2].workflowPaused=true
+  source.tasks.push({...task('draft'),workflowPaused:true,workflowConfigPending:true},{...task('rerun'),workflowPaused:true,workflowRerunRequired:true},{...task('failed'),status:'failed'})
+  const f=await lifecycleFixture(t,source)
+  const stale=await f.call('set_flow_enabled',{enabled:true,version:'stale'})
+  assert.equal(stale.code,409)
+  const response=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(source)})
+  assert.equal(response.code,200,response.error)
+  assert.equal(response.team.tasks[0].output,'Keep result')
+  assert.equal(response.team.tasks[1].checkpoint.decision,'reject')
+  assert.equal(response.team.tasks[2].workflowPaused,false)
+  assert.equal(taskControlState(response.team,response.team.tasks[2]).label,'task.control.blocked')
+  for(const id of ['draft','rerun']) assert.equal(response.team.tasks.find(item=>item.id===id).workflowPaused,true)
+  assert.equal(response.team.tasks.at(-1).status,'failed')
+  assert.equal(f.dispatched.length,0)
+  assert.equal(checkpointReady({...source,tasks:[{...source.tasks[1],checkpoint:{round:1,history:[]},dependencies:[],workflowRerunRequired:true}]},{...source.tasks[1],checkpoint:{round:1,history:[]},dependencies:[],workflowRerunRequired:true}),false)
+})
 
 test('task discussion carries saved context, stays isolated and requires human approval', async t => {
   const root=mkdtempSync(join(tmpdir(),'workflow-task-discussion-'));t.after(()=>rmSync(root,{recursive:true,force:true}))

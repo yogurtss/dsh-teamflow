@@ -90,7 +90,7 @@ export function validateWorkflowGraph(team: TeamState): void {
   team.tasks.forEach(visit)
 }
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
-  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !task.workflowConfigPending
+  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !task.workflowConfigPending && !task.workflowRerunRequired && !task.checkpoint.decision
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
 /** All transitive upstream results, in dependency order. */

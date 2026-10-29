@@ -18,7 +18,7 @@
  */
 
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
-import { taskControlState } from './task-control.ts'
+import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
 import { QuickMemberEditor } from './QuickMemberEditor.tsx'
 import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
@@ -148,31 +148,6 @@ function accentOf(id: string): string {
   return ACCENTS[stableHash(id) % ACCENTS.length] ?? ACCENTS[0]
 }
 
-/** Badge text follows the raw task status:
- * claimed/pending/failed/cancelled keep their own labels and colors. */
-const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
-  pending: 'task.status.pending',
-  claimed: 'task.status.claimed',
-  in_progress: 'task.status.inProgress',
-  completed: 'task.status.completed',
-  failed: 'task.status.failed',
-  cancelled: 'task.status.cancelled',
-}
-
-function taskStatusLabel(task: ActivityTask, t: AgentTeamsTranslate): string {
-  if(task.workflowConfigPending && task.status === 'pending') return t('task.status.configurationPending')
-  if(task.workflowPaused && task.status === 'pending' && task.workflowAwaitingStart) return t('task.control.awaitingStart')
-  if(task.workflowPaused && task.status === 'pending' && !task.checkpoint) return t('task.control.paused')
-  if(task.checkpoint && !['failed','cancelled'].includes(task.status)) {
-    if(task.status==='completed' && task.checkpoint.decision==='approve') return t('task.status.reviewPassed')
-    if(task.workflowPaused) return t('task.status.reviewPaused')
-    if(task.checkpoint.decision==='reject') return t('task.status.reviewRejected')
-    return t(task.state==='blocked'?'task.status.reviewWaiting':'task.status.reviewReady')
-  }
-  const key = TASK_STATUS_LABEL[task.status]
-  return key === undefined ? task.status : t(key)
-}
-
 function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
   return ids.join(t('format.listSeparator'))
 }
@@ -289,9 +264,9 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
   const cancelled = team.tasks.filter((task) => task.status === 'cancelled')
   const running = team.tasks.filter((task) => task.state === 'running')
   const claimed = team.tasks.filter((task) => task.state === 'claimed')
-  const blocked = team.tasks.filter((task) => task.state === 'blocked')
-  const ready = team.tasks.filter((task) => !task.checkpoint && task.state === 'open' && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
-  const reviews = team.tasks.filter(task=>task.checkpoint && task.status==='pending' && !task.workflowPaused && !task.workflowConfigPending && !task.checkpoint.decision && task.dependencies.every(id=>team.tasks.some(item=>item.id===id&&item.status==='completed')))
+  const blocked = team.tasks.filter(task => taskControlState(team,task).checked && taskControlState(team,task).waiting.length > 0)
+  const ready = team.tasks.filter(task => taskControlState(team,task).label === 'task.control.queued')
+  const reviews = team.tasks.filter(task => taskControlState(team,task).reviewReady)
   const failed = team.tasks.filter((task) => task.status === 'failed')
   if (discarded) return t('task.summary.discarded', { count: team.tasks.length })
   if (team.tasks.length === 0) return t('task.summary.waitingBreakdown')
@@ -318,13 +293,15 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
   if (reviews.length > 0) return t('task.summary.review', { tasks: formatTaskIds(reviews.map(task=>task.id),t) })
   if (ready.length > 0) return t('task.summary.ready', { tasks: formatTaskIds(ready.map((task) => task.id), t) })
   if (blocked.length > 0) return t('task.summary.blocked', { tasks: formatTaskIds(blocked.map((task) => task.id), t) })
+  if (team.tasks.some(task => !taskControlState(team,task).terminal && !taskControlState(team,task).checked)) return t('flow.summary.held')
   return t('task.summary.waitingSchedule')
 }
 
 function ProgressOverview({ team, t, discarded = false }: { readonly team: ActivityTeam; readonly t: AgentTeamsTranslate; readonly discarded?: boolean }) {
   const running = discarded ? 0 : team.tasks.filter((task) => task.state === 'running').length
   const claimed = discarded ? 0 : team.tasks.filter((task) => task.state === 'claimed').length
-  const blocked = discarded ? 0 : team.tasks.filter((task) => task.state === 'blocked').length
+  const blocked = discarded ? 0 : team.tasks.filter(task => taskControlState(team,task).checked && taskControlState(team,task).waiting.length > 0).length
+  const held = discarded ? 0 : team.tasks.filter(task => !taskControlState(team,task).terminal && !taskControlState(team,task).checked).length
   const completed = discarded ? 0 : team.tasks.filter((task) => task.status === 'completed').length
   const settled = !discarded && team.tasks.length > 0 && team.tasks.every((task) => (
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
@@ -342,6 +319,7 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
         <span data-state="running">{t('progress.running', { count: running })}</span>
         {claimed > 0 && <span data-state="claimed">{t('progress.claimed', { count: claimed })}</span>}
         <span data-state="blocked">{t('progress.blocked', { count: blocked })}</span>
+        {held > 0 && <span data-state="blocked">{t('progress.held', {count:held})}</span>}
         <span data-state="completed">{t('progress.delivered', { count: completed })}</span>
       </span>
       <span className={css.progressSummary} data-state={summaryTone}>
@@ -376,7 +354,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
               <span className={css.completionDot} aria-hidden>{task.verdictStale !== undefined ? '!' : !discarded && task.status === 'completed' ? '✓' : '·'}</span>
               <span className={css.completionTaskId}>{task.id}</span>
               <span className={css.completionTaskSubject} title={task.subject}>{task.subject}</span>
-              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : taskStatusLabel(task, t)}</span>
+              <span className={css.completionTaskStatus}>{discarded ? t('task.status.notRun') : task.verdictStale !== undefined ? t('workspace.verdictStale') : task.workflowRerunRequired ? '下游挂起 · 待你确认' : t(taskControlState(team, task).label)}</span>
             </li>)}
           </ul>}
         </div>
@@ -418,9 +396,9 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focusedTaskId = dependencyFocusTaskId(pinnedTaskId, keyboardTaskId, hoverTaskId)
   const nodeWidth = workspace ? 164 : COMPACT_DAG_NODE_WIDTH
-  const nodeHeight = workspace ? 76 : COMPACT_DAG_NODE_HEIGHT
+  const nodeHeight = workspace ? 94 : COMPACT_DAG_NODE_HEIGHT
   const layout = useMemo(() => compactDagLayout(tasks,
-    workspace ? { nodeWidth: 164, nodeHeight: 76, columnGap: 36, rowGap: 16 } : undefined), [tasks, workspace])
+    workspace ? { nodeWidth: 164, nodeHeight: 94, columnGap: 36, rowGap: 16 } : undefined), [tasks, workspace])
   const parallel = useMemo(() => usesParallelTaskGrid(tasks), [tasks])
   const related = useMemo(
     () => focusedTaskId === null ? null : relatedTaskIds(focusedTaskId, tasks),
@@ -507,7 +485,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     data-task-model={model || undefined}
                     data-focused={related?.has(task.id) ?? false}
                     data-dimmed={related !== null && !related.has(task.id)}
-                    title={taskTitle(task, model)}
+                    title={`${taskTitle(task, model)} · ${t(control.label)}`}
                     onMouseEnter={() => { scheduleHover(task.id) }}
                     onMouseLeave={() => { scheduleHover(null) }}
                     onFocus={() => { setKeyboardTaskId(task.id) }}
@@ -517,7 +495,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
-                    {!discarded && !task.checkpoint && task.state === 'claimed' && <span className={css.dagClaimedState}>{t('task.status.claimed')}</span>}
+                    {!discarded && (workspace || task.status === 'claimed') && <span className={css.dagClaimedState} title={task.status === 'claimed' ? t('task.control.claimedHint') : t(control.label)}>{t(control.label)}</span>}
                     {task.state === 'running' && (
                       <span className={css.dagRunningState} aria-label={t('task.runningAria')}>
                         <WorkGlyph active />
@@ -544,20 +522,20 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
             </span>
             <div className={css.taskDetailControls}>
               {(!control.terminal || control.canRerun) && <button type="button"
-                data-task-action={control.canRerun ? 'rerun' : control.checked ? 'pause' : 'play'}
+                data-task-action={control.canRerun ? 'rerun' : control.stopping ? 'retry' : control.queued ? 'dequeue' : control.checked ? 'pause' : 'play'}
                 data-rerun-action={control.canRerun || undefined}
                 data-running={!control.stopping && detailTask.status === 'in_progress' || undefined}
-                aria-label={t(control.canRerun ? 'task.control.rerunTask' : control.checked ? 'task.control.pauseTask' : 'task.control.startTask',{task:detailTask.subject})}
+                aria-label={control.canRerun ? t('task.control.rerunTask',{task:detailTask.subject}) : `${t(control.actionLabel)} · ${detailTask.subject}`}
                 className={css.taskPlayback}
-                disabled={!control.canRerun && (control.disabled || control.stopping) || !!controlBusy}
+                disabled={!control.canRerun && control.disabled || !!controlBusy}
                 title={t(control.canRerun ? 'task.control.rerunHint' : control.disabled || control.stopping ? control.label : 'task.control.hint')}
-                onClick={() => control.canRerun ? onOpenTask(detailTask,false,true) : onToggle(detailTask,!control.checked)}>
+                onClick={() => control.canRerun ? onOpenTask(detailTask,false,true) : onToggle(detailTask,control.stopping ? false : !control.checked)}>
                 <svg className={css.taskPlaybackIcon} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                  {control.checked && !control.canRerun ? <path d="M4 3h3v10H4zm5 0h3v10H9z" /> : <path d="M4 2.5v11l9-5.5z" />}
+                  {control.queued ? <path d="M3 3h10v10H3z" /> : control.checked && !control.canRerun ? <path d="M4 3h3v10H4zm5 0h3v10H9z" /> : <path d="M4 2.5v11l9-5.5z" />}
                 </svg>
-                {t(control.canRerun ? 'task.control.rerun' : control.disabled || control.stopping ? control.label : control.checked ? 'task.control.pause' : 'task.control.start')}
+                {t(control.canRerun ? 'task.control.rerun' : control.disabled ? control.label : control.actionLabel)}
               </button>}
-              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => control.stopping && !control.disabled ? onToggle(detailTask,false) : onOpenTask(detailTask,control.reviewReady)}>{control.stopping ? <IconStopFill16 /> : <WorkflowIcon name={control.reviewReady ? 'review' : 'properties'} />}{t(control.stopping && !control.disabled ? 'task.control.retryStop' : control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
+              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => onOpenTask(detailTask,control.reviewReady)}><WorkflowIcon name={control.reviewReady ? 'review' : 'properties'} />{t(control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
             </div>
             {!control.terminal && waitingOn.length > 0 && <p className={css.taskControlHint}>{t('task.detail.waitingOn',{tasks:formatTaskIds(waitingOn,t)})}</p>}
             {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
@@ -596,6 +574,18 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
     controlPending.current = true; setControlBusy(task.id); setControlError('')
     try {
       const response = await fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set_task_enabled',sessionId:team.captainSessionId,teamId:team.teamId,taskId:task.id,enabled,updatedAt:task.updatedAt})})
+      const value = await response.json() as {error?:string;activity?:ActivityTeam}
+      if (!response.ok || !value.activity) throw new Error(value.error || t('task.control.failed'))
+      publishWorkflowActivity(value.activity)
+    } catch (error) { setControlError(error instanceof Error ? error.message : t('task.control.failed')) }
+    finally { controlPending.current = false; setControlBusy(undefined) }
+  }
+  const flow = flowControlState(team)
+  async function toggleFlow(enabled: boolean): Promise<void> {
+    if (controlPending.current) return
+    controlPending.current = true; setControlBusy('flow'); setControlError('')
+    try {
+      const response = await fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:team.phase === 'staged' ? 'start' : 'set_flow_enabled',sessionId:team.captainSessionId,teamId:team.teamId,enabled,version:flowControlVersion(team)})})
       const value = await response.json() as {error?:string;activity?:ActivityTeam}
       if (!response.ok || !value.activity) throw new Error(value.error || t('task.control.failed'))
       publishWorkflowActivity(value.activity)
@@ -676,6 +666,10 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
           )}
         </header>
 
+        {!historic && !team.halted && <div className={css.taskDetailControls} title={t('flow.control.hint')} data-flow-controls>
+          <button type="button" disabled={!!controlBusy || !(team.phase === 'staged' ? team.tasks.length > 0 : flow.canStart)} onClick={() => void toggleFlow(true)}>{t('flow.control.start')}</button>
+          <button type="button" disabled={!!controlBusy || !flow.canPause} onClick={() => void toggleFlow(false)}>{t('flow.control.pause')}</button>
+        </div>}
         {team.phase === 'staged' && !team.workflowEnabled && !historic && modelDirectory !== undefined && onContinuePlanning !== undefined && onDiscarded !== undefined && (
           <StagingPlanEditor
             team={team}

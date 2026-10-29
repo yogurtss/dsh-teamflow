@@ -7,6 +7,7 @@ import { applyWorkflowProposal, checkpointReady, decideCheckpoint, proposeWorkfl
 import { workflowMaterials } from '../lib/workflow-runtime.js';
 import { prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js';
 import { assembleTeamSnapshot } from '../lib/snapshot.js';
+import { flowControlVersion } from '../lib/client/task-control.js';
 
 const port = Number(process.env.TEAMFLOW_PREVIEW_PORT ?? 8371);
 const directory = resolve('node_modules/workflow-ui');
@@ -99,11 +100,22 @@ createServer(async (req, res) => {
     if(body.action==='restore_archive') team=prepareArchivedWorkflow(team);
     const discussion = state.discussions[slot] ??= { key, messages: [], calls: [] };
     if (body.action === 'preview') discussion.proposal = proposeWorkflow(team, body.title, body.operations);
+    const existingIds = new Set(team.tasks.map(task => task.id));
     if (body.action === 'edit') { if (body.base !== workflowFingerprint(team)) throw Error('团队已变化'); const oldIds = team.tasks.map(task => task.id); team = applyWorkflowProposal(team, proposeWorkflow(team, body.title, body.operations)); if (body.positions) { const layout = workflowState(team).positions; for (const [id, point] of Object.entries(body.positions)) if (team.tasks.some(task => task.id === id)) layout[`task:${id}`] = point; for (const task of team.tasks) if (!oldIds.includes(task.id)) { layout[`task:${task.id}`] = { x: 32, y: Math.max(0, ...Object.values(layout).map(point => point.y)) + 160 }; if (!task.checkpoint && team.phase !== 'staged') task.workflowPaused = true; } } }
     if (body.action === 'apply') {
       if (!discussion.proposal || discussion.proposal.id !== body.proposalId) throw new Error('提案已替换');
       const proposal = body.operations ? { ...discussion.proposal, suggestedOperations: discussion.proposal.operations, operations: body.operations } : discussion.proposal;
       team = applyWorkflowProposal(team, proposal);
+    }
+    if (['edit','apply'].includes(body.action) && team.phase !== 'staged') for (const task of team.tasks) if (!existingIds.has(task.id)) {task.workflowPaused=true;task.workflowAwaitingStart=true}
+    if (body.action === 'set_flow_enabled') {
+      if (body.version !== flowControlVersion(team) || typeof body.enabled !== 'boolean') throw Error('流程状态已变化');
+      for (const task of team.tasks) {
+        if (['completed','failed','cancelled'].includes(task.status) || task.checkpoint?.decision || task.workflowConfigPending || task.workflowRerunRequired) continue;
+        if (body.enabled ? !task.workflowPaused : task.workflowPaused && !['claimed','in_progress'].includes(task.status)) continue;
+        task.workflowPaused=!body.enabled;task.workflowAwaitingStart=false;task.updatedAt=Date.now();
+        if (!body.enabled) task.status='pending';
+      }
     }
     if (body.action === 'resume_task') {
       const task=team.tasks.find(task=>task.id===body.taskId)
@@ -118,7 +130,7 @@ createServer(async (req, res) => {
       if(['completed','failed','cancelled'].includes(task.status) || task.checkpoint?.decision || task.workflowConfigPending || task.workflowRerunRequired) throw Error('请在节点属性中处理');
       const stopping=body.action==='stop_task' || body.enabled===false;
       if(stopping && !task.checkpoint) {
-        task.stoppedAttempts??=[];task.stoppedAttempts.push({attemptId:task.attemptId,output:task.output,at:Date.now()});
+        if(task.attemptId || task.output) {task.stoppedAttempts??=[];task.stoppedAttempts.push({attemptId:task.attemptId,output:task.output,at:Date.now()})}
         task.status='pending';task.attempt=0;task.attemptId=undefined;task.reassigning=false;
       }
       task.workflowPaused=stopping;task.workflowAwaitingStart=false;task.updatedAt=Date.now();
@@ -139,6 +151,6 @@ createServer(async (req, res) => {
       discussion.native = { sessionId: `session-at-discussion-preview-${key}`, label: key };
     }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, base: workflowFingerprint(team), ...(['restore_archive','review','set_task_enabled','state','edit','apply','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
+    send(res, 200, { team, base: workflowFingerprint(team), ...(['set_flow_enabled','restore_archive','review','set_task_enabled','state','edit','apply','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
   } catch (error) { send(res, 409, { error: error.message }); }
 }).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));

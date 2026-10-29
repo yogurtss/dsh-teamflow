@@ -1,8 +1,10 @@
-import type { ActivityTask, ActivityTeam } from './activity-monitor.ts'
+import type { ActivityTask } from './activity-monitor.ts'
 import type { AgentTeamsLocaleKey } from './locales.ts'
 
 /** Playback grants scheduling permission; it never satisfies a dependency. */
-export function taskControlState(team: Pick<ActivityTeam,'tasks'|'phase'|'halted'>, task: ActivityTask, historic = false) {
+export type ControlTask = Pick<ActivityTask, 'id'|'status'|'dependencies'|'checkpoint'|'workflowPaused'|'workflowAwaitingStart'|'workflowConfigPending'|'workflowRerunRequired'|'updatedAt'>
+export interface ControlTeam { tasks: readonly ControlTask[]; phase?: string; halted?: boolean }
+export function taskControlState(team: ControlTeam, task: ControlTask, historic = false) {
   const terminal = ['completed','failed','cancelled'].includes(task.status)
   const stopping = !!task.workflowPaused && ['claimed','in_progress'].includes(task.status)
   const waiting = task.dependencies.filter(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))
@@ -19,8 +21,28 @@ export function taskControlState(team: Pick<ActivityTeam,'tasks'|'phase'|'halted
     : team.phase === 'staged' ? 'task.control.staged'
     : task.status === 'in_progress' ? 'task.status.inProgress'
     : task.status === 'claimed' ? 'task.status.claimed'
+    : waiting.some(id => team.tasks.some(upstream => upstream.id === id && (['failed','cancelled'].includes(upstream.status) || upstream.checkpoint?.decision === 'reject'))) ? 'task.control.blocked'
     : waiting.length ? 'task.control.waiting'
     : task.checkpoint ? 'task.status.reviewReady' : 'task.control.queued'
   const canRerun = terminal && !task.checkpoint && !historic && !team.halted && team.phase !== 'staged'
-  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun}
+  const active = ['claimed','in_progress'].includes(task.status)
+  // Scheduling permission is not execution. A queued task can be withdrawn,
+  // but must never advertise an execution pause before it has been claimed.
+  const queued = checked && !active
+  const actionLabel: AgentTeamsLocaleKey = stopping ? 'task.control.retryStop'
+    : !checked ? 'task.control.start' : active ? 'task.control.pause' : 'task.control.dequeue'
+  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel}
+}
+
+/** Optimistic concurrency token shared by the canvas, activity view and route. */
+export function flowControlVersion(team: ControlTeam): string {
+  return JSON.stringify([team.phase ?? 'running', !!team.halted, team.tasks.map(task => [task.id, task.updatedAt, task.status, !!task.workflowPaused, !!task.workflowConfigPending, !!task.workflowRerunRequired, task.checkpoint?.decision, task.dependencies])])
+}
+
+export function flowControlState(team: ControlTeam) {
+  const controls = team.tasks.map(task => taskControlState(team, task))
+  return {
+    canStart: !team.halted && team.phase !== 'staged' && !controls.some(c => c.stopping) && controls.some(c => !c.disabled && !c.checked),
+    canPause: !team.halted && team.phase !== 'staged' && controls.some(c => !c.disabled && (c.checked || c.stopping)),
+  }
 }

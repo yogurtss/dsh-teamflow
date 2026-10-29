@@ -7,6 +7,13 @@ export declare const zh: {
     'task.control.rerunTask': string;
     'task.control.start': string;
     'task.control.pause': string;
+    'task.control.dequeue': string;
+    'flow.summary.held': string;
+    'progress.held': string;
+    'task.control.claimedHint': string;
+    'flow.control.start': string;
+    'flow.control.pause': string;
+    'flow.control.hint': string;
     'task.control.startTask': string;
     'task.control.pauseTask': string;
     'task.control.rerunHint': string;
@@ -14,6 +21,7 @@ export declare const zh: {
     'task.control.paused': string;
     'task.control.awaitingStart': string;
     'task.control.waiting': string;
+    'task.control.blocked': string;
     'task.control.queued': string;
     'task.control.staged': string;
     'task.control.stopped': string;
@@ -263,6 +271,13 @@ export declare const en: {
     'task.control.rerunTask': string;
     'task.control.start': string;
     'task.control.pause': string;
+    'task.control.dequeue': string;
+    'flow.summary.held': string;
+    'progress.held': string;
+    'task.control.claimedHint': string;
+    'flow.control.start': string;
+    'flow.control.pause': string;
+    'flow.control.hint': string;
     'task.control.startTask': string;
     'task.control.pauseTask': string;
     'task.control.rerunHint': string;
@@ -270,6 +285,7 @@ export declare const en: {
     'task.control.paused': string;
     'task.control.awaitingStart': string;
     'task.control.waiting': string;
+    'task.control.blocked': string;
     'task.control.queued': string;
     'task.control.staged': string;
     'task.control.stopped': string;

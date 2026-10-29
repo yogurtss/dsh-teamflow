@@ -2328,6 +2328,7 @@
   font-size: 8px;
   line-height: 10px;
 }
+.team[data-workspace-team] .dagClaimedState { top: auto; bottom: 6px; left: 11px; right: 11px; font-size: 10px; line-height: 12px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dsw-alias-label-secondary); }
 
 .assignmentChip[data-state='claimed'],
 .taskDetailBadge[data-state='claimed'] {

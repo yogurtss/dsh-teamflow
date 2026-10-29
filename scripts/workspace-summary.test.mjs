@@ -34,9 +34,9 @@ test('compact dependency cards distinguish human reviews and put controls in the
   const html=render(team,zh)
   assert.match(html,/data-checkpoint="true"/);assert.ok(html.includes('人工审核'));assert.ok(html.includes('第 2 轮'))
   assert.doesNotMatch(html,/role="switch"/)
-  assert.match(html,/data-task-action="pause"[^>]*aria-label="暂停 · review"/)
-  assert.match(html,/width:164px;height:76px/)
-  assert.ok(html.includes('已启用 · 等待上游'));assert.ok(!html.includes('data-review-action="true"'))
+  assert.match(html,/data-task-action="dequeue"[^>]*aria-label="取消排队 · review"/)
+  assert.match(html,/width:164px;height:94px/)
+  assert.ok(html.includes('等待上游'));assert.ok(!html.includes('data-review-action="true"'))
   const waiting=taskControlState(team,tasks[2]);assert.equal(waiting.checked,true);assert.deepEqual(waiting.waiting,['review'])
   assert.equal(taskControlState(team,tasks[1]).reviewReady,false)
   tasks[0].status='completed';assert.equal(taskControlState(team,tasks[1]).reviewReady,true)
@@ -75,6 +75,27 @@ test('running dependency cards keep the animated work glyph, idle cards do not',
   assert.match(html,/data-task-action="pause"[^>]*data-running="true"/)
   const paused=render({...base,tasks:[{...task('paused','pending','open'),workflowPaused:true}]},zh)
   assert.match(paused,/data-task-action="play"[^>]*aria-label="开始 · paused"/)
+})
+
+test('waiting downstream never advertises execution pause and all summaries use the same state',()=>{
+  const a=task('a','in_progress','running')
+  const b={...task('b','pending','blocked'),dependencies:['a'],workflowPaused:true,workflowAwaitingStart:true}
+  const c={...task('c','pending','blocked'),dependencies:['b']}
+  const team={...base,tasks:[a,b,c]}
+  assert.equal(taskControlState(team,a).actionLabel,'task.control.pause')
+  assert.equal(taskControlState(team,b).actionLabel,'task.control.start')
+  assert.equal(taskControlState(team,c).actionLabel,'task.control.dequeue')
+  assert.equal(taskControlState(team,c).label,'task.control.waiting')
+  const waiting=render({...base,tasks:[c]},zh)
+  assert.doesNotMatch(waiting,/data-task-action="pause"/)
+  assert.ok(waiting.includes('等待上游'))
+  assert.ok(waiting.includes('data-flow-controls'))
+  const paused=render({...base,tasks:[{...c,workflowPaused:true,workflowAwaitingStart:false}]},zh)
+  assert.ok(paused.includes(zh['flow.summary.held']))
+  assert.ok(paused.includes('■ 等待依赖 0'))
+  const summary=paused.slice(paused.indexOf('class="completionTasks"'))
+  assert.ok(summary.includes('已暂停'))
+  assert.ok(!summary.includes('待领取'))
 })
 
 test('new work awaits configuration or its first start while explicit pauses remain distinct',()=>{
