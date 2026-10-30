@@ -4,22 +4,13 @@ English · [简体中文](./README_ZH.md)
 
 This is the [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) development fork of [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams). Discuss a goal, form an initial team, then adjust member instructions, task handoffs and human checkpoints.
 
-**Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the new major feature release is `0.2.4`. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
+**Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the version stays at `0.1.27` for now. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
 
 Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; completed and archived teams also open the full canvas, including task requirements, results and verification records.
 
 Human checkpoints require opening their evidence and clicking **通过验收** or **退回**; a chat message such as “review passed” does not write an approval. Completed workflows remain editable, and the archive tool rejects unfinished workflows. A TeamFlow archive can be restored in the same canvas with **恢复并编辑流程**: the archive and completed results remain intact, fresh member sessions are prepared, unfinished execution tasks stay paused, and the restored plan requires review before starting. Existing live teams are never overwritten. See the [recovery walkthrough](./docs/approval-recovery-2026-10-27/README.md).
 
 Use `/teamflow` to start. Only `/teamflow` and `/teamflow-<profile>` commands are registered; the old `/agent-teams` command and its profile aliases have been removed. Use `/teamflow --profile <name> <goal>` to select a profile explicitly. The `.agent-teams/` data directory, internal `agent_teams_*` tools and session event protocol remain unchanged to preserve existing records. Historical reports retain the names and screenshots captured at the time.
-
-
-## 0.2.4 · Personal workflow Gallery
-
-Open **Teamflow → 流程模板库 Gallery** directly from a chat, without a slash command. Browse searchable cards with tags and graph previews, inspect generic requirements, then apply a template to the current goal. Save an existing workflow through an editable AI extraction draft; edit, duplicate, delete, or save a new immutable version.
-
-Tasks have lightweight **general** and **specific** layers, each containing requirements, deliverables, and acceptance text. Applying preserves members, nodes, dependencies, and human checkpoints. An isolated Captain configuration session fills all instance tasks together; human confirmation precedes execution. Inapplicable nodes remain blocked until resolved. Existing single-layer tasks remain supported.
-
-The personal library lives in `~/.dsh-teamflow/templates` (override with `templateDirectory`) and works across projects. Templates exclude execution sessions, model routes, outputs, and approvals. Instances and saved versions remain independent. See [release notes](./release-notes/v0.2.0.md).
 
 ## What this fork adds
 
@@ -69,7 +60,7 @@ See the **[Desktop walkthrough with 15 real screenshots](./docs/desktop-live-tes
 
 Also see the **[Live DSH Web screenshots and instructions](./docs/web-live-test-2026-10-27/README.md)** (Chinese): Web startup, real-model team creation, the workflow canvas and drag-to-connect were exercised. Testing stopped at the user's request; the Web approval flow was not completed.
 
-The [compatibility matrix](./compatibility.json) and [upstream release notes](./release-notes/v0.1.27.md) describe the inherited baseline, not validation of every new feature on every listed host. Check both package name and version to identify the installed source.
+The [compatibility matrix](./compatibility.json) and [upstream release notes](./release-notes/v0.1.27.md) describe the inherited baseline, not validation of every new feature on every listed host. The unchanged version number alone does not identify the installed source.
 
 ## Replace an existing installation
 
@@ -146,7 +137,7 @@ To uninstall:
 dsh plugin --profile web remove @yogurtss/dsh-teamflow
 ~~~
 
-To return to upstream, uninstall and install `@nanmicoder/dsh-agent-teams`, then restart. Back up team state: downgrading fork-specific checkpoint/discussion state has not been verified. Do not resume those teams with upstream.
+To return to upstream, uninstall and install `@nanmicoder/dsh-agent-teams@0.1.27`, then restart. Back up team state: downgrading fork-specific checkpoint/discussion state has not been verified. Do not resume those teams with upstream.
 
 ## Workflow and boundaries
 
@@ -316,11 +307,3 @@ Select a member in the activity view to edit its model, thinking level and role 
 Discuss, review, and apply member proposals in the TeamFlow workbench alongside the canvas. When the host supports workspace membership, new discussions are grouped with the captain's existing project when it can be identified unambiguously.
 
 Proposal approval includes before/after fields and line diffs. Edit the proposed values inline or skip an operation, then apply the final version. The original AI suggestion is retained in the applied history. See the [walkthrough](docs/editable-approval-2026-10-27/README.md).
-
-The previous patch fixes the blank Web conversation entry. See [patch notes](./release-notes/v0.2.1.md) and [local Web verification](./docs/web-entry-fix-2026-10-30/README.md).
-
-New tasks now generate reusable and specific layers together; duplicate contract display is removed. See [patch notes](./release-notes/v0.2.2.md).
-
-Existing editable tasks also offer **One-click AI split**: review both layers, then replace the original fields without creating a new task. See [release notes](./release-notes/v0.2.3.md).
-
-Templates retain only generic task contracts. Adaptation produces complete standalone instance requirements, which are the only task-layer text delivered to execution agents. Older layered tasks and changed goals require regeneration or explicit review. See [release notes](./release-notes/v0.2.4.md).

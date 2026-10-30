@@ -5,7 +5,6 @@ export type WorkflowOperation = {
     summary: string;
     role?: string;
     executionPrompt?: string;
-    specificPrompt?: string;
     provider?: string;
     model?: string;
     reasoningEffort?: string;
@@ -15,7 +14,6 @@ export type WorkflowOperation = {
     summary?: string;
     role?: string;
     executionPrompt?: string;
-    specificPrompt?: string;
     provider?: string;
     model?: string;
     reasoningEffort?: string;
@@ -27,7 +25,6 @@ export type WorkflowOperation = {
     id?: string;
     subject: string;
     description?: string;
-    layers?: import('./task-layers.ts').TaskLayers;
     assignee?: string;
     dependencies: string[];
     checkpoint?: boolean;
@@ -37,8 +34,6 @@ export type WorkflowOperation = {
     id: string;
     subject?: string;
     description?: string;
-    layers?: import('./task-layers.ts').TaskLayers;
-    adaptationIssue?: string;
     assignee?: string;
     dependencies?: string[];
     confirmConfiguration?: boolean;
@@ -51,8 +46,6 @@ export type WorkflowOperation = {
     instructions?: string;
     subject?: string;
     description?: string;
-    layers?: import('./task-layers.ts').TaskLayers;
-    adaptationIssue?: string;
     assignee?: string;
 } | {
     action: 'rework';
@@ -90,11 +83,6 @@ export interface DiscussionMessage {
     at: number;
 }
 export interface WorkflowDiscussion {
-    splitLayers?: boolean;
-    templateDraft?: {
-        base: string;
-        definition: import('./templates.ts').TemplateDefinition;
-    };
     key: string;
     native?: {
         sessionId: string;
@@ -119,7 +107,6 @@ export interface WorkflowDiscussion {
     materialsRound?: number;
 }
 export interface WorkflowState {
-    templateSource?: import('./templates.ts').TemplateSource;
     /** Accepted for old saved teams; no longer controls behavior. */
     mode?: 'manual' | 'assisted';
     positions: Record<string, {

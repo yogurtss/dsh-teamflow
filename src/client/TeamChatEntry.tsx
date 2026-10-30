@@ -14,7 +14,7 @@ export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRu
   if (!team) return <WorkflowWorkbench key={sessionId} sessionId={sessionId} nativeOnly openContext={openContext}
     openConversation={openMember ? id => openWorkflowConversation(openMember, id as typeof sessionId) : undefined}
     openExecution={(id, parentId) => openMember?.((parentId ?? sessionId) as typeof sessionId, id as typeof sessionId)} />
-  return <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={team.teamId} nativeOnly archived={archivedTeams.includes(team)}
+  return <WorkflowWorkbench key={sessionId} sessionId={sessionId} teamId={team.teamId} reviewEntryOnly
     openConversation={openMember ? id => openWorkflowConversation(openMember, id as typeof sessionId) : undefined} />
 }
 

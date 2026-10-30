@@ -14,7 +14,6 @@ export declare function taskDiscussionContext(team: TeamState, id: string): {
         summary: string | undefined;
         role: string | undefined;
         executionPrompt: string | undefined;
-        specificPrompt: string | undefined;
         provider: string | undefined;
         model: string | undefined;
     } | undefined;
@@ -44,6 +43,5 @@ export declare function installWorkflowConversations(ctx: Context, config: Tools
     open(captain: Agent, team: TeamState, key: string, root: string, options?: {
         fresh?: boolean;
         message?: string;
-        splitLayers?: boolean;
     }): Promise<string>;
 };

@@ -6,6 +6,15 @@ Vendored skills are community guidance. Historical version examples are not the 
 
 User instructions and authorization take precedence over skill defaults. Do not repeat confirmation for work the user has already authorized.
 
+# Stable main and development dev policy
+
+- main is the user-approved stable installation branch. Its current baseline is the no-Gallery classic version, commit c8530b9f360ac29b1c78179bade3827f49ba31bd (package version 0.1.27, tag classic). Keep the classic tag fixed.
+- dev retains the later Gallery, layered-task, and other development updates. All future features, fixes, version updates, and routine maintenance go to dev by default. Before editing, check the branch; if it is main, switch to dev or create a task branch based on dev.
+- A request to implement, fix, iterate, commit, or push authorizes development work only. It does not authorize promoting that work to main. Update main only when the user explicitly asks to promote/release the development iteration to main or the stable version. If the destination is ambiguous, keep the completed work on dev.
+- Standing commit/push authorization below applies to dev and task branches based on it. It never grants automatic merging, cherry-picking, or pushing development changes to main, moving classic, or publishing a stable release.
+- Stable Git installation uses github:yogurtss/dsh-teamflow#main; development installation uses github:yogurtss/dsh-teamflow#dev. Describe development builds as development versions; do not present them as the stable default.
+- Before an explicitly authorized stable promotion, review the complete main..dev diff and run appropriate checks. Preserve Git history and do not force-push. Keep these rules present on both branches.
+
 # Git workflow and standing push authorization
 
 Manage project changes with Git. After completing a major update (a feature, substantial fix, or meaningful documentation milestone), review the diff, fix discovered issues, and run checks appropriate to the changed surface. Include required build artifacts and documentation in the commit.

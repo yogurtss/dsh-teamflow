@@ -51,9 +51,9 @@ class WebApprovalAdapter extends LlmAdapter {
         const toolText = blocks.filter(block => block.type === 'tool-result').flatMap(block => block.content?.filter(content => content.type === 'text').map(content => content.text) ?? []).join('\n');
         const failed = blocks.find(block => block.type === 'tool-result' && block.isError);
         assert.equal(failed, undefined, 'Real workflow tool failed: ' + JSON.stringify(failed));
-        if (system.includes('你是 TeamFlow 的独立配置顾问或验收 Agent')) {
+        if (system.includes('你是 AgentTeams 的独立配置顾问或验收 Agent')) {
             assert.ok(options.sessionId, 'Discussion must use a durable native session');
-            assert.deepEqual((options.tools ?? []).map(t => t.name).sort(), userText.includes('提炼当前流程为可复用模板') ? ['agent_teams_template_propose', 'agent_teams_workflow_context'] : ['agent_teams_workflow_context', 'agent_teams_workflow_propose']);
+            assert.deepEqual((options.tools ?? []).map(t => t.name).sort(), ['agent_teams_workflow_context', 'agent_teams_workflow_propose']);
             const lastUser = options.messages.findLastIndex(m => m.role === 'user');
             const turn = options.messages.slice(lastUser + 1);
             const turnCalls = turn.flatMap(m => m.content ?? []).filter(b => b.type === 'tool-call');
@@ -61,17 +61,10 @@ class WebApprovalAdapter extends LlmAdapter {
             if (!turnCalls.some(c => c.name === 'agent_teams_workflow_context')) { yield* call('agent_teams_workflow_context', {}); return; }
             const context = blocks.filter(b => b.type === 'tool-result').flatMap(b => b.content ?? []).filter(b => b.type === 'text').map(b => { try { return JSON.parse(b.text); } catch { return {}; } }).findLast(v => v.discussion && v.base);
             assert.ok(context, 'Native context tool must provide current state');
-            if (context.discussion === 'template' && !turnCalls.some(c => c.name === 'agent_teams_template_propose')) {
-              const definition = structuredClone(context.templateFormat);
-              definition.name = 'Reusable operator workflow'; definition.description = 'Reusable development and verification'; definition.tags = ['operator']; definition.inputs = 'Target operator requirements';
-              definition.members.forEach(m => { m.executionPrompt = 'WEB_APPROVAL_MEMBER: implement the current goal and report evidence'; });
-              definition.tasks.forEach(t => { t.general = { requirements: 'Implement according to confirmed specifications', deliverables: 'Implementation and evidence', acceptance: 'Independent correctness checks' }; });
-              yield* call('agent_teams_template_propose', { base: context.base, definition: JSON.stringify(definition) }); return;
-            }
-            const operations = userText.includes('请将当前任务已有描述整理为通用层和本次层') ? [{action:'update_task',id:context.discussion.slice(5),layers:{general:{requirements:'Implement against confirmed specifications',deliverables:'Implementation and tests',acceptance:'Pass correctness checks'},specific:{requirements:'Implement operator C in C.cpp against confirmed specifications',deliverables:'C.cpp and tests',acceptance:'Pass correctness checks with error below 0.001'}}}] : context.discussion === 'adapt' ? context.team.tasks.map(t => ({action:'update_task',id:t.id,layers:{general:t.layers.general,specific:{requirements:'Implement operator B according to confirmed specifications',deliverables:'B implementation and verification evidence',acceptance:'Independent B correctness checks'}},adaptationIssue:'',confirmConfiguration:true})) : context.discussion === 'member:worker' ? [{ action: 'update_member', name: 'worker', summary: '负责实现与自测，交付验证证据' }]
+            const operations = context.discussion === 'member:worker' ? [{ action: 'update_member', name: 'worker', summary: '负责实现与自测，交付验证证据' }]
                 : context.discussion === 'graph' && context.team.members.length === 0 ? [
                     { action: 'add_member', name: 'worker', summary: '讨论规划的执行成员', role: 'WEB_APPROVAL_MEMBER' },
-                    { action: 'add_task', id: 't1', subject: '讨论规划任务', layers: { general: { requirements: 'Implement the requested operator against its specification', deliverables: 'Implementation and verification evidence', acceptance: 'Pass independent correctness checks' }, specific: { requirements: 'Implement operator A', deliverables: 'A implementation', acceptance: 'A correctness' } }, assignee: 'worker', dependencies: [] },
+                    { action: 'add_task', id: 't1', subject: '讨论规划任务', assignee: 'worker', dependencies: [] },
                   ] : [];
             if (operations.length && !turnCalls.some(c => c.name === 'agent_teams_workflow_propose')) { yield* call('agent_teams_workflow_propose', { base: context.base, title: '原生讨论配置方案', operations: JSON.stringify(operations) }); return; }
             yield* textChunks('已整理方案与材料，请在编排画布中查看并确认。');
@@ -96,11 +89,6 @@ class WebApprovalAdapter extends LlmAdapter {
         const reportNotice = reports.find(message => !handledControlMessages.has(message.id));
         let chunks;
         if (isMember) {
-            if (userText.includes('AgentTeams automatic task assignment') && userText.includes('Implement operator B according to confirmed specifications')) {
-              assert.ok(!userText.includes('通用任务：'), 'Executor must not receive the generic layer');
-              assert.ok(userText.includes('Independent B correctness checks'), 'Executor must receive concretized acceptance');
-              record({event:'specific-contract-execution',specificOnly:true});
-            }
             // This gates only external LLM output, never agent/scheduler/HTTP code.
             await memberGate;
             options.signal?.throwIfAborted();

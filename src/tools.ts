@@ -18,7 +18,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
-import { taskNeedsConfiguration, parseLayers, taskText, taskLayersParameter, type TaskLayers } from './task-layers.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import {
   amendTaskContract,
@@ -97,8 +96,6 @@ export { steerCaptainReport } from './members.ts'
 
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
-  /** Optional personal library location; defaults to ~/.dsh-teamflow/templates. */
-  templateDirectory?: string
   /** State directory name under the captain's workspace. */
   stateDir: string
   /** Member subagent provider name. */
@@ -138,7 +135,6 @@ export type StagedPlanMutation =
       action: 'update_task'
       taskId: string
       subject: string
-      layers?: TaskLayers
       description?: string | null
       assignee?: string | null
       dependencies: string[]
@@ -146,7 +142,6 @@ export type StagedPlanMutation =
   | {
       action: 'add_task'
       subject: string
-      layers?: TaskLayers
       description?: string | null
       assignee?: string | null
       dependencies: string[]
@@ -304,7 +299,7 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
   if (task.checkpoint) throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
-  if (taskNeedsConfiguration(task)) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
+  if (task.workflowConfigPending) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
   if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
   return task
 }
@@ -401,7 +396,7 @@ function validateStagedGraph(team: TeamState, requireRunnable: boolean): void {
   const memberNames = new Set(members.map((member) => member.name))
   const taskIds = new Set(team.tasks.map((task) => task.id))
   for (const task of team.tasks) {
-    if (requireRunnable && taskNeedsConfiguration(task)) throw new Error(`请先完成节点配置：${task.subject}（${task.id}）`)
+    if (requireRunnable && task.workflowConfigPending) throw new Error(`请先完成节点配置：${task.subject}（${task.id}）`)
     if (task.subject.trim() === '') throw new Error(`task "${task.id}" must have a subject`)
     if (task.assignee !== undefined && task.assignee !== CAPTAIN_KEY && !memberNames.has(task.assignee)) {
       throw new Error(`task "${task.id}" assignee "${task.assignee}" is not an active member`)
@@ -432,7 +427,7 @@ function memberOpenTask(team: TeamState, memberName: string, exceptTaskId?: stri
 }
 
 function taskDetails(team: TeamState, task: TeamTask): string {
-  return [task.subject, taskText(task),
+  return [task.subject, task.description ?? '',
     `Kind: ${task.kind ?? 'work'}`,
     `Objective: ${task.objective ?? ''}`,
     `In scope: ${(task.inScope ?? []).join(', ')}; Out of scope: ${(task.outOfScope ?? []).join(', ')}`,
@@ -768,7 +763,6 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           }
         } else if (mutation.action === 'update_task') {
           const task = requireTask(fresh, mutation.taskId)
-          if (task.layers && mutation.layers === undefined && mutation.description !== task.description) throw new Error('分层任务请通过 layers 修改通用层和本次层')
           if (task.status !== 'pending' || (task.attempt ?? 0) !== 0 || task.reassigning === true) {
             throw new Error(`task "${task.id}" has already started and cannot be edited`)
           }
@@ -776,9 +770,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           const subject = mutation.subject.trim()
           if (subject === '') throw new Error('task subject must not be empty')
           task.subject = subject
-          if (mutation.layers !== undefined) { task.layers = parseLayers(mutation.layers); task.specificContractVersion = 1; task.specificSourceGoal = fresh.description ?? '' }
-          task.description = taskText({ layers: task.layers, description: trimmedOptional(mutation.description) })
-          if (mutation.layers !== undefined && task.layers) task.workflowConfigPending = !task.layers.general.requirements || !task.layers.specific.requirements
+          task.description = trimmedOptional(mutation.description)
           task.assignee = trimmedOptional(mutation.assignee)
           task.dependencies = [...new Set(mutation.dependencies.map((item) => item.trim()).filter(Boolean))]
           task.updatedAt = Date.now()
@@ -790,8 +782,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           fresh.tasks.push({
             id: `t${fresh.taskSeq}`,
             subject,
-            description: taskText({ layers: mutation.layers, description: trimmedOptional(mutation.description) }),
-            ...(mutation.layers ? { layers: parseLayers(mutation.layers), specificContractVersion: 1, specificSourceGoal: fresh.description ?? '', workflowConfigPending: taskNeedsConfiguration({ layers: mutation.layers, specificContractVersion:1 }) } : {}),
+            description: trimmedOptional(mutation.description),
             status: 'pending',
             assignee: trimmedOptional(mutation.assignee),
             dependencies: [...new Set(mutation.dependencies.map((item) => item.trim()).filter(Boolean))],
@@ -974,7 +965,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           } } },
           tasks: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
             id: { type: 'string', required: true, description: 'Local reference used by dependencies in this plan; the result maps it to a durable task id.' },
-            subject: { type: 'string', required: true }, layers: taskLayersParameter, description: { type: 'string' }, assignee: { type: 'string' },
+            subject: { type: 'string', required: true }, description: { type: 'string' }, assignee: { type: 'string' },
             dependencies: { type: 'array', items: { type: 'string' } },
           } } },
         },
@@ -1188,8 +1179,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             member_name: { type: 'string', description: 'Member name for update_member or remove_member.' },
             task_id: { type: 'string', description: 'Task id for update_task or remove_task.' },
             subject: { type: 'string', description: 'Required for add_task; optional replacement for update_task.' },
-            layers: taskLayersParameter,
-            description: { type: 'string', description: 'Legacy single-layer task description.' },
+            description: { type: 'string', description: 'Optional task description.' },
             assignee: { type: 'string', description: 'Optional task assignee; an empty string moves it to the shared pool.' },
             dependencies: { type: 'array', items: { type: 'string' }, description: 'Complete replacement dependency list for a task.' },
             role: { type: 'string', description: 'Optional member role.' },
@@ -1255,7 +1245,6 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             taskId,
             subject: operation.subject ?? task.subject,
             description: operation.description ?? task.description,
-            layers: operation.layers === undefined ? undefined : parseLayers(operation.layers),
             assignee: operation.assignee ?? task.assignee,
             dependencies: operation.dependencies ?? task.dependencies,
           }
@@ -1267,7 +1256,6 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             action: 'add_task',
             subject,
             description: operation.description,
-            layers: operation.layers === undefined ? undefined : parseLayers(operation.layers),
             assignee: operation.assignee,
             dependencies: operation.dependencies ?? [],
           }
@@ -1497,8 +1485,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     description: 'Create a task in your team\'s task list. Use kind=work (default) for research, repository audits and general tasks. kind=review is only a quality gate for an existing implementation/repair task via reviewedTaskId. Every call must include a non-empty subject, including verification and review tasks. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working.',
     parameters: {
       subject: { type: 'string', required: true, description: 'Required non-empty title for this task. Never omit it, including for verification or review tasks.' },
-      layers: taskLayersParameter,
-      description: { type: 'string', description: 'Legacy single-layer task description.' },
+      description: { type: 'string', description: 'What needs to be done, in detail.' },
       dependencies: {
         type: 'array',
         items: { type: 'string' },
@@ -1605,8 +1592,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         const task: TeamTask = {
           id: `t${fresh.taskSeq + 1}`,
           subject: args.subject,
-          description: taskText({ description: args.description, layers: args.layers === undefined ? undefined : parseLayers(args.layers) }),
-          ...(args.layers === undefined ? {} : { layers: parseLayers(args.layers), specificContractVersion: 1, specificSourceGoal: fresh.description ?? '', workflowConfigPending: taskNeedsConfiguration({ layers: parseLayers(args.layers), specificContractVersion:1 }) }),
+          description: args.description,
           status: 'pending',
           assignee: args.assignee,
           dependencies,
@@ -2687,8 +2673,7 @@ async function initializeProfileTeam(input: {
       id: `t${index + 1}`,
       profileSeedId: template.id,
       subject: template.subject,
-      description: taskText(template),
-      ...(template.layers ? { layers: template.layers, specificContractVersion: 1 as const, specificSourceGoal: input.description ?? '', workflowConfigPending: taskNeedsConfiguration({...template,specificContractVersion:1}) } : {}),
+      description: template.description,
       status: 'pending' as const,
       assignee: template.assignee,
       dependencies: template.dependencies.map((dependency) => seedToActual.get(dependency) ?? dependency),

@@ -161,14 +161,6 @@ export interface TaskEvidence {
 
 /** One task of a team's task list. */
 export interface TeamTask {
-  /** Generic method and the requirements of this particular run. */
-  layers?: import('./task-layers.ts').TaskLayers
-  /** Version 1 confirms the specific layer is a standalone execution contract. */
-  specificContractVersion?: 1
-  /** Team goal used when the specific contract was last generated or confirmed. */
-  specificSourceGoal?: string
-  /** Non-applicability or missing input; explicit human resolution is required. */
-  adaptationIssue?: string
   /** Explicit rerun context, kept separate from the durable task contract. */
   workflowRerunContext?: {
     instructions: string
@@ -286,8 +278,6 @@ export type MemberStatus = 'idle' | 'working' | 'removed'
 
 /** One team member: a continuable subagent plus its team-side record. */
 export interface TeamMember {
-  /** Instance-only instructions, never exported as the reusable member prompt. */
-  specificPrompt?: string
   /** Short user-facing responsibility summary, independent of execution instructions. */
   summary?: string
   /** Execution transcripts retained when a role change starts a fresh session. */

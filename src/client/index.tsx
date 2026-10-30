@@ -20,7 +20,6 @@ import type { UsePanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { ActivitySurface, WorkspaceActivity, createWorkspaceBridge, TEAM_TAB_ID, TEAM_TAB_KIND } from './WorkspaceActivity.tsx'
-import { BlankSessionTeamflowEntry } from './BlankSessionTeamflowEntry.tsx'
 import { TeamChatEntry, TeamTurnCard } from './TeamChatEntry.tsx'
 import { createWorkspaceState } from './workspace-state.ts'
 import { AgentTeamsCard, type AgentTeamsCardInjected } from './AgentTeamsCard.tsx'
@@ -74,14 +73,6 @@ export function apply(ctx: ClientContext): void {
     const usePanel = usePanelInfo ?? useLegacyPanelInfo
     const conversationVisible = usePanel(panel => panel.activePanelId === null)
     return (
-    <>
-    <BlankSessionTeamflowEntry
-      sessionsList={ctx.sessions.list}
-      modelDirectories={ctx.modelDirectories}
-      openMember={openMember}
-      t={t}
-      conversationVisible={conversationVisible}
-    />
     <ActivitySurface
       state={state}
       conversationVisible={conversationVisible}
@@ -90,15 +81,8 @@ export function apply(ctx: ClientContext): void {
       openMember={openMember}
       t={t}
     />
-    </>
     )
   }
-  // A conversation entry does not depend on the optional right sidebar.
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions', id: 'agent-teams-entry', order: 50,
-    locale: AGENT_TEAMS_LOCALE_NAMESPACE,
-    inject: () => ({ openMember }),
-  }, TeamChatEntry))
   // Optional service scope keeps legacy hosts working and removes every native
   // contribution when the host provider disappears (including HMR).
   ctx.inject(['sidebarRight', 'sidebarRightTabs'], (native) => {
@@ -107,6 +91,11 @@ export function apply(ctx: ClientContext): void {
       id: TEAM_TAB_ID, kind: TEAM_TAB_KIND,
       title: () => t('workspace.title'),
     }))
+    native.slots.inject('conversation.session.header.actions', () => native.slots.register({
+      name: 'conversation.session.header.actions', id: 'agent-teams-entry', order: 50,
+      locale: AGENT_TEAMS_LOCALE_NAMESPACE,
+      inject: () => ({ openMember, openContext: () => native.sidebarRight.openTab(TEAM_TAB_KIND) }),
+    }, TeamChatEntry))
     native.slots.inject('conversation.chat.turnTail', () => native.slots.register({
       name: 'conversation.chat.turnTail', id: 'agent-teams-summary', order: 50,
       locale: AGENT_TEAMS_LOCALE_NAMESPACE,

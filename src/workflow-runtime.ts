@@ -17,10 +17,6 @@ import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren } from './harness-compat.ts'
 import { readArtifactScope } from './artifacts.ts'
 import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, parseWorkflowOperations, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
-import { getTemplate, listTemplates, saveTemplate, deleteTemplate, templateLibraryRoot } from './template-store.ts'
-import { instantiateTemplate, templateSeed, validateAdaptation } from './templates.ts'
-import { validateTaskSplit } from './task-split.ts'
-import { taskText } from './task-layers.ts'
 
 function string(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 16000) throw new Error(`${name} 不能为空或过长`)
@@ -32,7 +28,7 @@ export function workflowMaterials(team: TeamState, taskId: string, workspace: st
   const inputs = checkpointInputs(team, gate)
   const paths = [...new Set(inputs.flatMap(t => [...t.changedPaths ?? [], ...t.deliverables ?? []]))]
   const files = paths.length ? readArtifactScope(workspace, paths) : { artifacts: [], gaps: [] }
-  const material = { check: { id: gate.id, subject: gate.subject, description: taskText(gate), round: gate.checkpoint!.round },
+  const material = { check: { id: gate.id, subject: gate.subject, description: gate.description, round: gate.checkpoint!.round },
     results: inputs.map(t => ({ id: t.id, subject: t.subject, status: t.status, attemptId: t.attemptId,
       output: t.output, changedPaths: t.changedPaths, commandsRun: t.commandsRun, acceptanceResults: t.acceptanceResults })),
     files, limitation: '任务输出和命令结果由执行 Agent 提交；文件摘要由宿主读取。验收 Agent 未独立运行命令，也未读取全部文件内容。' }
@@ -73,48 +69,23 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       if (!captain) throw new Error('请先打开队长对话，使当前会话连接到宿主')
       const workspace = captain.session.header.cwd ?? process.cwd(), root = join(workspace, config.stateDir)
       const action = string(body['action'], 'action')
-      const libraryRoot=templateLibraryRoot(config.templateDirectory)
-      if(action==='template_list'){
-        const context=caller.session.ownEvents().flatMap(event=>event.type==='user/message'&&event.data.source.kind==='user'?event.data.content.filter(b=>b.type==='text').map(b=>b.text):[]).slice(-4).join('\n').slice(-12000)
-        reply(200,{...await listTemplates(libraryRoot),context});return
-      }
-      if(action==='template_save'){
-        const previous=body['templateId']===undefined?undefined:{id:string(body['templateId'],'templateId'),version:Number(body['version'])}
-        const template=await saveTemplate(libraryRoot,body['definition'],previous)
-        reply(200,{template});return
-      }
-      if(action==='template_delete'){
-        await deleteTemplate(libraryRoot,string(body['templateId'],'templateId'),Number(body['version']));reply(200,{ok:true});return
-      }
       let teamId = typeof body['teamId'] === 'string' ? body['teamId'] : address?.teamId ?? ''
       if (address && teamId !== address.teamId) throw new Error('讨论不属于此团队')
       if (!teamId && body['action'] === 'state') teamId = (await findTeamByCaptain(root, captain.id, await leadIdentityOfAsync(ctx, captain.session)))?.id ?? ''
       if (!teamId && action === 'state') { reply(200, { team: null, ready: [], busy: [] }); return }
-      if (action === 'create' || action === 'template_apply') {
+      if (action === 'create') {
         if (address) throw new Error('请返回队长对话创建团队')
         await withTeamLock(`captain:${root}:${captain.id}`, async () => {
           if (await findTeamByCaptain(root, captain.id, await leadIdentityOfAsync(ctx, captain.session))) throw new Error('当前会话已有团队，请在已有团队中编辑')
           const name = string(body['name'], '团队名称')
           teamId = `${sanitizeKey(name).slice(0, 60)}-${randomUUID().slice(0, 8)}`
-          if(action==='template_apply'){
-            const template=await getTemplate(libraryRoot,string(body['templateId'],'templateId'),Number(body['version']))
-            if(template.members.length>config.maxMembers)throw new Error('模板成员数超过当前宿主配置上限')
-            const copy=instantiateTemplate(template,teamId,captain.id,name,string(body['description'],'本次需求'))
-            const selection=await resolveMemberLlmSelection(ctx,captain,{})
-            for(const member of copy.members){member.provider=selection.provider;member.model=selection.model;member.reasoningEffort=selection.reasoningEffort}
-            await createTeamDir(root,copy)
-          }else await createTeamDir(root, { name, id: teamId, captainSessionId: captain.id, description: typeof body['description'] === 'string' ? body['description'] : '',
+          await createTeamDir(root, { name, id: teamId, captainSessionId: captain.id, description: typeof body['description'] === 'string' ? body['description'] : '',
             phase: 'staged', members: [], tasks: [], taskSeq: 0, createdAt: Date.now(),
             workflow: { positions: {}, discussions: {}, history: [] } })
         })
       }
       if (!teamId || sanitizeKey(teamId) !== teamId) throw new Error('无效团队 ID')
       const lock = `team:${root}:${teamId}`
-      if(action==='template_seed'){
-        const source=await readTeam(root,teamId)??await readArchivedTeam(root,teamId)
-        if(!source||!(await sessionLeadsTeamAsync(ctx,source,captain.id)))throw new Error('当前会话不能读取此流程')
-        reply(200,{definition:templateSeed(source),base:workflowFingerprint(source)});return
-      }
       if(action==='archive_state') {
         const archived=await readArchivedTeam(root,teamId)
         if(address || !archived || !(await sessionLeadsTeamAsync(ctx,archived,captain.id))) throw new Error('当前会话不能查看此归档')
@@ -242,9 +213,9 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           return conversations.readEmbedded(team, key)
         })
         reply(200, payload); return
-      } else if (action === 'open_discussion' || action === 'split_task') {
+      } else if (action === 'open_discussion') {
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
-        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { splitLayers: action === 'split_task', fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
+        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
       } else if (action === 'materials') {
         await withTeamLock(lock, async () => {
           const team = await load(), discussion = discussionOf(team, key)
@@ -258,9 +229,8 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         await stopTask(body['taskId'])
       } else if (action === 'start') {
         await runtime.approveStagedTeam(captain, teamId)
-      } else if (!['state', 'create', 'template_apply'].includes(action)) {
+      } else if (!['state', 'create'].includes(action)) {
         const retired: string[] = []
-        let splitApplied = false
         await withTeamLock(lock, async () => {
           let team = await load()
           const state = workflowState(team)
@@ -286,20 +256,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
               // silently rebase onto concurrent execution or a newer AI proposal.
               proposal = { ...proposal, suggestedOperations: proposal.suggestedOperations ?? proposal.operations, operations: parseWorkflowOperations(body['operations']) }
             }
-            if (action === 'apply' && discussionOf(team, key).splitLayers) validateTaskSplit(key.slice(5), proposal.operations)
-            if(action==='apply' && key==='adapt')validateAdaptation(team,proposal.operations)
             const updated = applyWorkflowProposal(team, proposal, config.maxMembers)
-            // This explicit human approval confirms the split itself. Preserve
-            // any pre-existing configuration hold, without adding a second save.
-            if (action === 'apply' && discussionOf(team, key).splitLayers) {
-              splitApplied = true
-              const before = team.tasks.find(task => task.id === key.slice(5))!
-              const after = updated.tasks.find(task => task.id === before.id)!
-              if (!before.workflowConfigPending && !after.adaptationIssue?.trim()) {
-                if (before.workflowConfigPending === undefined) delete after.workflowConfigPending
-                else after.workflowConfigPending = before.workflowConfigPending
-              }
-            }
             // Human edits and accepted AI proposals use the same first-start
             // boundary, including checkpoints. Staged plans start as a whole.
             if (team.phase !== 'staged') {
@@ -375,7 +332,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if (!splitApplied && (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
+        if (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true)) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }

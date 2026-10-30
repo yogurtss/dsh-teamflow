@@ -1,4 +1,3 @@
-import { templateSeed, instantiateTemplate } from '../lib/templates.js';
 /** Local interaction fixture: real React workbench and workflow reducer; simulated execution/model. */
 import { createServer } from 'node:http';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -84,9 +83,6 @@ if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && !process.env.TEAMFLOW_PREVIEW_ARC
   const key = 'member:researcher'
   workflowState(team).discussions[`discussion:${key}`] = { key, messages: [], calls: [], proposal: proposeWorkflow(team, '调整研究成员职责', [{ action: 'update_member', name: 'researcher', summary: '整理需求并明确每项验收标准。', role: '需求与验收分析师' }]) }
 }
-let galleryBlank = Boolean(process.env.TEAMFLOW_PREVIEW_GALLERY);
-const sample = templateSeed(team);sample.name='需求到交付';sample.description='从需求分析到实现验证，保留人工验收。';sample.tags=['研发','人工验收'];sample.tasks.forEach(t=>t.general={requirements:'完成'+t.subject+'，依据本次目标确定范围',deliverables:'可复核的工作成果',acceptance:'满足已确认的需求与质量标准'});
-let library=[{...sample,id:'11111111-1111-4111-8111-111111111111',version:1,createdAt:Date.now(),updatedAt:Date.now()}];
 const send = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
 const transcripts = new Map();
 // Standalone fixture supplies the semantic tokens normally provided by Harness.
@@ -106,13 +102,6 @@ createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw), key = body.discussion || 'graph';
     const messages = previewMessages(key);
-    if(body.action==='template_list'){send(res,200,{templates:library,warnings:[],context:'实现算子 B，验证正确性和性能。'});return}
-    if(body.action==='template_seed'){send(res,200,{definition:templateSeed(team),base:workflowFingerprint(team)});return}
-    if(body.action==='template_save'){const old=library.find(t=>t.id===body.templateId);const saved={...body.definition,id:old?.id??crypto.randomUUID(),version:(old?.version??0)+1,createdAt:Date.now(),updatedAt:Date.now()};library=library.filter(t=>t.id!==saved.id).concat(saved);send(res,200,{template:saved});return}
-    if(body.action==='template_delete'){library=library.filter(t=>t.id!==body.templateId);send(res,200,{ok:true});return}
-    if(body.action==='template_apply'){team=instantiateTemplate(library.find(t=>t.id===body.templateId),'preview','preview',body.name,body.description);team.members.forEach(m=>Object.assign(m,{provider:'fixture',model:'模拟模型'}));galleryBlank=false}
-    if(body.action==='state'&&galleryBlank){send(res,200,{team:null,ready:[],busy:[]});return}
-    if(body.action==='create')galleryBlank=false;
     if (body.action === 'edit' && process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS)));
     if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_state') { send(res, 200, { messages, busy: false }); return; }
     if (process.env.TEAMFLOW_PREVIEW_DISCUSSION && body.action === 'conversation_send') { if (process.env.TEAMFLOW_PREVIEW_SEND_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.TEAMFLOW_PREVIEW_SEND_DELAY_MS))); messages.push({ id: String(messages.length + 1), role: 'user', text: body.message }, { id: String(messages.length + 2), role: 'assistant', text: '这是模拟回复，正式环境将由独立 DSH 会话生成。' }); send(res, 200, { messages, busy: false }); return; }
@@ -169,8 +158,6 @@ createServer(async (req, res) => {
     if (body.action === 'open_discussion') {
       if (!process.env.TEAMFLOW_PREVIEW_DISCUSSION) throw new Error('此开发预览不包含 DSH 原生会话，请在真实宿主中使用此入口。');
       if(body.fresh) {transcripts.delete(key);discussion.proposal=undefined;}
-      if(key==='adapt')discussion.proposal=proposeWorkflow(team,'统一本次任务',team.tasks.map(t=>({action:'update_task',id:t.id,layers:{general:t.layers.general,specific:{requirements:'算子 B：'+t.subject,deliverables:'算子 B 的成果',acceptance:'通过本次验证'}},adaptationIssue:'',confirmConfiguration:true})));
-      if(key==='template')discussion.templateDraft={base:workflowFingerprint(team),definition:{...sample,name:'可复用研发流程'}};
       discussion.native = { sessionId: `session-at-discussion-preview-${key}`, label: key };
     }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');

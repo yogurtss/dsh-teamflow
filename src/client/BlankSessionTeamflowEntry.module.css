@@ -1,2 +1,0 @@
-.entry { position: absolute; top: 12px; right: 72px; pointer-events: auto; -webkit-app-region: no-drag; }
-@media (max-width: 600px) { .entry { right: 56px; top: 10px; } }

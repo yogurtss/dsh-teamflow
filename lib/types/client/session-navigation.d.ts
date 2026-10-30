@@ -40,11 +40,3 @@ export declare function openWorkflowConversation(openMember: (parentId: SessionI
  * the Conversation panel and cancel catalog refreshes superseded by navigation.
  */
 export declare function openAgentTeamMember(sessions: AgentTeamsSessionNavigator, parentSessionId: SessionId, childSessionId: SessionId, layout?: AgentTeamsLayoutNavigator, workspace?: AgentTeamsWorkspaceNavigator): Promise<'subagent' | 'session' | 'cancelled'>;
-/** Blank sessions suppress the host's normal header actions. */
-export declare function blankTeamflowSession(state: Parameters<typeof currentSessionId>[0] & {
-    readonly byId: Readonly<Record<string, {
-        readonly id: SessionId;
-        readonly blank?: boolean;
-        readonly retainedBy?: Readonly<Record<string, number>>;
-    }>>;
-}, conversationVisible: boolean): SessionId | undefined;

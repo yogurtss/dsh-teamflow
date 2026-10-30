@@ -22,7 +22,6 @@ import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
-import { isTaskLayers } from './task-layers.ts'
 
 export {
   amendTaskContract,
@@ -770,7 +769,6 @@ function isFiniteNumber(value: unknown): value is number {
 
 /** Validate one member record at the durable JSON boundary. */
 function isTeamMember(value: unknown): value is TeamMember {
-  if (isRecord(value) && !isOptionalString(value['specificPrompt'])) return false
   if (!isRecord(value)) return false
   return typeof value['id'] === 'string'
     && typeof value['name'] === 'string'
@@ -854,8 +852,6 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
     // pass drops out-of-contract numeric sentinels such as `line: -1`
     // (issue #188), so an already-written bad record self-heals on read.
     const cleaned = normalizeBlankOptionalTaskFields(task)
-    // Old instance layers may contain only a delta; require explicit regeneration or review.
-    if (isTaskLayers(cleaned['layers']) && (cleaned['specificContractVersion'] !== 1 || cleaned['specificSourceGoal'] !== (value['description'] ?? '')) && cleaned['status'] === 'pending') cleaned['workflowConfigPending'] = true
     if (cleaned['profileSeedId'] !== undefined && (typeof cleaned['profileSeedId'] !== 'string' || cleaned['profileSeedId'].trim() === '')) {
       const next = { ...cleaned }
       delete next['profileSeedId']
@@ -1050,9 +1046,6 @@ function describeFindingDefect(finding: unknown): string | undefined {
 }
 export function isTeamTask(value: unknown): value is TeamTask {
   if (!isRecord(value)) return false
-  if (!isOptionalString(value['specificSourceGoal'])) return false
-  if (value['specificContractVersion'] !== undefined && value['specificContractVersion'] !== 1) return false
-  if(value['layers']!==undefined && !isTaskLayers(value['layers']) || !isOptionalString(value['adaptationIssue']))return false
   return typeof value['id'] === 'string'
     && (value['workflowRerunRequired'] === undefined || typeof value['workflowRerunRequired'] === 'boolean')
     && (value['workflowPaused'] === undefined || typeof value['workflowPaused'] === 'boolean')
