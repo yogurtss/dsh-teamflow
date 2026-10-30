@@ -84,7 +84,7 @@ for (const scenario of selectedScenarios) {
 `);
     }
     if (scenario === 'web-approval') {
-        writeFileSync(join(profile, 'cordis.patch.yml'), readFileSync(join(profile, 'cordis.patch.yml'), 'utf8') + '- id: agent-teams\n  config:\n    templateDirectory: ' + JSON.stringify(join(workspace, 'personal-templates')) + '\n');
+        writeFileSync(join(profile, 'cordis.patch.yml'), readFileSync(join(profile, 'cordis.patch.yml'), 'utf8') + '- id: teamflow\n  config:\n    templateDirectory: ' + JSON.stringify(join(workspace, 'personal-templates')) + '\n');
         copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/harness-workflow-case.mjs'), join(profile, 'harness-workflow-case.mjs'));
         copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/harness-runtime-web-approval.mjs'), join(profile, 'fixture-web-approval.mjs'));
         writeFileSync(join(profile, 'cordis.patch.yml'), readFileSync(join(profile, 'cordis.patch.yml'), 'utf8') + `- id: runtime-lab-fixture

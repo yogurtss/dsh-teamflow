@@ -86,3 +86,9 @@ export async function openAgentTeamMember(
   layout?.selectPanel?.(null)
   return 'subagent'
 }
+
+/** Blank sessions suppress the host's normal header actions. */
+export function blankTeamflowSession(state: Parameters<typeof currentSessionId>[0] & {readonly byId: Readonly<Record<string,{readonly id:SessionId;readonly blank?:boolean;readonly retainedBy?:Readonly<Record<string,number>>}>>}, conversationVisible:boolean):SessionId|undefined {
+  const id=currentSessionId(state)
+  return conversationVisible && id && state.byId[id]?.blank ? id : undefined
+}

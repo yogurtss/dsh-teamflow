@@ -4,12 +4,12 @@
 
 这是 [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) 开发分支，基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 扩展。让模型先讨论并建立团队，再由你调整成员职责、任务交接和人工验收节点。
 
-**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，本次大更新版本为 `0.2.0`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
+**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，本次大更新版本为 `0.2.1`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
 
 新对话可直接点击 **Teamflow → 流程模板库 Gallery**，不需要输入命令。也可使用 `/teamflow` 开始讨论；仅注册 `/teamflow` 和 `/teamflow-<profile>`，旧 `/agent-teams` 及其 profile 命令已移除。选择预设团队角色也可使用 `/teamflow --profile <名称> <目标>`。为读取原团队记录，`.agent-teams/` 数据目录、内部 `agent_teams_*` 工具和会话事件协议保持不变。历史报告中的旧名称及截图是当时的实测记录。
 
 
-## 0.2.0 · 个人流程模板库
+## 0.2.1 · 个人流程模板库
 
 打开对话即可从 Teamflow 入口进入醒目的卡片式 Gallery，搜索、按标签筛选、查看流程缩略图与通用要求，再填写本次需求并应用。不会先生成一次团队再覆盖。已有流程可通过「保存为模板」让 AI 提炼通用任务，检查后保存；支持编辑、复制、删除及独立版本。
 
@@ -313,3 +313,5 @@ pnpm verify
 流程结束或停在人工检查时，点击成员卡片，在右侧调整职责、PE、模型或 Thinking，在「单独重跑」中选择一个已结束任务，点击「保存成员并编辑重跑要求」，继续进入任务编辑。活动面板的成员快捷设置也提供此入口。Agent 将同时收到当前任务要求、上一轮提交结果和本次新增要求。任务 ID、连线不变，原有状态和提交结果保存在「历史执行记录」中，新一轮结果单独重新生成；原有验证证据不再作为本轮有效证据。所有直接和间接下游（包括已完成任务和人工检查）重置并挂起，无关分支保持不变。工作台顶部会列出待确认节点；上游完成后，点击节点，可修改要求，再「保存并确认执行」或「保存并确认重新验收」。下游不会自动恢复，旧审批不能沿用。受影响的运行任务须先停止。
 
 [查看覆盖重跑与下游确认的操作截图](./docs/rerun-2026-10-27/README.md)。
+
+0.2.1 修复 Web 空白新会话入口，详见 [补丁说明](./release-notes/v0.2.1.md) 和 [本地真实 Web 实测](./docs/web-entry-fix-2026-10-30/README.md)。
