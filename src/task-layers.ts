@@ -32,3 +32,12 @@ export function layersFromDraft(draft: Record<string,string>): TaskLayers {
   return {general:{requirements:draft['generalRequirements'] ?? '',deliverables:draft['generalDeliverables'] ?? '',acceptance:draft['generalAcceptance'] ?? ''},
     specific:{requirements:draft['description'] ?? '',deliverables:draft['specificDeliverables'] ?? '',acceptance:draft['specificAcceptance'] ?? ''}}
 }
+
+/** New model-authored nodes must contain a reusable and an instance contract. */
+export function requireGeneratedTaskLayers(operations:import('./workflow-types.ts').WorkflowOperation[]):void {
+  for(const op of operations)if(op.action==='add_task'){
+    if(!op.layers || !op.layers.general.requirements.trim() || !op.layers.specific.requirements.trim())throw new Error('新建任务必须提供 layers.general 和 layers.specific，各含 requirements、deliverables、acceptance 三个字符串；两层 requirements 均不能为空。不要将分层标题写入 description。')
+  }
+}
+const briefParameter = {type:'object',additionalProperties:false,properties:{requirements:{type:'string',required:true},deliverables:{type:'string',required:true},acceptance:{type:'string',required:true}}} as const
+export const taskLayersParameter = {type:'object',description:'Generate both layers when creating tasks: general is the reusable method and quality constraints; specific is the current project goal, paths and parameters. Each has requirements, deliverables, acceptance strings. Do not duplicate layers in description.',additionalProperties:false,properties:{general:{...briefParameter,required:true},specific:{...briefParameter,required:true}}} as const

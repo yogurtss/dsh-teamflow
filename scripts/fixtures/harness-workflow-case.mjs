@@ -112,6 +112,8 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   assert.equal(result.team.members.length, 0, 'Automatic planning remains a proposal until confirmed');
   result = await post('apply', { proposalId: result.team.workflow.discussions['discussion:graph'].proposal.id });
   assert.equal(result.team.members.length, 1); assert.equal(result.team.tasks.length, 1); assert.equal(result.team.phase, 'staged');
+  assert.ok(result.team.tasks[0].layers.general.requirements, 'First planning fills the reusable layer');
+  assert.equal(result.team.tasks[0].layers.specific.requirements, 'Implement operator A');
   const nativeId = result.team.workflow.discussions['discussion:graph'].native.sessionId;
   writeFileSync('workflow-resume.json', JSON.stringify({ teamId: activeTeam, captainId: activeSession, nativeId }));
   await ctx.sessions.flush(automatic.agent.session);

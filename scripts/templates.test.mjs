@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parseTemplate, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from '../lib/template-store.js'
-import { taskText, emptyBrief, taskNeedsConfiguration } from '../lib/task-layers.js'
+import { resolveTeamProfile } from '../lib/profiles.js'
+import { taskText, emptyBrief, taskNeedsConfiguration, requireGeneratedTaskLayers } from '../lib/task-layers.js'
 import { applyWorkflowOperations, workflowFingerprint, checkpointReady } from '../lib/workflow.js'
 import { isTeamTask, createTeamDir, readTeam } from '../lib/state.js'
 import { installWorkflowWorkbench } from '../lib/workflow-runtime.js'
@@ -94,4 +95,23 @@ test('authenticated workflow handler applies templates once and leaves the sourc
   assert.equal((await call('template_apply',{templateId:template.id,version:1,name:'duplicate',description:'B'})).status,409)
   assert.equal(await readFile(join(state,'source','team.json'),'utf8'),before);assert.ok(await readTeam(state,result.team.id))
   const renamed=structuredClone(result.team);renamed.description='new target';assert.notEqual(workflowFingerprint(renamed),result.base)
+})
+
+
+test('first model-authored nodes require both layers while legacy operations remain compatible',()=>{
+  const op={action:'add_task',subject:'Implement',dependencies:[]}
+  assert.throws(()=>requireGeneratedTaskLayers([op]),/layers/)
+  assert.throws(()=>requireGeneratedTaskLayers([{...op,layers:{general:emptyBrief(),specific:general}}]),/layers/)
+  const layers={general,specific:{requirements:'Implement B',deliverables:'B.cpp',acceptance:'B tests'}}
+  assert.doesNotThrow(()=>requireGeneratedTaskLayers([{...op,layers}]))
+  assert.doesNotThrow(()=>requireGeneratedTaskLayers([{action:'update_task',id:'t1',description:'legacy'}]))
+  const fields=reviewFields(team(),{...op,layers,description:taskText({layers})}).fields
+  assert.ok(!fields.some(f=>f.key==='description'))
+  assert.equal(fields.filter(f=>f.key.startsWith('layers.')).length,6)
+})
+
+test('inline plans normalize layered contracts and keep old profiles readable',()=>{
+  const layers={general,specific:{requirements:'Implement B',deliverables:'B.cpp',acceptance:'B tests'}}
+  const profile=resolveTeamProfile({demo:{members:[{name:'worker'}],tasks:[{id:'build',subject:'Build',assignee:'worker',layers}]}},'demo',8)
+  assert.deepEqual(profile.tasks[0].layers,layers)
 })

@@ -21,7 +21,7 @@ export function ProposalReview({ team, proposal, base, busy, onApply, onDismiss,
   const missingRerunInstructions = effective.some(operation => operation.action === 'rerun_task' && !operation.instructions?.trim())
   const edited = JSON.stringify(operations) !== JSON.stringify(proposal.operations) || included.some(value => !value)
   return <section className={css.review} aria-label="审批修改对照">
-    <header><strong>{proposal.title}</strong><p>绿色 + 新增 · 红色 − 删除 · = 相同。可直接编辑「之后」，确认后生效。</p></header>
+    <header><strong>待确认修改 · {proposal.title}</strong><p>绿色 + 新增 · 红色 − 删除 · = 相同。可直接编辑「之后」，确认后生效。</p></header>
     <div className={css.actions}><button type="button" className={css.apply} disabled={busy || stale || missingRerunInstructions || effective.length === 0} onClick={() => onApply(effective)}>{edited ? '确认应用编辑后的内容' : '确认应用'}</button><button type="button" disabled={busy} onClick={onDismiss}>放弃修改</button>{edited && <button type="button" disabled={busy} onClick={() => onChange({ operations: structuredClone(proposal.operations), included: proposal.operations.map(() => true) })}>恢复 AI 建议</button>}</div>
     {missingRerunInstructions && <p role="alert">请在「本次要求」中填写重跑的新要求后再确认。</p>}
     {stale && <p role="alert">团队已变化，此提案已过期。请与 AI 重新确认，避免覆盖新结果。</p>}

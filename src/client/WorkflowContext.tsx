@@ -5,9 +5,9 @@ import { taskReadiness } from './task-readiness.ts'
 import { TaskLayersView } from './TaskLayersEditor.tsx'
 
 
-export function TaskRecord({ task, team, expanded = false }: { task: TeamTask; team: TeamState; expanded?: boolean }) {
-  return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{task.subject} · {taskReadiness(team,task).label}</summary>
-    {task.layers?<TaskLayersView layers={task.layers} issue={task.adaptationIssue}/>:<p>{task.description || '未单独填写任务说明'}</p>}
+export function TaskRecord({ task, team, expanded = false, showContract = true }: { task: TeamTask; team: TeamState; expanded?: boolean; showContract?: boolean }) {
+  return <details className={css.contextTask} open={expanded || task.status === 'in_progress'}><summary>{!showContract && '执行记录 · '}{task.subject} · {taskReadiness(team,task).label}</summary>
+    {showContract && (task.layers?<TaskLayersView layers={task.layers} issue={task.adaptationIssue}/>:<p>{task.description || '未单独填写任务说明'}</p>)}
     {task.workflowRerunContext && <details><summary>本轮重跑依据</summary><p><strong>上一轮结果：</strong>{task.workflowRerunContext.previousOutput || '上一轮未提交结果'}</p><p><strong>本轮新增要求：</strong>{task.workflowRerunContext.instructions}</p></details>}
     {task.workflowRerunRequired && <p><strong>{taskReadiness(team,task).label}：</strong>{taskReadiness(team,task).detail}</p>}
     <p><strong>输入来自：</strong>{task.dependencies.map(id => team.tasks.find(t => t.id === id)?.subject ?? id).join('、') || '无前置任务'}</p>

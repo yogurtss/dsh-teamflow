@@ -10,6 +10,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import { type TaskLayers } from './task-layers.ts';
 import { type MemberToolPolicy } from './tool-policies.ts';
 import type { ArtifactSnapshot } from './types.ts';
 import { type TeamState, type TeamTask } from './types.ts';
@@ -54,12 +55,14 @@ export type StagedPlanMutation = {
     action: 'update_task';
     taskId: string;
     subject: string;
+    layers?: TaskLayers;
     description?: string | null;
     assignee?: string | null;
     dependencies: string[];
 } | {
     action: 'add_task';
     subject: string;
+    layers?: TaskLayers;
     description?: string | null;
     assignee?: string | null;
     dependencies: string[];

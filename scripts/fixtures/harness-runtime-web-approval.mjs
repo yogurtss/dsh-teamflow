@@ -71,7 +71,7 @@ class WebApprovalAdapter extends LlmAdapter {
             const operations = context.discussion === 'adapt' ? context.team.tasks.map(t => ({action:'update_task',id:t.id,layers:{general:t.layers.general,specific:{requirements:'Implement operator B',deliverables:'B implementation',acceptance:'B correctness'}},adaptationIssue:'',confirmConfiguration:true})) : context.discussion === 'member:worker' ? [{ action: 'update_member', name: 'worker', summary: '负责实现与自测，交付验证证据' }]
                 : context.discussion === 'graph' && context.team.members.length === 0 ? [
                     { action: 'add_member', name: 'worker', summary: '讨论规划的执行成员', role: 'WEB_APPROVAL_MEMBER' },
-                    { action: 'add_task', id: 't1', subject: '讨论规划任务', assignee: 'worker', dependencies: [] },
+                    { action: 'add_task', id: 't1', subject: '讨论规划任务', layers: { general: { requirements: 'Implement the requested operator against its specification', deliverables: 'Implementation and verification evidence', acceptance: 'Pass independent correctness checks' }, specific: { requirements: 'Implement operator A', deliverables: 'A implementation', acceptance: 'A correctness' } }, assignee: 'worker', dependencies: [] },
                   ] : [];
             if (operations.length && !turnCalls.some(c => c.name === 'agent_teams_workflow_propose')) { yield* call('agent_teams_workflow_propose', { base: context.base, title: '原生讨论配置方案', operations: JSON.stringify(operations) }); return; }
             yield* textChunks('已整理方案与材料，请在编排画布中查看并确认。');

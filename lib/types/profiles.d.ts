@@ -8,6 +8,7 @@
  *
  * @module dsh-agent-teams/profiles
  */
+import { type TaskLayers } from './task-layers.ts';
 /** Hard cap on named profiles so the usage prompt cannot grow without bound. */
 export declare const MAX_TEAM_PROFILES = 16;
 /** Hard cap on seed tasks per profile. The software-delivery example has 13. */
@@ -39,6 +40,7 @@ export interface TeamProfileTaskConfig {
     id: string;
     subject: string;
     description?: string;
+    layers?: TaskLayers;
     assignee?: string;
     dependencies?: string[];
 }
@@ -75,6 +77,7 @@ export interface NormalizedProfileTask {
     id: string;
     subject: string;
     description?: string;
+    layers?: TaskLayers;
     assignee?: string;
     dependencies: string[];
     sourceIndex: number;

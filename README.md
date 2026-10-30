@@ -4,7 +4,7 @@ English · [简体中文](./README_ZH.md)
 
 This is the [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) development fork of [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams). Discuss a goal, form an initial team, then adjust member instructions, task handoffs and human checkpoints.
 
-**Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the new major feature release is `0.2.1`. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
+**Install this fork from GitHub or a local build.** Its new package name is `@yogurtss/dsh-teamflow`; the new major feature release is `0.2.2`. It is not published to npm. The upstream package is `@nanmicoder/dsh-agent-teams`.
 
 Click **团队与流程** at the top of the TeamFlow activity panel or team page to open the workbench. The button shows pending changes and human reviews; completed and archived teams also open the full canvas, including task requirements, results and verification records.
 
@@ -13,7 +13,7 @@ Human checkpoints require opening their evidence and clicking **通过验收** o
 Use `/teamflow` to start. Only `/teamflow` and `/teamflow-<profile>` commands are registered; the old `/agent-teams` command and its profile aliases have been removed. Use `/teamflow --profile <name> <goal>` to select a profile explicitly. The `.agent-teams/` data directory, internal `agent_teams_*` tools and session event protocol remain unchanged to preserve existing records. Historical reports retain the names and screenshots captured at the time.
 
 
-## 0.2.1 · Personal workflow Gallery
+## 0.2.2 · Personal workflow Gallery
 
 Open **Teamflow → 流程模板库 Gallery** directly from a chat, without a slash command. Browse searchable cards with tags and graph previews, inspect generic requirements, then apply a template to the current goal. Save an existing workflow through an editable AI extraction draft; edit, duplicate, delete, or save a new immutable version.
 
@@ -317,4 +317,6 @@ Discuss, review, and apply member proposals in the TeamFlow workbench alongside 
 
 Proposal approval includes before/after fields and line diffs. Edit the proposed values inline or skip an operation, then apply the final version. The original AI suggestion is retained in the applied history. See the [walkthrough](docs/editable-approval-2026-10-27/README.md).
 
-0.2.1 fixes the blank Web conversation entry. See [patch notes](./release-notes/v0.2.1.md) and [local Web verification](./docs/web-entry-fix-2026-10-30/README.md).
+The previous patch fixes the blank Web conversation entry. See [patch notes](./release-notes/v0.2.1.md) and [local Web verification](./docs/web-entry-fix-2026-10-30/README.md).
+
+New tasks now generate reusable and specific layers together; duplicate contract display is removed. See [patch notes](./release-notes/v0.2.2.md).

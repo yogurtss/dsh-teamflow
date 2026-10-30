@@ -18,7 +18,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
-import { taskNeedsConfiguration } from './task-layers.ts'
+import { taskNeedsConfiguration, parseLayers, taskText, taskLayersParameter, type TaskLayers } from './task-layers.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import {
   amendTaskContract,
@@ -138,6 +138,7 @@ export type StagedPlanMutation =
       action: 'update_task'
       taskId: string
       subject: string
+      layers?: TaskLayers
       description?: string | null
       assignee?: string | null
       dependencies: string[]
@@ -145,6 +146,7 @@ export type StagedPlanMutation =
   | {
       action: 'add_task'
       subject: string
+      layers?: TaskLayers
       description?: string | null
       assignee?: string | null
       dependencies: string[]
@@ -766,7 +768,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           }
         } else if (mutation.action === 'update_task') {
           const task = requireTask(fresh, mutation.taskId)
-          if(task.layers)throw new Error('分层任务请在 Teamflow 画布中编辑通用层和本次层')
+          if (task.layers && mutation.layers === undefined && mutation.description !== task.description) throw new Error('分层任务请通过 layers 修改通用层和本次层')
           if (task.status !== 'pending' || (task.attempt ?? 0) !== 0 || task.reassigning === true) {
             throw new Error(`task "${task.id}" has already started and cannot be edited`)
           }
@@ -774,7 +776,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           const subject = mutation.subject.trim()
           if (subject === '') throw new Error('task subject must not be empty')
           task.subject = subject
-          task.description = trimmedOptional(mutation.description)
+          if (mutation.layers !== undefined) task.layers = parseLayers(mutation.layers)
+          task.description = taskText({ layers: task.layers, description: trimmedOptional(mutation.description) })
+          if (mutation.layers !== undefined && task.layers) task.workflowConfigPending = !task.layers.general.requirements || !task.layers.specific.requirements
           task.assignee = trimmedOptional(mutation.assignee)
           task.dependencies = [...new Set(mutation.dependencies.map((item) => item.trim()).filter(Boolean))]
           task.updatedAt = Date.now()
@@ -786,7 +790,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           fresh.tasks.push({
             id: `t${fresh.taskSeq}`,
             subject,
-            description: trimmedOptional(mutation.description),
+            description: taskText({ layers: mutation.layers, description: trimmedOptional(mutation.description) }),
+            ...(mutation.layers ? { layers: parseLayers(mutation.layers), workflowConfigPending: taskNeedsConfiguration({ layers: mutation.layers }) } : {}),
             status: 'pending',
             assignee: trimmedOptional(mutation.assignee),
             dependencies: [...new Set(mutation.dependencies.map((item) => item.trim()).filter(Boolean))],
@@ -969,7 +974,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           } } },
           tasks: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
             id: { type: 'string', required: true, description: 'Local reference used by dependencies in this plan; the result maps it to a durable task id.' },
-            subject: { type: 'string', required: true }, description: { type: 'string' }, assignee: { type: 'string' },
+            subject: { type: 'string', required: true }, layers: taskLayersParameter, description: { type: 'string' }, assignee: { type: 'string' },
             dependencies: { type: 'array', items: { type: 'string' } },
           } } },
         },
@@ -1183,7 +1188,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             member_name: { type: 'string', description: 'Member name for update_member or remove_member.' },
             task_id: { type: 'string', description: 'Task id for update_task or remove_task.' },
             subject: { type: 'string', description: 'Required for add_task; optional replacement for update_task.' },
-            description: { type: 'string', description: 'Optional task description.' },
+            layers: taskLayersParameter,
+            description: { type: 'string', description: 'Legacy single-layer task description.' },
             assignee: { type: 'string', description: 'Optional task assignee; an empty string moves it to the shared pool.' },
             dependencies: { type: 'array', items: { type: 'string' }, description: 'Complete replacement dependency list for a task.' },
             role: { type: 'string', description: 'Optional member role.' },
@@ -1249,6 +1255,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             taskId,
             subject: operation.subject ?? task.subject,
             description: operation.description ?? task.description,
+            layers: operation.layers === undefined ? undefined : parseLayers(operation.layers),
             assignee: operation.assignee ?? task.assignee,
             dependencies: operation.dependencies ?? task.dependencies,
           }
@@ -1260,6 +1267,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             action: 'add_task',
             subject,
             description: operation.description,
+            layers: operation.layers === undefined ? undefined : parseLayers(operation.layers),
             assignee: operation.assignee,
             dependencies: operation.dependencies ?? [],
           }
@@ -1489,7 +1497,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     description: 'Create a task in your team\'s task list. Use kind=work (default) for research, repository audits and general tasks. kind=review is only a quality gate for an existing implementation/repair task via reviewedTaskId. Every call must include a non-empty subject, including verification and review tasks. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working.',
     parameters: {
       subject: { type: 'string', required: true, description: 'Required non-empty title for this task. Never omit it, including for verification or review tasks.' },
-      description: { type: 'string', description: 'What needs to be done, in detail.' },
+      layers: taskLayersParameter,
+      description: { type: 'string', description: 'Legacy single-layer task description.' },
       dependencies: {
         type: 'array',
         items: { type: 'string' },
@@ -1596,7 +1605,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         const task: TeamTask = {
           id: `t${fresh.taskSeq + 1}`,
           subject: args.subject,
-          description: args.description,
+          description: taskText({ description: args.description, layers: args.layers === undefined ? undefined : parseLayers(args.layers) }),
+          ...(args.layers === undefined ? {} : { layers: parseLayers(args.layers), workflowConfigPending: taskNeedsConfiguration({ layers: parseLayers(args.layers) }) }),
           status: 'pending',
           assignee: args.assignee,
           dependencies,
@@ -2677,7 +2687,8 @@ async function initializeProfileTeam(input: {
       id: `t${index + 1}`,
       profileSeedId: template.id,
       subject: template.subject,
-      description: template.description,
+      description: taskText(template),
+      ...(template.layers ? { layers: template.layers, workflowConfigPending: taskNeedsConfiguration(template) } : {}),
       status: 'pending' as const,
       assignee: template.assignee,
       dependencies: template.dependencies.map((dependency) => seedToActual.get(dependency) ?? dependency),
