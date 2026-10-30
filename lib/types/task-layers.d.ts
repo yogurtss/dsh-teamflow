@@ -12,6 +12,7 @@ export declare function taskNeedsConfiguration(task: {
     workflowConfigPending?: boolean;
     adaptationIssue?: string;
     layers?: TaskLayers;
+    specificContractVersion?: number;
 }): boolean;
 export declare const emptyBrief: () => TaskBrief;
 export declare function isTaskBrief(value: unknown): value is TaskBrief;
@@ -28,7 +29,7 @@ export declare function layersFromDraft(draft: Record<string, string>): TaskLaye
 export declare function requireGeneratedTaskLayers(operations: import('./workflow-types.ts').WorkflowOperation[]): void;
 export declare const taskLayersParameter: {
     readonly type: "object";
-    readonly description: "Generate both layers when creating tasks: general is the reusable method and quality constraints; specific is the current project goal, paths and parameters. Each has requirements, deliverables, acceptance strings. Do not duplicate layers in description.";
+    readonly description: "Generate both layers when creating tasks: general is the reusable method and quality constraints; specific is the COMPLETE standalone execution contract, concretizing every general method, deliverable and acceptance constraint for the current goal, paths and parameters. Executors see only specific, never general; do not use references such as follow the general requirements. Each has requirements, deliverables, acceptance strings. Do not duplicate layers in description.";
     readonly additionalProperties: false;
     readonly properties: {
         readonly general: {

@@ -133,7 +133,9 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   result = await post('apply',{discussion:splitKey,proposalId:splitProposal.id});
   const converted = result.team.tasks.find(t=>t.id===legacy.id);
   assert.equal(result.team.tasks.length,2);assert.equal(converted.subject,legacy.subject);assert.equal(converted.status,legacy.status);assert.equal(converted.attempt,legacy.attempt);assert.deepEqual(converted.dependencies,legacy.dependencies);
-  assert.equal(converted.description.split('通用任务：').length-1,1);
+  assert.equal(converted.description.split('通用任务：').length-1,0);
+  assert.ok(converted.description.includes(converted.layers.specific.requirements));
+  assert.equal(converted.specificContractVersion,1);
   assert.equal(converted.workflowConfigPending,legacy.workflowConfigPending,'Approval must not add a second save requirement');
   record({event:'workflow-split-passed',snapshot:{layers:converted.layers,subject:converted.subject,status:converted.status,attempt:converted.attempt,taskCount:result.team.tasks.length}});
   await post('apply',{discussion:splitKey,proposalId:splitProposal.id},409);
@@ -155,7 +157,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   assert.ok(result.team.tasks.every(t=>t.layers.specific.requirements===''),'Generation stays a proposal');
   const adapted=result.team.workflow.discussions['discussion:adapt'].proposal;
   result=await post('apply',{discussion:'adapt',proposalId:adapted.id});
-  assert.ok(result.team.tasks.every(t=>!t.workflowConfigPending && t.layers.specific.requirements==='Implement operator B'));
+  assert.ok(result.team.tasks.every(t=>!t.workflowConfigPending && t.layers.specific.requirements==='Implement operator B according to confirmed specifications'));
   assert.ok(result.team.members.every(m=>!m.id),'Applying a proposal must not execute staged tasks');
   const generic=result.team.tasks[0].layers.general.requirements;
   const v2=await post('template_save',{definition:{...saved.template,name:'Updated template'},templateId:saved.template.id,version:1});

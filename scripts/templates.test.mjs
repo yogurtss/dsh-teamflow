@@ -48,7 +48,7 @@ test('unified adaptation preserves all nodes, members and generic requirements',
   const changed=structuredClone(ops);changed[0].layers.general.requirements='skip tests';assert.throws(()=>validateAdaptation(current,changed),/通用/)
   const ready=applyWorkflowOperations(current,ops);assert.ok(ready.tasks.every(t=>!taskNeedsConfiguration(t)))
   const cleared=structuredClone(ready.tasks[0].layers);cleared.specific.requirements='';const incomplete=applyWorkflowOperations(ready,[{action:'update_task',id:'t1',layers:cleared}]);assert.equal(incomplete.tasks[0].workflowConfigPending,true);
-  assert.match(taskText(ready.tasks[0]),/通用任务/);assert.match(taskText(ready.tasks[0]),/算子 B/)
+  assert.ok(!taskText(ready.tasks[0]).includes('通用任务'));assert.match(taskText(ready.tasks[0]),/算子 B/)
 })
 test('non-applicable nodes stay blocked; explicit resolution and changed generic layer require confirmation',()=>{
   let current=team(),ops=adaptation(current);ops[0].adaptationIssue='当前项目没有 GPU';ops[0].confirmConfiguration=false
@@ -126,4 +126,32 @@ test('one-click split permits only replacing the same editable task layers',()=>
  assert.doesNotThrow(()=>validateTaskSplit(source.id,[op]))
  for(const ops of [[{...op,id:'different'}],[{...op,action:'add_task'}],[{...op,subject:'rename'}],[{...op,confirmConfiguration:true}],[op,op]])assert.throws(()=>validateTaskSplit(source.id,ops),/只能/)
  assert.throws(()=>validateTaskSplit(source.id,[{...op,layers:{general:emptyBrief(),specific:general}}]),/同时填写/)
+})
+
+test('execution renders only the standalone specific layer and legacy layers require confirmation',()=>{
+ const legacy={layers:{general:{requirements:'GENERAL_ONLY_SENTINEL',deliverables:'Reusable outputs',acceptance:'Reusable gate'},specific:{requirements:'Implement B using confirmed spec',deliverables:'B.cpp and tests',acceptance:'Independent B checks'}},description:'stale combined description'}
+ assert.ok(taskNeedsConfiguration(legacy))
+ const task={...legacy,specificContractVersion:1}
+ assert.equal(taskNeedsConfiguration(task),false)
+ assert.equal(taskText(task),'Implement B using confirmed spec\n\n交付物：\nB.cpp and tests\n\n验收要求：\nIndependent B checks')
+ assert.ok(!taskText(task).includes('GENERAL_ONLY_SENTINEL'))
+ assert.equal(taskText({description:'Legacy single task'}),'Legacy single task')
+ const portable=templateSeed({...team(),tasks:[{...team().tasks[0],...task}]})
+ assert.equal(portable.tasks[0].general.requirements,'GENERAL_ONLY_SENTINEL')
+ assert.ok(!JSON.stringify(portable).includes('B.cpp'))
+})
+
+test('saved old contracts and changed team goals require explicit review before execution',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'specific-migration-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ let current=applyWorkflowOperations(team(),adaptation(team()))
+ await createTeamDir(root,current)
+ assert.ok(!(await readTeam(root,current.id)).tasks[0].workflowConfigPending)
+ current.description='A different target'
+ await writeFile(join(root,current.id,'team.json'),JSON.stringify(current))
+ let loaded=await readTeam(root,current.id);assert.ok(loaded.tasks.every(task=>task.workflowConfigPending))
+ loaded=applyWorkflowOperations(loaded,loaded.tasks.map(task=>({action:'update_task',id:task.id,confirmConfiguration:true})))
+ assert.ok(loaded.tasks.every(task=>task.specificSourceGoal==='A different target' && !taskNeedsConfiguration(task)))
+ delete loaded.tasks[0].specificContractVersion
+ await writeFile(join(root,current.id,'team.json'),JSON.stringify(loaded))
+ assert.ok((await readTeam(root,current.id)).tasks[0].workflowConfigPending)
 })

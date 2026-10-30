@@ -6,9 +6,9 @@
       "acceptance": "Independent correctness checks"
     },
     "specific": {
-      "requirements": "Implement operator B",
-      "deliverables": "B implementation",
-      "acceptance": "B correctness"
+      "requirements": "Implement operator B according to confirmed specifications",
+      "deliverables": "B implementation and verification evidence",
+      "acceptance": "Independent B correctness checks"
     }
   },
   "sourceVersion": 1,

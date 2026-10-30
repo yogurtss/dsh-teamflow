@@ -432,7 +432,7 @@ function memberOpenTask(team: TeamState, memberName: string, exceptTaskId?: stri
 }
 
 function taskDetails(team: TeamState, task: TeamTask): string {
-  return [task.subject, task.description ?? '',
+  return [task.subject, taskText(task),
     `Kind: ${task.kind ?? 'work'}`,
     `Objective: ${task.objective ?? ''}`,
     `In scope: ${(task.inScope ?? []).join(', ')}; Out of scope: ${(task.outOfScope ?? []).join(', ')}`,
@@ -776,7 +776,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           const subject = mutation.subject.trim()
           if (subject === '') throw new Error('task subject must not be empty')
           task.subject = subject
-          if (mutation.layers !== undefined) task.layers = parseLayers(mutation.layers)
+          if (mutation.layers !== undefined) { task.layers = parseLayers(mutation.layers); task.specificContractVersion = 1; task.specificSourceGoal = fresh.description ?? '' }
           task.description = taskText({ layers: task.layers, description: trimmedOptional(mutation.description) })
           if (mutation.layers !== undefined && task.layers) task.workflowConfigPending = !task.layers.general.requirements || !task.layers.specific.requirements
           task.assignee = trimmedOptional(mutation.assignee)
@@ -791,7 +791,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             id: `t${fresh.taskSeq}`,
             subject,
             description: taskText({ layers: mutation.layers, description: trimmedOptional(mutation.description) }),
-            ...(mutation.layers ? { layers: parseLayers(mutation.layers), workflowConfigPending: taskNeedsConfiguration({ layers: mutation.layers }) } : {}),
+            ...(mutation.layers ? { layers: parseLayers(mutation.layers), specificContractVersion: 1, specificSourceGoal: fresh.description ?? '', workflowConfigPending: taskNeedsConfiguration({ layers: mutation.layers, specificContractVersion:1 }) } : {}),
             status: 'pending',
             assignee: trimmedOptional(mutation.assignee),
             dependencies: [...new Set(mutation.dependencies.map((item) => item.trim()).filter(Boolean))],
@@ -1606,7 +1606,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           id: `t${fresh.taskSeq + 1}`,
           subject: args.subject,
           description: taskText({ description: args.description, layers: args.layers === undefined ? undefined : parseLayers(args.layers) }),
-          ...(args.layers === undefined ? {} : { layers: parseLayers(args.layers), workflowConfigPending: taskNeedsConfiguration({ layers: parseLayers(args.layers) }) }),
+          ...(args.layers === undefined ? {} : { layers: parseLayers(args.layers), specificContractVersion: 1, specificSourceGoal: fresh.description ?? '', workflowConfigPending: taskNeedsConfiguration({ layers: parseLayers(args.layers), specificContractVersion:1 }) }),
           status: 'pending',
           assignee: args.assignee,
           dependencies,
@@ -2688,7 +2688,7 @@ async function initializeProfileTeam(input: {
       profileSeedId: template.id,
       subject: template.subject,
       description: taskText(template),
-      ...(template.layers ? { layers: template.layers, workflowConfigPending: taskNeedsConfiguration(template) } : {}),
+      ...(template.layers ? { layers: template.layers, specificContractVersion: 1 as const, specificSourceGoal: input.description ?? '', workflowConfigPending: taskNeedsConfiguration({...template,specificContractVersion:1}) } : {}),
       status: 'pending' as const,
       assignee: template.assignee,
       dependencies: template.dependencies.map((dependency) => seedToActual.get(dependency) ?? dependency),

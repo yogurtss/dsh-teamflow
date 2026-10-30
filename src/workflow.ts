@@ -71,11 +71,13 @@ function editable(task: TeamTask, reconnectRejected = false): void {
     throw new Error(`任务 ${task.id} 已开始；请先停止该任务，已结束任务请使用修改并重跑`)
   }
 }
-function updateLayers(task:TeamTask, op:{description?:string;layers?:import('./task-layers.ts').TaskLayers;adaptationIssue?:string}):void {
+function updateLayers(task:TeamTask, op:{description?:string;layers?:import('./task-layers.ts').TaskLayers;adaptationIssue?:string}, goal?:string):void {
   if(op.layers){
     const layers=parseLayers(op.layers)
     if(JSON.stringify(layers.general)!==JSON.stringify(task.layers?.general))task.workflowConfigPending=true
     task.layers=layers
+    task.specificContractVersion=1
+    task.specificSourceGoal=goal ?? ''
   }else if(op.description!==undefined && task.layers){
     // Legacy task editors edit only the instance requirements; they cannot erase the generic contract.
     task.layers.specific.requirements=op.description
@@ -158,9 +160,9 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         team.taskSeq = Math.max(team.taskSeq, sequence)
       }
       team.tasks.push({ id, subject: op.subject, description: op.description, assignee: op.checkpoint ? undefined : op.assignee || undefined,
-        ...op.layers ? {layers:parseLayers(op.layers),description:taskText({layers:op.layers})} : {},
+        ...op.layers ? {layers:parseLayers(op.layers),specificContractVersion:1,specificSourceGoal:team.description??'',description:taskText({layers:op.layers})} : {},
         dependencies: op.dependencies, kind: 'work', status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
-        ...op.configurationPending || taskNeedsConfiguration({layers:op.layers}) ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
+        ...op.configurationPending || taskNeedsConfiguration({layers:op.layers,specificContractVersion:1}) ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
         ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
       const task = taskOf(team, op.id)
@@ -171,15 +173,17 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         && !!op.dependencies?.some(id => !task.dependencies.includes(id))
         && op.subject === undefined && op.description === undefined && op.layers === undefined && op.adaptationIssue === undefined && op.assignee === undefined && !op.confirmConfiguration
       editable(task, reconnectRejected)
+      if (op.subject !== undefined && op.subject !== task.subject && task.layers) task.workflowConfigPending = true
       if (op.subject !== undefined) task.subject = op.subject
       if (op.description !== undefined) task.description = op.description
-      updateLayers(task,op)
+      updateLayers(task,op,team.description)
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
       if (op.dependencies !== undefined) task.dependencies = op.dependencies
       if (op.confirmConfiguration && task.workflowConfigPending) {
         if(task.adaptationIssue?.trim())throw new Error('请先处理适配问题，并明确清除问题说明')
         if(task.layers && (!task.layers.general.requirements.trim() || !task.layers.specific.requirements.trim()))throw new Error('请填写通用任务和本次任务要求')
         if (!task.subject.trim() || !task.description?.trim()) throw new Error(`请填写 ${task.subject} 的名称与任务／验收要求，再完成配置`)
+        if (task.layers) { task.specificContractVersion = 1; task.specificSourceGoal = team.description ?? '' }
         task.workflowConfigPending = false
         if (team.phase === 'staged') task.workflowPaused = false
       }
@@ -197,9 +201,10 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (original.checkpoint || !['completed', 'failed', 'cancelled'].includes(original.status)) throw new Error('只能重跑已结束的执行任务')
       if (op.subject !== undefined) original.subject = op.subject
       if (op.description !== undefined) original.description = op.description
-      updateLayers(original,op)
+      updateLayers(original,op,team.description)
       if(original.adaptationIssue?.trim())throw new Error('请先处理适配问题')
       if(original.layers && (!original.layers.general.requirements.trim() || !original.layers.specific.requirements.trim()))throw new Error('请填写通用任务和本次任务要求')
+      if (original.layers) { original.specificContractVersion=1; original.specificSourceGoal=team.description ?? '' }
       original.workflowConfigPending=false
       if (op.assignee !== undefined) original.assignee = op.assignee || undefined
       const owner = team.members.find(member => member.name === original.assignee && member.status !== 'removed')
@@ -236,7 +241,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         const id = nextTaskId(team); mapping.set(task.id, id)
         team.tasks.push({ id, subject: `${task.subject} · 返工 ${gate.checkpoint.round + 1}`,
           description: `${task.description ?? ''}\n\n返工要求：${op.instructions}`, assignee: task.assignee,
-          ...task.layers?{layers:{general:structuredClone(task.layers.general),specific:{...task.layers.specific,requirements:`${task.layers.specific.requirements}\n\n返工要求：${op.instructions}`}},adaptationIssue:task.adaptationIssue,workflowConfigPending:taskNeedsConfiguration(task)}:{},
+          ...task.layers?{specificContractVersion:task.specificContractVersion,specificSourceGoal:task.specificSourceGoal,layers:{general:structuredClone(task.layers.general),specific:{...task.layers.specific,requirements:`${task.layers.specific.requirements}\n\n返工要求：${op.instructions}`}},adaptationIssue:task.adaptationIssue,workflowConfigPending:taskNeedsConfiguration(task)}:{},
           dependencies: task.dependencies.map(dep => mapping.get(dep) ?? dep), kind: task.kind,
           objective: task.objective, acceptance: task.acceptance, inScope: task.inScope, outOfScope: task.outOfScope, verify: task.verify,
           deliverables: task.deliverables, nonGoals: task.nonGoals, coverageOf: task.coverageOf, round: task.round,

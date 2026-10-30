@@ -6,9 +6,9 @@
       "acceptance": "Pass correctness checks"
     },
     "specific": {
-      "requirements": "Implement operator C in C.cpp",
-      "deliverables": "C.cpp",
-      "acceptance": "Error below 0.001"
+      "requirements": "Implement operator C in C.cpp against confirmed specifications",
+      "deliverables": "C.cpp and tests",
+      "acceptance": "Pass correctness checks with error below 0.001"
     }
   },
   "subject": "Legacy operator C",

@@ -163,6 +163,10 @@ export interface TaskEvidence {
 export interface TeamTask {
   /** Generic method and the requirements of this particular run. */
   layers?: import('./task-layers.ts').TaskLayers
+  /** Version 1 confirms the specific layer is a standalone execution contract. */
+  specificContractVersion?: 1
+  /** Team goal used when the specific contract was last generated or confirmed. */
+  specificSourceGoal?: string
   /** Non-applicability or missing input; explicit human resolution is required. */
   adaptationIssue?: string
   /** Explicit rerun context, kept separate from the durable task contract. */

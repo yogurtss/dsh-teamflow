@@ -854,6 +854,8 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
     // pass drops out-of-contract numeric sentinels such as `line: -1`
     // (issue #188), so an already-written bad record self-heals on read.
     const cleaned = normalizeBlankOptionalTaskFields(task)
+    // Old instance layers may contain only a delta; require explicit regeneration or review.
+    if (isTaskLayers(cleaned['layers']) && (cleaned['specificContractVersion'] !== 1 || cleaned['specificSourceGoal'] !== (value['description'] ?? '')) && cleaned['status'] === 'pending') cleaned['workflowConfigPending'] = true
     if (cleaned['profileSeedId'] !== undefined && (typeof cleaned['profileSeedId'] !== 'string' || cleaned['profileSeedId'].trim() === '')) {
       const next = { ...cleaned }
       delete next['profileSeedId']
@@ -1048,6 +1050,8 @@ function describeFindingDefect(finding: unknown): string | undefined {
 }
 export function isTeamTask(value: unknown): value is TeamTask {
   if (!isRecord(value)) return false
+  if (!isOptionalString(value['specificSourceGoal'])) return false
+  if (value['specificContractVersion'] !== undefined && value['specificContractVersion'] !== 1) return false
   if(value['layers']!==undefined && !isTaskLayers(value['layers']) || !isOptionalString(value['adaptationIssue']))return false
   return typeof value['id'] === 'string'
     && (value['workflowRerunRequired'] === undefined || typeof value['workflowRerunRequired'] === 'boolean')
