@@ -29,6 +29,7 @@ export interface WorkflowProposal {
 }
 export interface DiscussionMessage { role: 'user' | 'assistant'; text: string; at: number }
 export interface WorkflowDiscussion {
+  splitLayers?: boolean
   templateDraft?: { base: string; definition: import('./templates.ts').TemplateDefinition }
   key: string
   native?: { sessionId: string; label: string; reviewEvidence?: string }

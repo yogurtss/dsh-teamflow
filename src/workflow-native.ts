@@ -15,6 +15,7 @@ import { installContinuableMemberSetup } from './harness-compat.ts'
 import { resolveMemberLlmSelection } from './members.ts'
 import { checkpointInputs, checkpointReady, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
 import { extractedTemplate, templateSeed, validateAdaptation } from './templates.ts'
+import { taskSplitBlock, TASK_SPLIT_REQUEST, validateTaskSplit } from './task-split.ts'
 import { taskText, requireGeneratedTaskLayers } from './task-layers.ts'
 
 export function reviewOpening(team: TeamState, taskId: string): string {
@@ -131,7 +132,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
         const context = taskDiscussionContext(team, discussion.key.slice(5))
         return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: {name:team.name,goal:team.description,phase:team.phase,halted:team.halted}, ...context,
           availableAssignees: team.members.filter(member => member.status !== 'removed').map(({name,summary,role}) => ({name,summary,role})), proposal: discussion.proposal,
-          instructions:'仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
+          instructions:discussion.splitLayers ? TASK_SPLIT_REQUEST : '仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
       }
       const memberName = discussion.key.startsWith('member:') ? discussion.key.slice(7) : undefined
       const members = memberName ? team.members.filter(member => member.name === memberName).map(({ name, summary, role, executionPrompt, specificPrompt, provider, model }) => ({ name, summary, role, executionPrompt, specificPrompt, provider, model })) : team.members
@@ -147,6 +148,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       if (!args.title.trim() || args.title.length > 500 || args.operations.length > 120000) throw new Error('提案过长或缺少标题')
       const proposal = proposeWorkflow(team, args.title, JSON.parse(args.operations), config.maxMembers)
       requireGeneratedTaskLayers(proposal.operations)
+      if (discussion.splitLayers) validateTaskSplit(discussion.key.slice(5), proposal.operations)
       if(discussion.key==='template')throw new Error('模板提炼不能修改源团队，请使用 agent_teams_template_propose')
       if(discussion.key==='adapt')validateAdaptation(team,proposal.operations)
       if (discussion.key.startsWith('task:') && proposal.operations.some(op => !((op.action === 'update_task' && !op.confirmConfiguration || op.action === 'rerun_task') && op.id === discussion.key.slice(5)))) throw new Error('任务讨论只能调整或重跑当前任务；完成配置和跨节点修改需在画布操作')
@@ -226,7 +228,14 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       if (agent.status !== 'idle') throw new Error('讨论正在生成，请等待完成')
       agent.followup(createUserMessage({ content: [{ type: 'text', text: message }], source: { kind: 'user' } }))
     },
-    async open(captain: Agent, team: TeamState, key: string, root: string, options: { fresh?: boolean; message?: string } = {}): Promise<string> {
+    async open(captain: Agent, team: TeamState, key: string, root: string, options: { fresh?: boolean; message?: string; splitLayers?: boolean } = {}): Promise<string> {
+      if (options.splitLayers) {
+        const task = team.tasks.find(t => key === 'task:' + t.id)
+        if (!task) throw new Error('拆分任务不存在')
+        const blocked = taskSplitBlock(task)
+        if (blocked) throw new Error(blocked)
+        options = { fresh: true, splitLayers: true, message: TASK_SPLIT_REQUEST }
+      }
       let discussion = workflowDiscussion(team, key)
       if (options.message && options.message.length > 12000) throw new Error('讨论内容过长')
       if (options.fresh && discussion.native) {
@@ -236,6 +245,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
         state.discussions[`discussion:${key}`] = { key, messages: [], calls: [] }
         discussion = workflowDiscussion(team, key)
       }
+      if (options.splitLayers) discussion.splitLayers = true
       if (discussion.native?.sessionId) {
         if (key.startsWith('check:')) {
           const task = team.tasks.find(t => t.id === key.slice(6))!

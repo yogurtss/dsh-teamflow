@@ -1,0 +1,18 @@
+{
+  "layers": {
+    "general": {
+      "requirements": "Implement against confirmed specifications",
+      "deliverables": "Implementation and tests",
+      "acceptance": "Pass correctness checks"
+    },
+    "specific": {
+      "requirements": "Implement operator C in C.cpp",
+      "deliverables": "C.cpp",
+      "acceptance": "Error below 0.001"
+    }
+  },
+  "subject": "Legacy operator C",
+  "status": "pending",
+  "attempt": 0,
+  "taskCount": 2
+}

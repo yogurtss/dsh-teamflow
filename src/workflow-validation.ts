@@ -33,6 +33,7 @@ function proposal(value: unknown): boolean {
 }
 function discussion(value: unknown): boolean {
   if (!record(value) || !string(value['key'])) return false
+  if (value['splitLayers'] !== undefined && typeof value['splitLayers'] !== 'boolean') return false
   if(value['templateDraft']!==undefined){const d=value['templateDraft'];if(!record(d)||!string(d['base']))return false;try{parseTemplate(d['definition'])}catch{return false}}
   if (!['contextBase', 'materials', 'evidence'].every(key => optionalString(value[key]))) return false
   if (value['materialsRound'] !== undefined && !positive(value['materialsRound'])) return false

@@ -19,6 +19,7 @@ import { readArtifactScope } from './artifacts.ts'
 import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, parseWorkflowOperations, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
 import { getTemplate, listTemplates, saveTemplate, deleteTemplate, templateLibraryRoot } from './template-store.ts'
 import { instantiateTemplate, templateSeed, validateAdaptation } from './templates.ts'
+import { validateTaskSplit } from './task-split.ts'
 import { taskText } from './task-layers.ts'
 
 function string(value: unknown, name: string): string {
@@ -241,9 +242,9 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           return conversations.readEmbedded(team, key)
         })
         reply(200, payload); return
-      } else if (action === 'open_discussion') {
+      } else if (action === 'open_discussion' || action === 'split_task') {
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
-        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
+        openedSessionId = await withTeamLock(lock, async () => conversations.open(await parentOf(ctx, captain, await load()), await load(), key, root, { splitLayers: action === 'split_task', fresh: body['fresh'] === true, message: typeof body['message'] === 'string' ? body['message'] : undefined }))
       } else if (action === 'materials') {
         await withTeamLock(lock, async () => {
           const team = await load(), discussion = discussionOf(team, key)
@@ -259,6 +260,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         await runtime.approveStagedTeam(captain, teamId)
       } else if (!['state', 'create', 'template_apply'].includes(action)) {
         const retired: string[] = []
+        let splitApplied = false
         await withTeamLock(lock, async () => {
           let team = await load()
           const state = workflowState(team)
@@ -284,8 +286,20 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
               // silently rebase onto concurrent execution or a newer AI proposal.
               proposal = { ...proposal, suggestedOperations: proposal.suggestedOperations ?? proposal.operations, operations: parseWorkflowOperations(body['operations']) }
             }
+            if (action === 'apply' && discussionOf(team, key).splitLayers) validateTaskSplit(key.slice(5), proposal.operations)
             if(action==='apply' && key==='adapt')validateAdaptation(team,proposal.operations)
             const updated = applyWorkflowProposal(team, proposal, config.maxMembers)
+            // This explicit human approval confirms the split itself. Preserve
+            // any pre-existing configuration hold, without adding a second save.
+            if (action === 'apply' && discussionOf(team, key).splitLayers) {
+              splitApplied = true
+              const before = team.tasks.find(task => task.id === key.slice(5))!
+              const after = updated.tasks.find(task => task.id === before.id)!
+              if (!before.workflowConfigPending && !after.adaptationIssue?.trim()) {
+                if (before.workflowConfigPending === undefined) delete after.workflowConfigPending
+                else after.workflowConfigPending = before.workflowConfigPending
+              }
+            }
             // Human edits and accepted AI proposals use the same first-start
             // boundary, including checkpoints. Staged plans start as a whole.
             if (team.phase !== 'staged') {
@@ -361,7 +375,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true)) {
+        if (!splitApplied && (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }

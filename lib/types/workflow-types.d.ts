@@ -90,6 +90,7 @@ export interface DiscussionMessage {
     at: number;
 }
 export interface WorkflowDiscussion {
+    splitLayers?: boolean;
     templateDraft?: {
         base: string;
         definition: import('./templates.ts').TemplateDefinition;

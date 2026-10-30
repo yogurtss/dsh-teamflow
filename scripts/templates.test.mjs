@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parseTemplate, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from '../lib/template-store.js'
+import { taskSplitBlock, validateTaskSplit } from '../lib/task-split.js'
 import { resolveTeamProfile } from '../lib/profiles.js'
 import { taskText, emptyBrief, taskNeedsConfiguration, requireGeneratedTaskLayers } from '../lib/task-layers.js'
 import { applyWorkflowOperations, workflowFingerprint, checkpointReady } from '../lib/workflow.js'
@@ -114,4 +115,15 @@ test('inline plans normalize layered contracts and keep old profiles readable',(
   const layers={general,specific:{requirements:'Implement B',deliverables:'B.cpp',acceptance:'B tests'}}
   const profile=resolveTeamProfile({demo:{members:[{name:'worker'}],tasks:[{id:'build',subject:'Build',assignee:'worker',layers}]}},'demo',8)
   assert.deepEqual(profile.tasks[0].layers,layers)
+})
+
+test('one-click split permits only replacing the same editable task layers',()=>{
+ const source=team().tasks[0];source.description='Implement B';delete source.layers
+ assert.equal(taskSplitBlock(source),undefined)
+ for(const status of ['completed','in_progress','claimed'])assert.ok(taskSplitBlock({...source,status}))
+ assert.ok(taskSplitBlock({...source,description:''}))
+ const op={action:'update_task',id:source.id,layers:{general,specific:{requirements:'B',deliverables:'B.cpp',acceptance:'B tests'}}}
+ assert.doesNotThrow(()=>validateTaskSplit(source.id,[op]))
+ for(const ops of [[{...op,id:'different'}],[{...op,action:'add_task'}],[{...op,subject:'rename'}],[{...op,confirmConfiguration:true}],[op,op]])assert.throws(()=>validateTaskSplit(source.id,ops),/只能/)
+ assert.throws(()=>validateTaskSplit(source.id,[{...op,layers:{general:emptyBrief(),specific:general}}]),/同时填写/)
 })

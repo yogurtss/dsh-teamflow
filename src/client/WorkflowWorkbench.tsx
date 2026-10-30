@@ -18,6 +18,7 @@ import { rerunImpact, rerunnableTasks } from '../task-rerun.ts'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialEditorDraft, initialWorkbenchView, selectWorkbench, targetDiscussion, type EditorTarget, type WorkbenchTarget, type WorkbenchView } from './workbench-selection.ts'
 import { publishWorkflowActivity, type ActivityTeam } from './activity-monitor.ts'
 import { arrangeTasks, clampZoom, fitGraph } from './workflow-layout.ts'
+import { taskSplitBlock } from '../task-split.ts'
 import { decodeDrafts, draftStorageKey, pendingDrafts, propertyOperation } from './workbench-drafts.ts'
 import { taskReadiness } from './task-readiness.ts'
 import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
@@ -321,6 +322,24 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
     if (result?.openedSessionId && result.openedSessionId.startsWith('session-at-discussion-') && result.openedSessionId !== team?.captainSessionId) setEmbeddedDiscussion(key)
     else if (result) setError('宿主未返回独立讨论会话')
   }
+  async function splitTask(task: TeamTask): Promise<void> {
+    if (!team) return
+    if (pendingDrafts(team, viewRef.current.drafts).some(item => item.target.id === task.id && item.target.type !== 'member')) { setError('当前任务有未保存修改，请先保存，再让 AI 拆分。'); return }
+    updateView(current => { const drafts = {...current.drafts}; delete drafts[editorKey(team.id, {type:'task',id:task.id})]; return {...current,drafts} })
+    const key = 'task:' + task.id
+    selectDiscussion(key)
+    const revision = viewRef.current.revision
+    const result = await perform('split_task', { discussion: key })
+    if (revision !== viewRef.current.revision) return
+    if (result?.openedSessionId) {
+      setEmbeddedDiscussion(key)
+    }
+  }
+  function splitButton(task: TeamTask) {
+    if (archiveView || task.checkpoint) return null
+    const blocked = taskSplitBlock(task)
+    return <span><button type="button" disabled={working || !!blocked || data?.busy.includes('task:' + task.id)} title={blocked} onClick={() => void splitTask(task)}>一键 AI 拆分</button>{blocked && <small className={css.hint}>{blocked}</small>}</span>
+  }
   function prepareDiscussion(name: string): void { void startEmbedded(`member:${name}`, activeId) }
   async function deleteEdge(): Promise<void> {
     const target = team?.tasks.find(task => task.id === selectedEdge?.to)
@@ -479,8 +498,8 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
   }
   function renderProposalReview() {
     if (!proposal || !team || !data) return null
-    return <ProposalReview key={proposal.id} team={team} proposal={proposal} base={data.base} busy={working} fixedStructure={discussion==='adapt'} draft={reviewDrafts[proposal.id]} onChange={draft => setReviewDrafts(prev => ({ ...prev, [proposal.id]: draft }))}
-      onApply={operations => void perform('apply', { proposalId: proposal.id, operations }).then(result => { if (result) setFeedback('修改已应用，可继续讨论。') })}
+    return <ProposalReview key={proposal.id} team={team} proposal={proposal} base={data.base} busy={working} fixedStructure={discussion==='adapt'} splitLayers={!!conversation?.splitLayers} draft={reviewDrafts[proposal.id]} onChange={draft => setReviewDrafts(prev => ({ ...prev, [proposal.id]: draft }))}
+      onApply={operations => { const revision = viewRef.current.revision; void perform('apply', { proposalId: proposal.id, operations }).then(result => { if (result) { setFeedback('修改已应用，可继续讨论。'); if (conversation?.splitLayers && revision === viewRef.current.revision) { setEditing(false); locateTask(discussion.slice(5)) } } }) }}
       onDismiss={() => void perform('dismiss', { proposalId: proposal.id }).then(result => { if (result) setFeedback('修改已放弃，可以继续讨论。') })} />
   }
   const pendingProposals = Object.entries(team?.workflow?.discussions ?? {}).filter(([key, item]) => !archiveView && key.startsWith('discussion:') && item.proposal?.status === 'pending').map(([, item]) => item)
@@ -631,7 +650,8 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
             {!archiveView && !activeTask.checkpoint && <button className={css.primary} disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />与 AI 讨论任务</button>}
             {!archiveView && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>修改负责人并重跑此任务</button>}
 
-          </div><TaskRecord task={activeTask} team={team} expanded />
+            {splitButton(activeTask)}
+          </div><TaskRecord task={activeTask} team={team} showContract={false} />
             {!archiveView && editorTarget(team,selection,true) && <button onClick={() => setEditing(true)}>{!activeTask.checkpoint && ['completed','failed','cancelled'].includes(activeTask.status) ? '修改并重跑' : '编辑节点'}</button>}
             {!archiveView && activeTask.checkpoint && data.ready.includes(activeTask.id) && <button className={css.primary} disabled={working} onClick={() => void openReview(activeTask.id)}>开始验收</button>}
           </aside>}
@@ -675,9 +695,9 @@ export function WorkflowWorkbench({ sessionId, teamId, archived = false, waiting
       }}><h3>{editor.id ? '编辑' : '添加'}{editor.type === 'member' ? '成员' : editor.type === 'check' ? '人工检查' : '任务'} <small className={currentDirty ? css.dirtyDot : css.hint}>{currentDirty ? '未保存' : editor.id ? '已保存' : '尚未创建'}</small></h3>
         {terminalEdit && activeTask && <section className={css.rerunContext} aria-label="重跑输入"><strong>上一轮结果（自动提供给 Agent）</strong><pre>{activeTask.output || '上一轮未提交结果'}</pre>{field('rerunInstructions','本次重跑要求（必填）',true)}<p>Agent 将结合原任务要求、上一轮结果和本次新增要求重新执行，并重新验证结果。</p></section>}
         {editor.type !== 'member' && activeTask && renderReadiness(activeTask)}
-        {editor.type === 'task' && activeTask && <><button type="button" disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />与 AI 讨论任务</button><small className={css.hint}>讨论使用已保存的资料；当前草稿会保留。</small></>}
+        {editor.type === 'task' && activeTask && <>{splitButton(activeTask)}<button type="button" disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />与 AI 讨论任务</button><small className={css.hint}>讨论使用已保存的资料；当前草稿会保留。</small></>}
         {editor.type === 'member' ? <>{field('name', '名称')}<div className={css.memberModelSettings}><strong>模型与 Thinking</strong>{modelDirectory && t ? <StagedModelPicker directory={modelDirectory} t={t} provider={draft['provider'] ?? ''} model={draft['model'] ?? ''} reasoningEffort={draft['reasoningEffort'] ?? ''} busy={working} onChange={selection => setDraft(prev => ({ ...prev, ...selection, routeChanged: 'yes' }))} /> : <p className={css.hint}>模型目录暂不可用，请在 DSH 团队活动页面打开编辑。</p>}</div>{field('summary', 'Summary · 功能概述', true)}{field('role', '长期职责', true)}{field('executionPrompt', '通用执行指令 / PE', true)}{field('specificPrompt', '本次补充指令（可选）', true)}</>
-          : <>{field('subject', '任务名称')}{activeTask?.layers||draft['layered']==='yes'?<TaskLayersEditor values={draft} onChange={setDraft} hasGeneral={!!activeTask?.layers?.general.requirements} issue={!!activeTask?.adaptationIssue}/>:<>{field('description', '任务要求 / 验收要求', true)}<button type="button" onClick={()=>setDraft({...draft,layered:'yes'})}>拆分为通用任务与本次任务</button></>}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
+          : <>{field('subject', '任务名称')}{activeTask?.layers||draft['layered']==='yes'?<TaskLayersEditor values={draft} onChange={setDraft} hasGeneral={!!activeTask?.layers?.general.requirements} issue={!!activeTask?.adaptationIssue}/>:<>{field('description', '任务要求 / 验收要求', true)}<button type="button" onClick={()=>setDraft({...draft,layered:'yes'})}>手动填写两层</button></>}{editor.type !== 'check' && <label>执行 Agent<select value={draft['assignee'] ?? ''} onChange={e => setDraft({ ...draft, assignee: e.target.value })}><option value="">由空闲成员领取</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
             <p className={css.hint}>节点已在画布中，靠近节点后可拖动右侧圆点连线。修改名称或要求后点击保存。</p></>}
         {editor.type !== 'member' && activeTask && <TaskRecord task={activeTask} team={team} expanded={false} showContract={false} />}
         {terminalEdit && activeTask && <><p className={css.notice}>保存将开启新一轮执行，原有状态与结果保存在历史执行记录中。以下下游先等待新结果：{rerunImpact(team.tasks,activeTask.id).descendants.map(task=>task.subject).join('、') || '无'}。新结果就绪后，由你逐个启动执行或重新验收；其他分支保留。{team.phase === 'staged' ? '请先查看流程并确认启动团队，再重跑。' : ''}</p></>}

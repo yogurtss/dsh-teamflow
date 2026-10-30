@@ -117,6 +117,27 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   const nativeId = result.team.workflow.discussions['discussion:graph'].native.sessionId;
   writeFileSync('workflow-resume.json', JSON.stringify({ teamId: activeTeam, captainId: activeSession, nativeId }));
   await ctx.sessions.flush(automatic.agent.session);
+  // One-click conversion preserves node identity and never applies before approval.
+  result = await post('edit', {base:result.base,title:'Legacy task',operations:[{action:'add_task',id:'legacy',subject:'Legacy operator C',description:'Implement operator C in C.cpp, include tests, error below 0.001',assignee:'worker',dependencies:[]}]});
+  const legacy = result.team.tasks.at(-1), splitKey = 'task:' + legacy.id;
+  const splitOpened = await post('split_task', {discussion:splitKey});
+  const splitDeadline = Date.now() + 20000;
+  while (!events.some(e => e.event === 'workflow-native-finished' && e.sessionId === splitOpened.openedSessionId)) {
+    assert.ok(Date.now() < splitDeadline, 'Split discussion timeout'); await new Promise(resolve=>setTimeout(resolve,30));
+  }
+  await ctx.agents.get(splitOpened.openedSessionId).whenIdle();
+  result = await post('state');
+  assert.deepEqual(result.team.tasks.find(t=>t.id===legacy.id),legacy,'Split generation does not mutate source');
+  const splitProposal = result.team.workflow.discussions['discussion:'+splitKey].proposal;
+  await post('apply',{discussion:splitKey,proposalId:splitProposal.id,operations:[{...splitProposal.operations[0],subject:'Unexpected rename'}]},409);
+  result = await post('apply',{discussion:splitKey,proposalId:splitProposal.id});
+  const converted = result.team.tasks.find(t=>t.id===legacy.id);
+  assert.equal(result.team.tasks.length,2);assert.equal(converted.subject,legacy.subject);assert.equal(converted.status,legacy.status);assert.equal(converted.attempt,legacy.attempt);assert.deepEqual(converted.dependencies,legacy.dependencies);
+  assert.equal(converted.description.split('通用任务：').length-1,1);
+  assert.equal(converted.workflowConfigPending,legacy.workflowConfigPending,'Approval must not add a second save requirement');
+  record({event:'workflow-split-passed',snapshot:{layers:converted.layers,subject:converted.subject,status:converted.status,attempt:converted.attempt,taskCount:result.team.tasks.length}});
+  await post('apply',{discussion:splitKey,proposalId:splitProposal.id},409);
+  result=await post('edit',{base:result.base,title:'Remove test task',operations:[{action:'remove_task',id:legacy.id}]});
   // Template extraction and adaptation use the real isolated native sessions.
   const sourceBefore=JSON.stringify(result.team.tasks);
   result=await nativeDiscussion('template');
