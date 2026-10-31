@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { parseTemplate, type TemplateVersion } from './templates.ts'
+import { isBuiltinTemplate, parseTemplate, type TemplateVersion } from './templates.ts'
 
 interface RecordFile { id:string; deleted?:boolean; versions:TemplateVersion[] }
 export const templateLibraryRoot = (directory?:string):string => directory ? resolve(directory) : join(homedir(),'.dsh-teamflow','templates')
@@ -48,6 +48,7 @@ async function atomic(root:string,value:RecordFile):Promise<void>{
   try{await writeFile(tmp,JSON.stringify(value,null,2),'utf8');await rename(tmp,join(root,`${value.id}.json`))}finally{await rm(tmp,{force:true})}
 }
 export async function saveTemplate(root:string,definition:unknown,previous?:{id:string;version:number}):Promise<TemplateVersion>{
+  if(previous && isBuiltinTemplate(previous.id))throw new Error('内置模板只读，请另存为个人模板')
   const clean=parseTemplate(definition)
   if(clean.tasks.some(t=>!t.general.requirements.trim()))throw new Error('请为每个节点填写通用任务要求')
   return locked(root,async()=>{
@@ -59,5 +60,6 @@ export async function saveTemplate(root:string,definition:unknown,previous?:{id:
   })
 }
 export async function deleteTemplate(root:string,id:string,version:number):Promise<void>{
+  if(isBuiltinTemplate(id))throw new Error('内置模板不能删除')
   await locked(root,async()=>{const record=await read(root,id);if(record.deleted||record.versions.at(-1)?.version!==version)throw new Error('模板已变化，请刷新后重试');record.deleted=true;await atomic(root,record)})
 }

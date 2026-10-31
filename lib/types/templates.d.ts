@@ -47,3 +47,4 @@ export declare function extractedTemplate(team: TeamState, value: unknown): Temp
 export declare function instantiateTemplate(template: TemplateVersion, id: string, captainSessionId: string, name: string, goal: string, now?: number): TeamState;
 /** The adaptation agent may fill the instance, never alter the saved graph or generic layer. */
 export declare function validateAdaptation(team: TeamState, operations: WorkflowOperation[]): void;
+export declare const isBuiltinTemplate: (id: string) => boolean;

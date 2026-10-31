@@ -34,4 +34,5 @@ console.log(JSON.stringify(result,null,2))
 assert.deepEqual(template?.snapshot,JSON.parse(readFileSync(new URL('./fixtures/snapshots/teamflow-template.json',import.meta.url),'utf8')),'Packaged template composition snapshot changed')
 assert.deepEqual(trace.find(row=>row.event==='workflow-split-passed')?.snapshot,JSON.parse(readFileSync(new URL('./fixtures/snapshots/teamflow-split.json',import.meta.url),'utf8')),'One-click split snapshot changed')
 assert.ok(trace.some(row=>row.event==='specific-contract-execution' && row.specificOnly), 'Real executor must receive the complete specific contract')
+assert.deepEqual(trace.find(row=>row.event==='builtin-templates-passed')?.snapshot,JSON.parse(readFileSync(new URL('./fixtures/snapshots/builtin-templates.json',import.meta.url),'utf8')),'Built-in template catalog changed')
 if(!template||runs.some(run=>!run.passed))process.exitCode=1

@@ -169,6 +169,20 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   assert.equal(result.team.tasks[0].status,'completed');
   record({event:'workflow-template-passed',extraction:true,fixedGraph:true,unifiedAdaptation:true,independentVersion:true,execution:true,
     snapshot:{task:result.team.tasks[0].layers,sourceVersion:result.team.workflow.templateSource.version,templateVersion:v2.template.version}});
+  const catalog = (await post('template_list')).templates.filter(t=>t.id.startsWith('builtin-'));
+  assert.equal(catalog.length,3);
+  for(const item of catalog){
+    const owner=await ctx.agents.create({sessionId:'session-builtin-'+item.id,meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
+    ctx.effect(()=>()=>owner.dispose());await owner.agent.whenIdle();activeSession=owner.agent.id;activeTeam='';
+    await post('template_save',{definition:item,templateId:item.id,version:1},409);
+    await post('template_delete',{templateId:item.id,version:1},409);
+    const copied=await post('template_save',{definition:item});assert.notEqual(copied.template.id,item.id);
+    const installed=await post('template_apply',{templateId:item.id,version:1,name:item.name,description:'本次具体目标'});activeTeam=installed.team.id;
+    assert.equal(installed.team.tasks.length,item.tasks.length);
+    assert.ok(installed.team.tasks.every(t=>t.workflowConfigPending && !t.layers.specific.requirements));
+    await post('start',{},409);
+  }
+  record({event:'builtin-templates-passed',snapshot:catalog});
   record({ event: 'workflow-workbench-passed', proposalIsolation: true, nativeScopedDiscussion: true, humanApproval: true, rejectionBlocks: true });
   process.stdout.write('WORKFLOW_WORKBENCH_OK\n');
 }

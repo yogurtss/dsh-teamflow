@@ -4,12 +4,12 @@
 
 这是 [yogurtss/dsh-teamflow](https://github.com/yogurtss/dsh-teamflow) 开发分支，基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 扩展。让模型先讨论并建立团队，再由你调整成员职责、任务交接和人工验收节点。
 
-**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，本次大更新版本为 `0.2.4`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
+**安装本分支请使用本仓库 GitHub 地址或本地构建包。** 新包名为 `@yogurtss/dsh-teamflow`，当前开发版本为 `0.2.5-dev.1`；尚未发布到 npm。原版包 `@nanmicoder/dsh-agent-teams` 与本项目不同。
 
 新对话可直接点击 **Teamflow → 流程模板库 Gallery**，不需要输入命令。也可使用 `/teamflow` 开始讨论；仅注册 `/teamflow` 和 `/teamflow-<profile>`，旧 `/agent-teams` 及其 profile 命令已移除。选择预设团队角色也可使用 `/teamflow --profile <名称> <目标>`。为读取原团队记录，`.agent-teams/` 数据目录、内部 `agent_teams_*` 工具和会话事件协议保持不变。历史报告中的旧名称及截图是当时的实测记录。
 
 
-## 0.2.4 · 个人流程模板库
+## 0.2.5-dev.1 · 个人流程模板库
 
 打开对话即可从 Teamflow 入口进入醒目的卡片式 Gallery，搜索、按标签筛选、查看流程缩略图与通用要求，再填写本次需求并应用。不会先生成一次团队再覆盖。已有流程可通过「保存为模板」让 AI 提炼通用任务，检查后保存；支持编辑、复制、删除及独立版本。
 
@@ -80,7 +80,7 @@ https://github.com/yogurtss/dsh-teamflow
 
 ~~~sh
 dsh plugin --profile web remove @yogurtss/dsh-teamflow
-dsh plugin --profile web add github:yogurtss/dsh-teamflow#main
+dsh plugin --profile web add github:yogurtss/dsh-teamflow#dev
 dsh --profile web
 ~~~
 
@@ -321,3 +321,5 @@ pnpm verify
 已有可编辑任务支持 **一键 AI 拆分**：预览并确认两层后直接覆盖原字段，不新增任务。详见 [更新说明](./release-notes/v0.2.3.md)。
 
 模板只保存通用任务层。套用后结合具体目标生成完整本次要求，执行 Agent 只读取本次层。旧版双层任务或目标变化后需重新生成或明确确认。详见 [更新说明](./release-notes/v0.2.4.md)。
+
+开发版内置「功能开发」「问题排查与修复」「算子开发与优化」三个模板；内置内容只读，修改时另存为个人模板。安装本开发版请使用 `github:yogurtss/dsh-teamflow#dev`；`#main` 保持 classic 稳定版。

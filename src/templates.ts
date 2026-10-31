@@ -93,3 +93,5 @@ export function validateAdaptation(team:TeamState, operations:WorkflowOperation[
   }
   if(team.tasks.some(t=>!seen.has(t.id)))throw new Error('请一次性提交所有节点的本次任务；不适用的节点填写 adaptationIssue')
 }
+
+export const isBuiltinTemplate = (id:string):boolean => id.startsWith('builtin-')

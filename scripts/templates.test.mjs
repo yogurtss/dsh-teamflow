@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parseTemplate, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from '../lib/template-store.js'
+import { builtinTemplates, getBuiltinTemplate } from '../lib/builtin-templates.js'
 import { taskSplitBlock, validateTaskSplit } from '../lib/task-split.js'
 import { resolveTeamProfile } from '../lib/profiles.js'
 import { taskText, emptyBrief, taskNeedsConfiguration, requireGeneratedTaskLayers } from '../lib/task-layers.js'
@@ -91,7 +92,7 @@ test('authenticated workflow handler applies templates once and leaves the sourc
   const ctx={agents:{get:id=>id==='captain'?captain:undefined},llm:{resolveCallConfig:async v=>v},effect:fn=>fn()};let route
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',templateDirectory:library,maxMembers:8},{},{register:r=>{route=r;return()=>{}}})
   async function call(action,fields={}){const req=Readable.from([JSON.stringify({sessionId:'captain',action,...fields})]);req.method='POST';let status,value;await route.handler(req,{writeHead:s=>{status=s},end:v=>{value=JSON.parse(v)}});return {status,...value}}
-  assert.equal((await call('template_list')).templates.length,1)
+  assert.equal((await call('template_list')).templates.length,4)
   const result=await call('template_apply',{templateId:template.id,version:1,name:'B',description:'实现 B'});assert.equal(result.status,200,result.error);assert.equal(result.team.phase,'staged');assert.ok(result.team.tasks.every(t=>t.workflowConfigPending));assert.equal(result.team.members[0].model,'test')
   assert.equal((await call('template_apply',{templateId:template.id,version:1,name:'duplicate',description:'B'})).status,409)
   assert.equal(await readFile(join(state,'source','team.json'),'utf8'),before);assert.ok(await readTeam(state,result.team.id))
@@ -154,4 +155,25 @@ test('saved old contracts and changed team goals require explicit review before 
  delete loaded.tasks[0].specificContractVersion
  await writeFile(join(root,current.id,'team.json'),JSON.stringify(loaded))
  assert.ok((await readTeam(root,current.id)).tasks[0].workflowConfigPending)
+})
+
+test('built-in starter workflows are complete, immutable and copy into personal templates',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'builtin-copy-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const catalog=builtinTemplates();assert.equal(catalog.length,3)
+ for(const item of catalog){
+  assert.deepEqual(parseTemplate(item).tasks,item.tasks)
+  assert.ok(item.tasks.every(task=>Object.values(task.general).every(text=>text.trim())))
+  assert.equal(item.tasks.filter(task=>task.checkpoint).length,2)
+  const instance=instantiateTemplate(item,'instance','captain','New goal','User task')
+  assert.deepEqual(instance.tasks.map(task=>task.id),item.tasks.map(task=>task.id))
+  assert.ok(instance.tasks.every(task=>task.workflowConfigPending && task.layers.specific.requirements===''))
+  validateAdaptation(instance,adaptation(instance))
+  const copy=await saveTemplate(root,item);assert.notEqual(copy.id,item.id)
+  await assert.rejects(()=>saveTemplate(root,item,{id:item.id,version:1}),/只读/)
+  await assert.rejects(()=>deleteTemplate(root,item.id,1),/不能删除/)
+  assert.throws(()=>getBuiltinTemplate(item.id,2),/版本不存在/)
+ }
+ catalog[0].tasks[0].general.requirements='mutated'
+ assert.notEqual(getBuiltinTemplate(catalog[0].id).tasks[0].general.requirements,'mutated')
+ assert.equal((await listTemplates(root)).templates.length,3)
 })
