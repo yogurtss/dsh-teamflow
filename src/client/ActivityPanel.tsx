@@ -1,3 +1,4 @@
+import { WorkflowLocale } from './workflow-i18n.tsx'
 /**
  * AgentTeams activity panel: the top-right floater monitoring every team.
  *
@@ -555,7 +556,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   )
 }
 
-export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscarded, onNavigate, t, historic = false, workspace = false }: {
+function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDiscarded, onNavigate, t, historic = false, workspace = false }: {
   readonly team: ActivityTeam
   readonly modelDirectory?: ModelDirectory
   readonly onContinuePlanning?: () => void
@@ -811,7 +812,7 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
                   <span className={css.memberCount}>{member.done}/{member.total}</span>
                 </button>
                 {editingMember === member.name && modelDirectory && !historic && <QuickMemberEditor key={member.name} team={team} member={member} directory={modelDirectory} t={t} close={() => setEditingMember(undefined)} onRerun={taskId=>setTaskEntry({taskId,review:false,rerun:true})} />}
-                {!historic && modelDirectory && member.id !== '' && <button type="button" className={css.quickTranscript} onClick={() => onNavigate(team.captainSessionId as SessionId, member.id as SessionId)}>执行对话 ↗</button>}
+                {!historic && modelDirectory && member.id !== '' && <button type="button" className={css.quickTranscript} onClick={() => onNavigate(team.captainSessionId as SessionId, member.id as SessionId)}>{t('workflow.executionChat')}</button>}
                 <div className={css.assignmentLine}>
                   <span className={css.assignmentLabel}>{t(discarded
                     ? 'assignment.discarded'
@@ -1460,4 +1461,8 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
       )}
     </>
   )
+}
+
+export function TeamSection(props: Parameters<typeof LocalizedTeamSection>[0]) {
+  return <WorkflowLocale t={props.t}><LocalizedTeamSection {...props}/></WorkflowLocale>
 }

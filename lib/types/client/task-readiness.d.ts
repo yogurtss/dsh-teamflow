@@ -1,3 +1,4 @@
+import { type WorkflowText } from './workflow-text.ts';
 import type { TeamState, TeamTask } from '../types.ts';
 export interface TaskReadiness {
     label: string;
@@ -5,4 +6,4 @@ export interface TaskReadiness {
     dependencies: string[];
 }
 /** Explain saved execution state without claiming to know live host availability. */
-export declare function taskReadiness(team: TeamState, task: TeamTask): TaskReadiness;
+export declare function taskReadiness(team: TeamState, task: TeamTask, l?: WorkflowText): TaskReadiness;

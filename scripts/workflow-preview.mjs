@@ -1,3 +1,5 @@
+import { builtinTemplates, getBuiltinTemplate } from '../lib/builtin-templates.js';
+import { localizeBuiltinTemplate } from '../lib/builtin-template-locales.js';
 import { templateSeed, instantiateTemplate } from '../lib/templates.js';
 /** Local interaction fixture: real React workbench and workflow reducer; simulated execution/model. */
 import { createServer } from 'node:http';
@@ -21,7 +23,7 @@ import { ActivitySurface } from '../../lib/client/WorkspaceActivity.js';
 import { TeamChatEntry } from '../../lib/client/TeamChatEntry.js';
 import { AgentTeamsSummary } from '../../lib/client/AgentTeamsCard.js';
 import { createWorkspaceState } from '../../lib/client/workspace-state.js';
-import { zh } from '../../lib/client/locales.js';
+import { zh, en } from '../../lib/client/locales.js';
 import { WorkflowHistory } from '../../lib/client/WorkflowHistory.js';
 import { getActivitySnapshotsSnapshot, subscribeActivitySnapshots, publishWorkflowActivity } from '../../lib/client/activity-monitor.js';
 const snapshot = { groups: [{ id: 'fixture', name: '测试提供方', models: [{ id: '模拟模型', name: '模拟模型', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }, { id: '模拟模型 B', name: '模拟模型 B', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }] }], failures: [], status: 'ready', current: null, pending: null, error: null };
@@ -30,16 +32,17 @@ const activityState=createWorkspaceState();
 const sessionSnapshot={current:'preview',byId:{preview:{id:'preview'}}};
 const sessionStore={subscribe:()=>()=>{},getSnapshot:()=>sessionSnapshot} as any;
 const modelDirectories={directoryFor:()=>modelDirectory} as any;
-const t = ((key: string, values: Record<string, unknown> = {}) => (zh as Record<string, string>)[key]?.replace(/\\{(\\w+)\\}/g, (_, name) => String(values[name])) ?? key) as any;
+
 const example = { workspace: '', teamId: 'preview', name: '活动面板示例', captainSessionId: 'preview', phase: 'running', workflowEnabled: true, messageCount: 0, captainInbox: [], members: [{ id: '', name: 'researcher', role: '需求分析师', provider: 'fixture', model: '模拟模型', activity: 'idle', progress: 0, done: 0, total: 1, currentTask: '', unread: 0 }], tasks: [{ id:'t1', subject:'需求调研', assignee:'researcher', status:'pending', state:'open', dependencies:[], depth:0 }] } as any;
 const archived = {...example,name:'6/7 人工验收归档恢复示例',workflowEnabled:true,tasks:[...Array.from({length:6},(_,i)=>({id:'t'+(i+1),subject:'已完成成果 '+(i+1),status:'completed',state:'completed',assignee:'researcher',dependencies:[],depth:0})),{id:'t7',subject:'人工检查',status:'pending',state:'open',assignee:'',dependencies:['t1','t2','t3','t4','t5','t6'],depth:1,checkpoint:{round:1,history:[]}}]} as any;
-function Preview() {const snapshots=React.useSyncExternalStore(subscribeActivitySnapshots,getActivitySnapshotsSnapshot);const restored=snapshots.teams.find(team=>team.teamId==='preview');
+function Preview({language}:{language:string}) {const t = ((key: string, values: Record<string, unknown> = {}) => ((language==='en'?en:zh) as Record<string, string>)[key]?.replace(/\\{(\\w+)\\}/g, (_, name) => String(values[name])) ?? key) as any;const snapshots=React.useSyncExternalStore(subscribeActivitySnapshots,getActivitySnapshotsSnapshot);const restored=snapshots.teams.find(team=>team.teamId==='preview');
   React.useEffect(()=>{if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) void fetch('/plugins/dsh-agent-teams/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'state',sessionId:'preview',teamId:'preview'})}).then(res=>res.json()).then(value=>publishWorkflowActivity(value.activity));},[]);
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_ACTIVITY)}) return <><main data-phase="active" style={{minHeight:500}}><header><h3>当前团队对话</h3><TeamChatEntry sessionId={'preview' as any} t={t} openMember={()=>{}}/></header><p>团队已建立。右上角的小圆点可打开成员、依赖与执行进度。</p>{restored && <AgentTeamsSummary data={{teamId:restored.teamId,teamName:restored.name,captainSessionId:'preview',members:restored.members}} sessionId="preview" openMember={()=>{}} t={t}/>}</main><div data-shell-overlay style={{position:'fixed',inset:0,pointerEvents:'none'}}><div style={{pointerEvents:'auto'}}><ActivitySurface state={activityState} sessionsList={sessionStore} modelDirectories={modelDirectories} openMember={()=>{}} t={t}/></div></div></>;
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_DEPENDENCIES)}) return restored ? <TeamSection team={restored} workspace={!${Boolean(process.env.TEAMFLOW_PREVIEW_COMPACT)}} modelDirectory={modelDirectory} t={t} onNavigate={()=>{}}/> : <p>正在加载依赖图…</p>;
   if(${Boolean(process.env.TEAMFLOW_PREVIEW_ARCHIVED)}) return <><WorkflowWorkbench sessionId="preview" teamId="preview" archived={!restored} embeddedContext modelDirectory={modelDirectory} t={t}/><TeamSection team={restored??archived} workspace historic={!restored} modelDirectory={modelDirectory} onNavigate={()=>{}} t={t}/></>;
   return <><WorkflowWorkbench sessionId="preview" embeddedContext modelDirectory={modelDirectory} t={t} teamId={location.search.includes('blank') ? undefined : 'preview'} waitingCount={location.search.includes('blank') ? 0 : 1} /><TeamSection team={example} workspace modelDirectory={modelDirectory} onNavigate={() => {}} t={t} /></>}
-createRoot(document.getElementById('root')!).render(<Preview/>);`);
+function LocalePreview(){const [language,setLanguage]=React.useState('zh');return <><select aria-label="Preview language" style={{position:'fixed',right:12,top:8,zIndex:2147483647}} value={language} onChange={event=>setLanguage(event.target.value)}><option value="zh">中文</option><option value="en">English</option></select><Preview language={language}/></>}
+createRoot(document.getElementById('root')!).render(<LocalePreview/>);`);
 writeFileSync(directory + '/config.mjs', `import base from '../../tsdown.config.ts';
 const previewMenu = { name: 'preview-menu', resolveId(id) { if (id === '@deepseek-ai/dsh-client-ui-primitives') return '\\0preview-menu'; }, load(id) { if (id === '\\0preview-menu') return \`import React from 'react'; export function Modal() { return null; } export function Menu({anchor,open,items,onSelect}) { return React.createElement('div', null, anchor, open && React.createElement('div', {role:'menu'}, items.map(item => item.label && React.createElement('button',{key:item.id,type:'button',role:'menuitem',disabled:item.disabled,onClick:()=>onSelect(item.id)},item.label)))); }\`; } };
 export default { ...base, plugins:[previewMenu, ...base.plugins], name:'workflow-preview', entry:[${JSON.stringify(directory + '/entry.tsx')}], outDir:${JSON.stringify(directory)}, format:'iife', sourcemap:false, deps:{alwaysBundle:()=>true}, outputOptions:{entryFileNames:'app.js'} };`);
@@ -106,11 +109,11 @@ createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw), key = body.discussion || 'graph';
     const messages = previewMessages(key);
-    if(body.action==='template_list'){send(res,200,{templates:library,warnings:[],context:'实现算子 B，验证正确性和性能。'});return}
+    if(body.action==='template_list'){send(res,200,{templates:[...builtinTemplates(),...library],warnings:[],context:'实现算子 B，验证正确性和性能。'});return}
     if(body.action==='template_seed'){send(res,200,{definition:templateSeed(team),base:workflowFingerprint(team)});return}
     if(body.action==='template_save'){const old=library.find(t=>t.id===body.templateId);const saved={...body.definition,id:old?.id??crypto.randomUUID(),version:(old?.version??0)+1,createdAt:Date.now(),updatedAt:Date.now()};library=library.filter(t=>t.id!==saved.id).concat(saved);send(res,200,{template:saved});return}
     if(body.action==='template_delete'){library=library.filter(t=>t.id!==body.templateId);send(res,200,{ok:true});return}
-    if(body.action==='template_apply'){team=instantiateTemplate(library.find(t=>t.id===body.templateId),'preview','preview',body.name,body.description);team.members.forEach(m=>Object.assign(m,{provider:'fixture',model:'模拟模型'}));galleryBlank=false}
+    if(body.action==='template_apply'){team=instantiateTemplate(body.templateId.startsWith('builtin-')?localizeBuiltinTemplate(getBuiltinTemplate(body.templateId,body.version),body.language==='en'?'en':'zh'):library.find(t=>t.id===body.templateId),'preview','preview',body.name,body.description);team.members.forEach(m=>Object.assign(m,{provider:'fixture',model:'模拟模型'}));galleryBlank=false}
     if(body.action==='state'&&galleryBlank){send(res,200,{team:null,ready:[],busy:[]});return}
     if(body.action==='create')galleryBlank=false;
     if (body.action === 'edit' && process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.TEAMFLOW_PREVIEW_EDIT_DELAY_MS)));

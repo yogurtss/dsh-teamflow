@@ -28,7 +28,7 @@ test('stable latest requires the recommended host and bounded compatibility', ()
   }), /Alpha\/beta/)
 })
 
-for (const suffix of ['alpha', 'beta', 'rc']) {
+for (const suffix of ['alpha', 'beta', 'rc', 'dev']) {
   test(`${suffix} candidates use next and never replace latest`, () => {
     const version = `0.1.16-${suffix}.1`
     assert.equal(releaseMetadata(fixture(version, 'next')).prerelease, true)
@@ -39,7 +39,7 @@ for (const suffix of ['alpha', 'beta', 'rc']) {
 }
 
 test('reject unsupported versions and unbounded peers', () => {
-  for (const version of ['0.1.16-dev.1', '0.1.16-alpha.01', '0.1.16-alpha.1\n', 'v0.1.16', '0.1']) {
+  for (const version of ['0.1.16-dev.01', '0.1.16-alpha.01', '0.1.16-alpha.1\n', 'v0.1.16', '0.1']) {
     assert.throws(() => releaseMetadata(fixture(version, 'next')))
   }
   const mixed = fixture('0.1.16-rc.1', 'next')

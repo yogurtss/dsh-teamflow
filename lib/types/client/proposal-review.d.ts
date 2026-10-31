@@ -1,3 +1,4 @@
+import { type WorkflowText } from './workflow-text.ts';
 /** Readable field comparisons and line diffs for human workflow approval. */
 import type { TeamState } from '../types.ts';
 import type { WorkflowOperation } from '../workflow-types.ts';
@@ -9,7 +10,7 @@ export type ReviewField = {
     array: boolean;
     editable: boolean;
 };
-export declare function reviewFields(team: TeamState, operation: WorkflowOperation): {
+export declare function reviewFields(team: TeamState, operation: WorkflowOperation, l?: WorkflowText): {
     title: string;
     fields: ReviewField[];
 };

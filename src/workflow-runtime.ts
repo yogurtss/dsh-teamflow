@@ -1,3 +1,4 @@
+import { localizeBuiltinTemplate } from './builtin-template-locales.ts'
 /** Human-only workflow controls and native conversation navigation. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -99,7 +100,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           const name = string(body['name'], '团队名称')
           teamId = `${sanitizeKey(name).slice(0, 60)}-${randomUUID().slice(0, 8)}`
           if(action==='template_apply'){
-            const id=string(body['templateId'],'templateId');const template=isBuiltinTemplate(id)?getBuiltinTemplate(id,Number(body['version'])):await getTemplate(libraryRoot,id,Number(body['version']))
+            const id=string(body['templateId'],'templateId');const template=isBuiltinTemplate(id)?localizeBuiltinTemplate(getBuiltinTemplate(id,Number(body['version'])),body['language']==='en'?'en':'zh'):await getTemplate(libraryRoot,id,Number(body['version']))
             if(template.members.length>config.maxMembers)throw new Error('模板成员数超过当前宿主配置上限')
             const copy=instantiateTemplate(template,teamId,captain.id,name,string(body['description'],'本次需求'))
             const selection=await resolveMemberLlmSelection(ctx,captain,{})

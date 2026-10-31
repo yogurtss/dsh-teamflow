@@ -1,6 +1,6 @@
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { AgentTeamsTranslate } from './locales.ts';
-export declare function WorkflowWorkbench({ sessionId, teamId, archived, waitingCount, openExecution, openConversation, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t, entryTarget, onClose }: {
+declare function Workbench({ sessionId, teamId, archived, waitingCount, openExecution, openConversation, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t, entryTarget, onClose }: {
     entryTarget?: {
         taskId: string;
         review?: boolean;
@@ -21,3 +21,5 @@ export declare function WorkflowWorkbench({ sessionId, teamId, archived, waiting
     waitingCount?: number;
     openExecution?: (memberId: string, parentId?: string) => void | Promise<void>;
 }): import("react").JSX.Element;
+export declare function WorkflowWorkbench(props: Parameters<typeof Workbench>[0]): import("react").JSX.Element;
+export {};

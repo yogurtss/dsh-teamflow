@@ -5,6 +5,8 @@ export const AGENT_TEAMS_LOCALE_NAMESPACE = 'agentTeams'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'language.code': 'zh',
+  'workflow.executionChat': '执行对话 ↗',
   'task.control.rerun': '修改并重跑',
   'task.control.rerunTask': '编辑重跑要求 · {task}',
   'task.control.start': '开始',
@@ -274,6 +276,8 @@ export type AgentTeamsLocaleKey = keyof typeof zh
 
 /** English dictionary, checked complete against the Chinese source key set. */
 export const en = {
+  'language.code': 'en',
+  'workflow.executionChat': 'Execution chat ↗',
   'task.control.rerun': 'Edit and rerun',
   'task.control.rerunTask': 'Edit rerun requirements · {task}',
   'task.control.start': 'Start',

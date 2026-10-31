@@ -1,3 +1,4 @@
+import { sourceText, type WorkflowText } from './workflow-text.ts'
 /** Readable field comparisons and line diffs for human workflow approval. */
 import type { TeamState } from '../types.ts'
 import type { WorkflowOperation } from '../workflow-types.ts'
@@ -8,7 +9,7 @@ const taskFields = ['subject', 'description', 'assignee', 'dependencies'] as con
 const labels: Record<string, string> = { name: '成员名称', id: '任务 ID', summary: 'Summary · 功能概述', role: '长期职责', executionPrompt: '执行指令 / PE', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', subject: '任务名称', description: '任务要求 / 验收要求', assignee: '负责人', dependencies: '上游任务 ID', taskIds: '返工任务 ID', instructions: '本次要求' }
 export type ReviewField = { key: string; label: string; before: string; after: string; array: boolean; editable: boolean }
 const show = (value: unknown): string => Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''
-export function reviewFields(team: TeamState, operation: WorkflowOperation): { title: string; fields: ReviewField[] } {
+export function reviewFields(team: TeamState, operation: WorkflowOperation, l: WorkflowText = sourceText): { title: string; fields: ReviewField[] } {
   const op = operation as unknown as Record<string, unknown>
   const isMember = operation.action.endsWith('member')
   const removed = operation.action.startsWith('remove_')
@@ -16,16 +17,16 @@ export function reviewFields(team: TeamState, operation: WorkflowOperation): { t
   const original = isMember ? team.members.find(item => item.name === op['name']) : team.tasks.find(item => item.id === op['id'])
   const before = added ? {} : (original ?? {}) as unknown as Record<string, unknown>
   const keys: readonly string[] = operation.action === 'rerun_task' ? [...taskFields.filter(key => key !== 'dependencies' && op[key] !== undefined), 'instructions'] : operation.action === 'rework' ? ['taskIds', 'instructions'] : isMember ? [...(added ? ['name'] : []), ...memberFields] : [...(added && op['id'] ? ['id'] : []), ...taskFields]
-  const fields = keys.filter(key => !(key === 'description' && 'layers' in operation && operation.layers)).filter(key => !(key === 'assignee' && operation.action === 'add_task' && operation.checkpoint)).map(key => ({ key, label: labels[key] ?? key, before: show(before[key]), after: removed ? '' : show(op[key] === undefined && !added ? before[key] : op[key]), array: ['dependencies', 'taskIds'].includes(key), editable: !removed && key !== 'id' }))
+  const fields = keys.filter(key => !(key === 'description' && 'layers' in operation && operation.layers)).filter(key => !(key === 'assignee' && operation.action === 'add_task' && operation.checkpoint)).map(key => ({ key, label: l(labels[key] ?? key), before: show(before[key]), after: removed ? '' : show(op[key] === undefined && !added ? before[key] : op[key]), array: ['dependencies', 'taskIds'].includes(key), editable: !removed && key !== 'id' }))
   const name = String(isMember ? op['name'] : op['subject'] ?? before['subject'] ?? op['id'])
   if('layers' in operation && operation.layers){
     const prior=original && 'layers' in original ? original.layers : undefined
     for(const layer of ['general','specific'] as const)for(const part of ['requirements','deliverables','acceptance'] as const){
-      fields.push({key:`layers.${layer}.${part}`,label:`${layer==='general'?'通用':'本次'}${part==='requirements'?'任务要求':part==='deliverables'?'交付物':'验收要求'}`,before:prior?.[layer][part]??'',after:operation.layers[layer][part],array:false,editable:!removed})
+      fields.push({key:`layers.${layer}.${part}`,label:`${layer==='general'?l("通用"):l("本次")}${part==='requirements'?l("任务要求"):part==='deliverables'?l("交付物"):l("验收要求")}`,before:prior?.[layer][part]??'',after:operation.layers[layer][part],array:false,editable:!removed})
     }
   }
-  if('adaptationIssue' in operation && operation.adaptationIssue!==undefined)fields.push({key:'adaptationIssue',label:'需要确认的问题（处理后清空）',before:show(before['adaptationIssue']),after:operation.adaptationIssue,array:false,editable:true})
-  return { title: `${added ? '新增' : removed ? '删除' : operation.action === 'rerun_task' ? '仅重跑' : operation.action === 'rework' ? '返工' : '修改'}${isMember ? '成员' : operation.action === 'add_task' && op['checkpoint'] ? '人工检查' : '任务'} · ${name}`, fields:fields.map(f=>f.key==='specificPrompt'?{...f,label:'本次补充指令'}:f) }
+  if('adaptationIssue' in operation && operation.adaptationIssue!==undefined)fields.push({key:'adaptationIssue',label:l("需要确认的问题（处理后清空）"),before:show(before['adaptationIssue']),after:operation.adaptationIssue,array:false,editable:true})
+  return { title: `${added ? l("新增") : removed ? l("删除") : operation.action === 'rerun_task' ? l("仅重跑") : operation.action === 'rework' ? l("返工") : l("修改")}${isMember ? l("成员") : operation.action === 'add_task' && op['checkpoint'] ? l("人工检查") : l("任务")} · ${name}`, fields:fields.map(f=>f.key==='specificPrompt'?{...f,label:l("本次补充指令")}:f) }
 }
 export function setReviewField(operation: WorkflowOperation, field: ReviewField, value: string): WorkflowOperation {
   if(field.key.startsWith('layers.') && 'layers' in operation){

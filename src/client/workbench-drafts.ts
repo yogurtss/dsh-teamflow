@@ -1,3 +1,4 @@
+import { sourceText, type WorkflowText } from './workflow-text.ts'
 import type { TeamState } from '../types.ts'
 import { layersFromDraft } from '../task-layers.ts'
 import type { WorkflowOperation } from '../workflow-types.ts'
@@ -14,12 +15,12 @@ export function draftChanged(entry: EditorDraft, baseline: Record<string,string>
   const original = entry.baseline ?? baseline
   return Object.keys({...original,...entry.values}).some(key => (entry.values[key] ?? '') !== (original[key] ?? ''))
 }
-export function pendingDrafts(team: TeamState | undefined, drafts: Record<string,EditorDraft>) {
+export function pendingDrafts(team: TeamState | undefined, drafts: Record<string,EditorDraft>, l: WorkflowText = sourceText) {
   if (!team) return []
   return Object.entries(drafts).flatMap(([key, entry]) => {
     const target = draftTarget(key, team.id)
     if (!target || !draftChanged(entry, initialEditorDraft(team,target).values)) return []
-    const label = target.type === 'member' ? entry.values['name'] || target.id || '新 Agent' : entry.values['subject'] || target.id || '新任务'
+    const label = target.type === 'member' ? entry.values['name'] || target.id || l('新 Agent') : entry.values['subject'] || target.id || l('新任务')
     return [{key,entry,target,label}]
   })
 }

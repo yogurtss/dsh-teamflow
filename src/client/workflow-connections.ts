@@ -1,3 +1,4 @@
+import { sourceText, type WorkflowText } from './workflow-text.ts'
 import type { TeamTask } from '../types.ts'
 
 export const WORKFLOW_NODE_WIDTH = 225
@@ -11,12 +12,12 @@ export function connectionPath(start: {x:number;y:number}, end: {x:number;y:numb
 }
 
 /** Mirrors graph invariants for immediate drag feedback; the server revalidates. */
-export function connectionIssue(tasks: TeamTask[], from: string, to: string): string | undefined {
+export function connectionIssue(tasks: TeamTask[], from: string, to: string, l: WorkflowText = sourceText): string | undefined {
   const target = tasks.find(t => t.id === to)
-  if (!target || !tasks.some(t => t.id === from)) return '节点不存在'
-  if (from === to) return '不能连接自身'
-  if (target.dependencies.includes(from)) return '这条交接已存在'
-  if (target.status !== 'pending' || ((target.attempt ?? 0) > 0 && !target.workflowPaused) || target.reassigning || (target.checkpoint?.decision && target.checkpoint.decision !== 'reject')) return '请先停止目标任务，或创建返工轮次'
+  if (!target || !tasks.some(t => t.id === from)) return l("节点不存在")
+  if (from === to) return l("不能连接自身")
+  if (target.dependencies.includes(from)) return l("这条交接已存在")
+  if (target.status !== 'pending' || ((target.attempt ?? 0) > 0 && !target.workflowPaused) || target.reassigning || (target.checkpoint?.decision && target.checkpoint.decision !== 'reject')) return l("请先停止目标任务，或创建返工轮次")
   const seen = new Set<string>()
   function reaches(id: string): boolean {
     if (id === to) return true
@@ -24,7 +25,7 @@ export function connectionIssue(tasks: TeamTask[], from: string, to: string): st
     seen.add(id)
     return tasks.find(t => t.id === id)?.dependencies.some(reaches) ?? false
   }
-  if (reaches(from)) return '这条连接会形成循环'
+  if (reaches(from)) return l("这条连接会形成循环")
 }
 
 export function connectionTarget(tasks: TeamTask[], position: (id: string) => { x: number; y: number }, point: { x: number; y: number }, from: string) {

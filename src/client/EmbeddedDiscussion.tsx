@@ -1,3 +1,5 @@
+import { workflowMessage } from './workflow-text.ts'
+import { useWorkflowText } from './workflow-i18n.tsx'
 /** A compact view over the same isolated native discussion session. */
 import { useEffect, useRef, useState } from 'react'
 import css from './WorkflowWorkbench.module.css'
@@ -5,9 +7,13 @@ import { remainingMessage } from './workbench-drafts.ts'
 
 type Chat = { messages: { id: string; role: string; text: string }[]; busy: boolean }
 export function EmbeddedDiscussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {
+  const l = useWorkflowText()
+
   return <Discussion key={JSON.stringify([sessionId,teamId,discussion])} sessionId={sessionId} teamId={teamId} discussion={discussion} />
 }
 function Discussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {
+  const l = useWorkflowText()
+
   const storageKey = `teamflow:discussion-draft:v1:${JSON.stringify([sessionId,teamId,discussion])}`
   const [storageError,setStorageError] = useState('')
   const [chat, setChat] = useState<Chat>({ messages: [], busy: false })
@@ -18,7 +24,7 @@ function Discussion({ sessionId, teamId, discussion }: { sessionId: string; team
   function changeText(value: string): void {
     textRef.current = value; setText(value)
     try { if (value) sessionStorage.setItem(storageKey,value); else sessionStorage.removeItem(storageKey); setStorageError('') }
-    catch { setStorageError('草稿备份失败，离开页面前请保留文本。') }
+    catch { setStorageError(l("草稿备份失败，离开页面前请保留文本。")) }
   }
   useEffect(() => {
     if (!text || !storageError) return
@@ -58,9 +64,9 @@ function Discussion({ sessionId, teamId, discussion }: { sessionId: string; team
     finally { if (liveRef.current) setSending(false) }
   }
   return <div className={css.embeddedChat}>
-    <div ref={transcript} className={css.embeddedTranscript} aria-label="独立讨论记录">{chat.messages.map(message => <div key={message.id} className={message.role === 'user' ? css.userMessage : css.assistantMessage}><strong>{message.role === 'user' ? '你' : 'AI'}</strong><p>{message.text}</p></div>)}
-      {loading ? <p role="status">正在读取讨论记录…</p> : chat.busy && <p role="status">AI 正在思考…</p>}{error && <p role="alert" className={css.error}>{error}</p>}
+    <div ref={transcript} className={css.embeddedTranscript} aria-label={l("独立讨论记录")}>{chat.messages.map(message => <div key={message.id} className={message.role === 'user' ? css.userMessage : css.assistantMessage}><strong>{message.role === 'user' ? l("你") : 'AI'}</strong><p>{message.text}</p></div>)}
+      {loading ? <p role="status">{l("正在读取讨论记录…")}</p> : chat.busy && <p role="status">{l("AI 正在思考…")}</p>}{error && <p role="alert" className={css.error}>{workflowMessage(error, l)}</p>}
     </div>
-    <form className={css.embeddedComposer} onSubmit={event => { event.preventDefault(); void send() }}><label>继续讨论<textarea value={text} onChange={event => changeText(event.target.value)} placeholder={discussion.startsWith('task:') ? '例如：帮我细化这个任务的要求，或分析失败原因…' : discussion.startsWith('member:') ? '例如：让这个 Agent 更专注于需求分析…' : '输入你想讨论的问题…'} /></label><small role={storageError ? 'alert' : undefined}>{storageError || (text ? '草稿保存在此标签页，切换讨论或刷新可恢复。' : '')}</small><button type="submit" disabled={!text.trim() || loading || chat.busy || sending}>{sending ? '发送中…' : '发送'}</button></form>
+    <form className={css.embeddedComposer} onSubmit={event => { event.preventDefault(); void send() }}><label>{l("继续讨论")}<textarea value={text} onChange={event => changeText(event.target.value)} placeholder={discussion.startsWith('task:') ? l("例如：帮我细化这个任务的要求，或分析失败原因…") : discussion.startsWith('member:') ? l("例如：让这个 Agent 更专注于需求分析…") : l("输入你想讨论的问题…")} /></label><small role={storageError ? 'alert' : undefined}>{workflowMessage(storageError,l) || (text ? l("草稿保存在此标签页，切换讨论或刷新可恢复。") : '')}</small><button type="submit" disabled={!text.trim() || loading || chat.busy || sending}>{sending ? l("发送中…") : l("发送")}</button></form>
   </div>
 }

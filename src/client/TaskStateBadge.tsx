@@ -1,3 +1,4 @@
+import { useWorkflowText } from './workflow-i18n.tsx'
 import type { AgentTeamsTranslate } from './locales.ts'
 import { zh } from './locales.ts'
 import type { taskControlState } from './task-control.ts'
@@ -12,9 +13,10 @@ const symbols: Record<string,string> = {
 export function TaskStateBadge({control,t,className='',detail,discarded=false,stale=false}: {
   control: ReturnType<typeof taskControlState>; t?:AgentTeamsTranslate; className?:string; detail?:string; discarded?:boolean; stale?:boolean
 }) {
+  const l = useWorkflowText(t)
   const visual = discarded ? 'notRun' : stale ? 'stale' : control.visual
   const key = discarded ? 'task.status.notRun' : stale ? 'workspace.verdictStale' : control.label
-  const label = t ? t(key) : zh[key]
+  const label = t ? t(key) : l(zh[key])
   return <span className={`${css.state} ${css.badge} ${className}`} data-lifecycle={visual} title={detail || label}>
     <span aria-hidden="true" className={css.symbol}>{symbols[visual] ?? '•'}</span><span>{label}</span>
   </span>

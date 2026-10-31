@@ -183,6 +183,15 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
     await post('start',{},409);
   }
   record({event:'builtin-templates-passed',snapshot:catalog});
+  const englishOwner=await ctx.agents.create({sessionId:'session-builtin-english',meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
+  ctx.effect(()=>()=>englishOwner.dispose());await englishOwner.agent.whenIdle();activeSession=englishOwner.agent.id;activeTeam='';
+  const english=await post('template_apply',{templateId:'builtin-feature',version:1,name:'English feature',description:'Keep my task 具体目标',language:'en'});
+  assert.equal(english.team.description,'Keep my task 具体目标');
+  assert.ok(english.team.tasks.every(t=>!t.layers.specific.requirements && t.workflowConfigPending));
+  assert.ok(english.team.tasks.every(t=>!/[\p{Script=Han}]/u.test(JSON.stringify(t.layers.general))));
+  assert.deepEqual(english.team.tasks.map(t=>t.dependencies),catalog.find(t=>t.id==='builtin-feature').tasks.map(t=>t.dependencies));
+  record({event:'builtin-english-passed',tasks:english.team.tasks.length});
+
   record({ event: 'workflow-workbench-passed', proposalIsolation: true, nativeScopedDiscussion: true, humanApproval: true, rejectionBlocks: true });
   process.stdout.write('WORKFLOW_WORKBENCH_OK\n');
 }
