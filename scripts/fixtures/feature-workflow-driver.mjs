@@ -8,10 +8,14 @@ export const inject = ['llm', 'agents', 'sessions', 'webServer', 'connection', '
 export function apply(ctx) {
     ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/', handler(req, res) { if (!ctx.connection.authorizeIndex(req, res))
             return; res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Workflow trial'); } }));
+    const parallel = process.env.WORKFLOW_TRIAL_PARALLEL === '1', resume = process.env.WORKFLOW_TRIAL_RESUME === '1';
     const report = process.env.WORKFLOW_TRIAL_REPORT, events = [];
-    let requests = 0, stage = 'startup', state;
+    const overlaps = new Set(); let observed = false;
+    const pairs = [['requirements','impact'],['implementation','test-preparation'],['verification','code-review']];
+    let requests = resume ? readFileSync(join(report,'trace.jsonl'),'utf8').trim().split('\n').map(JSON.parse).filter(e=>e.event==='model-request').length : 0, stage = 'startup', state;
+    if(resume) for(const e of readFileSync(join(report,'trace.jsonl'),'utf8').trim().split('\n').map(JSON.parse))if(e.tasks)for(const pair of pairs)if(pair.every(id=>e.tasks.some(t=>t.id===id&&['claimed','in_progress'].includes(t.status))))overlaps.add(pair.join('+'));
     const record = e => { events.push({ ...e, at: Date.now() }); appendFileSync(join(report, 'trace.jsonl'), JSON.stringify(events.at(-1)) + '\n'); };
-    ctx.on('llm/stream', async function* (options, next) { if (++requests > 70)
+    ctx.on('llm/stream', async function* (options, next) { if (++requests > (parallel ? 110 : 70))
         throw Error('Trial request budget exhausted'); record({ event: 'model-request', request: requests, provider: options.provider, model: options.model, sessionId: options.sessionId }); try {
         for await (const chunk of next()) {
             if (chunk.type === 'text-delta')
@@ -33,16 +37,24 @@ export function apply(ctx) {
     void (async () => {
         await ctx.get('loader').await();
         await ctx.workspaceRegistry.create(process.cwd(), 'Feature workflow trial');
-        const handle = await ctx.agents.create({ sessionId: 'session-feature-' + Date.now(), meta: { cwd: process.cwd() }, agentOptions: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' } });
+        const prior = resume ? JSON.parse(readFileSync(join(report,'adapted.json'),'utf8')) : undefined;
+        const handle = resume ? await ctx.agents.resume({resumeSessionId:prior.team.captainSessionId,agentOptions:{provider:'deepseek-account',model:'deepseek-flash',reasoningEffort:'high'}}) : await ctx.agents.create({ sessionId: 'session-feature-' + Date.now(), meta: { cwd: process.cwd() }, agentOptions: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' } });
         ctx.effect(() => () => handle.dispose());
         await bounded(handle.agent.whenIdle());
         const origin = 'http://127.0.0.1:' + ctx.webServer.port;
         const auth = await fetch(ctx.connection.authenticatedUrl(origin), { redirect: 'manual' });
         assert.equal(auth.status, 303);
         const cookie = auth.headers.get('set-cookie').split(';', 1)[0];
-        let teamId = '';
-        const post = async (action, fields = {}, expected = 200) => { const response = await fetch(origin + '/plugins/dsh-agent-teams/workflow', { method: 'POST', headers: { 'content-type': 'application/json', origin, cookie }, body: JSON.stringify({ sessionId: handle.agent.id, teamId, action, ...fields }), signal: AbortSignal.timeout(25000) }); const body = await response.json(); assert.equal(response.status, expected, JSON.stringify(body)); if (body.team)
-            state = body; record({ event: 'action', action, status: response.status, tasks: body.team?.tasks.map(t => ({ id: t.id, status: t.status, pending: t.workflowConfigPending, paused: t.workflowPaused })) }); return body; };
+        let teamId = prior?.team.id ?? '';
+        const post = async (action, fields = {}, expected = 200) => { const response = await fetch(origin + '/plugins/dsh-agent-teams/workflow', { method: 'POST', headers: { 'content-type': 'application/json', origin, cookie }, body: JSON.stringify({ sessionId: handle.agent.id, teamId, action, ...fields }), signal: AbortSignal.timeout(25000) }); const body = await response.json(); assert.equal(response.status, expected, JSON.stringify(body)); if (body.team) {
+            state = body;
+            if(parallel && observed){
+                const byId=id=>body.team.tasks.find(t=>t.id===id);
+                const active=t=>['claimed','in_progress'].includes(t.status);
+                for(const pair of pairs)if(pair.every(id=>active(byId(id))))overlaps.add(pair.join('+'));
+                for(const task of body.team.tasks)if(active(task)||task.status==='completed')for(const id of task.dependencies)assert.equal(byId(id).status,'completed','Premature execution: '+task.id+' before '+id);
+            }
+        } record({ event: 'action', action, status: response.status, tasks: body.team?.tasks.map(t => ({ id: t.id, status: t.status, pending: t.workflowConfigPending, paused: t.workflowPaused })) }); return body; };
         const discussion = async (key) => { stage = 'discussion:' + key; const opened = await post('open_discussion', { discussion: key }); const live = ctx.agents.get(opened.openedSessionId); assert.ok(live); await bounded(live.whenIdle()); return post('state'); };
         const waitTask = async (id) => { stage = 'execute:' + id; const deadline = Date.now() + 300000; do {
             await post('state');
@@ -53,8 +65,9 @@ export function apply(ctx) {
                 throw Error('Task failed ' + id + ': ' + task.output);
             await new Promise(r => setTimeout(r, 1000));
         } while (Date.now() < deadline); throw Error('Task timeout ' + id); };
+        if(!resume){
         stage = 'apply-template';
-        await post('template_apply', { templateId: 'builtin-feature', version: 1, name: '端口输入校验', description: readFileSync('README.md', 'utf8') });
+        await post('template_apply', { templateId: 'builtin-feature', version: parallel ? 2 : 1, name: parallel ? '并行端口输入校验' : '端口输入校验', description: readFileSync('README.md', 'utf8') });
         teamId = state.team.id;
         const topology = state.team.tasks.map(t => ({ id: t.id, dependencies: t.dependencies, general: t.layers.general }));
         await post('start', {}, 409);
@@ -67,20 +80,26 @@ export function apply(ctx) {
         assert.ok(state.team.tasks.every(t => !t.workflowConfigPending));
         assert.ok(state.team.members.every(m => !m.id));
         writeFileSync(join(report, 'adapted.json'), JSON.stringify(state, null, 2));
-        await post('start');
+        }
+        observed = true;
+        if(resume) await post('state'); else await post('start');
         await waitTask('requirements');
+        if(parallel) await waitTask('impact');
         assert.ok(existsSync('requirements.md'), 'Analyst must produce the requirements artifact');
         const requirements = readFileSync('requirements.md', 'utf8');
-        for (const term of ['validatePort', '65535', 'validator.mjs', 'node:test'])
+        const impact = parallel ? readFileSync('impact.md','utf8') : undefined;
+        for (const term of ['validatePort', '65535', 'validator.mjs', parallel ? 'node --test' : 'node:test'])
             assert.ok(requirements.includes(term), 'Missing requirement: ' + term);
         assert.ok(!existsSync('validator.mjs') && !existsSync('validator.test.mjs'), 'Implementation must wait for the scope review');
         await discussion('check:scope-review');
         await post('review', { taskId: 'scope-review', decision: 'approve', evidence: state.team.workflow.discussions['discussion:check:scope-review'].evidence, note: '测试驱动确认 README 中固定的端口语义与范围；允许实现。' });
         await waitTask('implementation');
+        if(parallel) await waitTask('test-preparation');
         await waitTask('verification');
+        if(parallel){await waitTask('code-review');await waitTask('delivery');assert.equal(readFileSync('impact.md','utf8'),impact);for(const file of ['review.md','verification.md','delivery.md'])assert.ok(readFileSync(file,'utf8').trim(),file);}
         stage = 'external-verification';
         assert.equal(readFileSync('requirements.md', 'utf8'), requirements, 'Builder/verifier must preserve the approved specification');
-        const command = spawnSync(process.execPath, ['--test', 'validator.test.mjs'], { encoding: 'utf8', timeout: 30000 });
+        const command = spawnSync(process.execPath, ['--test', 'validator.test.mjs', ...(parallel ? ['tests/independent.test.mjs'] : [])], { encoding: 'utf8', timeout: 30000 });
         assert.equal(command.status, 0, command.stdout + command.stderr);
         const { validatePort } = await import(pathToFileURL(join(process.cwd(), 'validator.mjs')));
         for (const value of [1, 80, 443, 65535])
@@ -91,9 +110,10 @@ export function apply(ctx) {
         await discussion('check:acceptance');
         await post('review', { taskId: 'acceptance', decision: 'approve', evidence: state.team.workflow.discussions['discussion:check:acceptance'].evidence, note: '测试驱动已在 Agent 外复跑 node:test 并验证 20 个边界输入。' });
         assert.ok(state.team.tasks.every(t => t.status === 'completed'));
+        if(parallel){assert.ok(overlaps.has('requirements+impact'),'Analysis branches never overlapped');assert.ok(overlaps.has('implementation+test-preparation'),'Implementation and test preparation never overlapped');}
         stage = 'complete';
         record({ event: 'workflow-passed' });
-        writeFileSync(join(report, 'result.json'), JSON.stringify({ passed: true, stage, requests, team: state.team, externalCases: 20 }, null, 2));
+        writeFileSync(join(report, 'result.json'), JSON.stringify({ passed: true, stage, requests, team: state.team, externalCases: 20, parallel, overlaps:[...overlaps] }, null, 2));
         ctx.get('appExit')(0);
-    })().catch(error => { writeFileSync(join(report, 'result.json'), JSON.stringify({ passed: false, stage, requests, error: String(error.stack), team: state?.team, modelErrors: events.filter(e => e.event === 'model-error') }, null, 2)); ctx.get('appExit')(1); });
+    })().catch(error => { writeFileSync(join(report, 'result.json'), JSON.stringify({ passed: false, stage, requests, parallel, overlaps:[...overlaps], error: String(error.stack), team: state?.team, modelErrors: events.filter(e => e.event === 'model-error') }, null, 2)); ctx.get('appExit')(1); });
 }

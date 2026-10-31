@@ -1,0 +1,136 @@
+{
+  "plugin": "0.2.5-dev.4",
+  "templateVersion": 2,
+  "host": "0.2.1-rc.2",
+  "model": "deepseek-flash",
+  "functionalPassed": true,
+  "fileScopePassed": false,
+  "requests": 100,
+  "wallSecondsIncludingTestInterruption": 409.025,
+  "completedTasks": [
+    {
+      "id": "requirements",
+      "status": "completed"
+    },
+    {
+      "id": "impact",
+      "status": "completed"
+    },
+    {
+      "id": "scope-review",
+      "status": "completed"
+    },
+    {
+      "id": "implementation",
+      "status": "completed"
+    },
+    {
+      "id": "test-preparation",
+      "status": "completed"
+    },
+    {
+      "id": "verification",
+      "status": "completed"
+    },
+    {
+      "id": "code-review",
+      "status": "completed"
+    },
+    {
+      "id": "delivery",
+      "status": "completed"
+    },
+    {
+      "id": "acceptance",
+      "status": "completed"
+    }
+  ],
+  "parallelPairs": [
+    "requirements+impact",
+    "implementation+test-preparation",
+    "verification+code-review"
+  ],
+  "overlapSecondsApprox": [
+    {
+      "pair": [
+        "requirements",
+        "impact"
+      ],
+      "seconds": 43
+    },
+    {
+      "pair": [
+        "implementation",
+        "test-preparation"
+      ],
+      "seconds": 23
+    },
+    {
+      "pair": [
+        "verification",
+        "code-review"
+      ],
+      "seconds": 37
+    }
+  ],
+  "externalTests": 9,
+  "externalInputCases": 20,
+  "preservedFromFirstWrite": [
+    "validator.mjs",
+    "validator.test.mjs",
+    "tests/independent.test.mjs"
+  ],
+  "errors": [
+    {
+      "tool": "agent_teams_update_task",
+      "message": "evidence_note is for terminal tasks; record active work with output and structured evidence"
+    },
+    {
+      "tool": "agent_teams_update_task",
+      "message": "missing attempt_id for task code-review. Retry this update with attempt_id=\"7e288052-33be-4a22-94ca-e89f5dab0620\" from your current assignment. This is a missing parameter, not a revoked attempt; do not restart the work or request reassignment."
+    },
+    {
+      "tool": "agent_teams_update_task",
+      "message": "task status cannot move from \"claimed\" to \"completed\""
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "README.md",
+      "sha256": "5b4f271e122dea7d4f6620f529fba13f0b0d40d568449d4c37a922d87137e44f"
+    },
+    {
+      "file": "requirements.md",
+      "sha256": "25cbf8f437e2f46a1b0011c82072b9191e5e96d0b5b0058bfb936feede31400e"
+    },
+    {
+      "file": "impact.md",
+      "sha256": "eb9376647746080acadb067df9e3f37196462d1e7cd95cb20fa4dc5475c64cc7"
+    },
+    {
+      "file": "validator.mjs",
+      "sha256": "a4ce82337a448b4c231488d227d9f1b64a9aa9798fc161c92633b76e1a096999"
+    },
+    {
+      "file": "validator.test.mjs",
+      "sha256": "62e4099a651e40c2d7970e716854411a559aef70933cf1e7b17ebb21ff764309"
+    },
+    {
+      "file": "tests/independent.test.mjs",
+      "sha256": "e0d9577348de32609ca9dd05c6ee98292d0a735970461addb64ef84c4c2a89e9"
+    },
+    {
+      "file": "verification.md",
+      "sha256": "f6b540ab8c2e00dab5b357980a022fcea434bd609ca46674c2b84bf7b64ba1c6"
+    },
+    {
+      "file": "review.md",
+      "sha256": "cb9fbd20cb1ffb5c59cd53aab8ab8fc470f26bf615da38d60afe76dc2f1a5e3e"
+    },
+    {
+      "file": "delivery.md",
+      "sha256": "f1c04161007d31108d5111f8ac43b7a8a99fb124e407c5bd2e5864cb4ba7dbc6"
+    }
+  ],
+  "traceSha256": "96afa1037d36145960830fa59ad6ca388dd0f24e8108e7b5e7a85c46490ab04b"
+}
