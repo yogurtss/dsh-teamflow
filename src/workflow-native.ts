@@ -16,7 +16,7 @@ import { resolveMemberLlmSelection } from './members.ts'
 import { checkpointInputs, checkpointReady, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
 import { extractedTemplate, templateSeed, validateAdaptation } from './templates.ts'
 import { taskSplitBlock, TASK_SPLIT_REQUEST, validateTaskSplit } from './task-split.ts'
-import { taskText, requireGeneratedTaskLayers } from './task-layers.ts'
+import { taskText, requireGeneratedTaskLayers, taskLayersParameter } from './task-layers.ts'
 
 export function reviewOpening(team: TeamState, taskId: string): string {
   const task = team.tasks.find(t => t.id === taskId && t.checkpoint)
@@ -142,11 +142,24 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
     }),
   }))
   ctx.tools.register(defineTool({ name: ALLOW[1]!, description: 'Save a proposal for human preview. Does not apply changes or approve checkpoints.',
-    parameters: { base: { type: 'string', required: true }, title: { type: 'string', required: true }, operations: { type: 'string', required: true, description: 'JSON-encoded array. Every object requires "action" and its fields at the same level. Example: [{"action":"update_member","name":"planner","summary":"Write three items","executionPrompt":"Include completion criteria"}]. Supported actions and fields are documented in your persona.' } }, output,
+    parameters: { base: { type: 'string', required: true }, title: { type: 'string', required: true }, operations: {
+      type: 'array', required: true,
+      description: 'One atomic batch of 1–50 proposed edits. Submit objects directly, not a JSON-encoded string. No changes take effect before human confirmation.',
+      items: { type: 'object', additionalProperties: false, properties: {
+        action: { type: 'string', required: true, enum: ['add_member','update_member','remove_member','add_task','update_task','remove_task','rerun_task','rework'] },
+        id: { type: 'string' }, name: { type: 'string' }, subject: { type: 'string' }, summary: { type: 'string' },
+        role: { type: 'string' }, executionPrompt: { type: 'string' }, specificPrompt: { type: 'string' },
+        provider: { type: 'string' }, model: { type: 'string' }, reasoningEffort: { type: 'string' },
+        description: { type: 'string' }, assignee: { type: 'string' }, layers: taskLayersParameter,
+        adaptationIssue: { type: 'string' }, instructions: { type: 'string' },
+        dependencies: { type: 'array', items: { type: 'string' } }, taskIds: { type: 'array', items: { type: 'string' } },
+        checkpoint: { type: 'boolean' }, configurationPending: { type: 'boolean' }, confirmConfiguration: { type: 'boolean' },
+      } },
+    } }, output,
     execute: (args, exec) => scoped(exec.agent, (team, discussion) => {
       if (args.base !== discussion.contextBase || args.base !== workflowFingerprint(team)) throw new Error('团队已变化，请重新读取上下文并讨论')
-      if (!args.title.trim() || args.title.length > 500 || args.operations.length > 120000) throw new Error('提案过长或缺少标题')
-      const proposal = proposeWorkflow(team, args.title, JSON.parse(args.operations), config.maxMembers)
+      if (!args.title.trim() || args.title.length > 500 || JSON.stringify(args.operations).length > 120000) throw new Error('提案过长或缺少标题')
+      const proposal = proposeWorkflow(team, args.title, args.operations, config.maxMembers)
       requireGeneratedTaskLayers(proposal.operations)
       if (discussion.splitLayers) validateTaskSplit(discussion.key.slice(5), proposal.operations)
       if(discussion.key==='template')throw new Error('模板提炼不能修改源团队，请使用 agent_teams_template_propose')

@@ -36,3 +36,5 @@ assert.deepEqual(trace.find(row=>row.event==='workflow-split-passed')?.snapshot,
 assert.ok(trace.some(row=>row.event==='specific-contract-execution' && row.specificOnly), 'Real executor must receive the complete specific contract')
 assert.deepEqual(trace.find(row=>row.event==='builtin-templates-passed')?.snapshot,JSON.parse(readFileSync(new URL('./fixtures/snapshots/builtin-templates.json',import.meta.url),'utf8')),'Built-in template catalog changed')
 if(!template||runs.some(run=>!run.passed))process.exitCode=1
+
+assert.deepEqual(trace.find(row=>row.event==='workflow-native-request')?.tools.find(tool=>tool.name==='agent_teams_workflow_propose'),JSON.parse(readFileSync(new URL('./fixtures/snapshots/workflow-proposal-tool.json',import.meta.url),'utf8')),'Structured proposal tool contract changed')

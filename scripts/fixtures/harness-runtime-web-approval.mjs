@@ -54,6 +54,8 @@ class WebApprovalAdapter extends LlmAdapter {
         if (system.includes('你是 TeamFlow 的独立配置顾问或验收 Agent')) {
             assert.ok(options.sessionId, 'Discussion must use a durable native session');
             assert.deepEqual((options.tools ?? []).map(t => t.name).sort(), userText.includes('提炼当前流程为可复用模板') ? ['agent_teams_template_propose', 'agent_teams_workflow_context'] : ['agent_teams_workflow_context', 'agent_teams_workflow_propose']);
+            const proposalTool = options.tools?.find(t => t.name === 'agent_teams_workflow_propose');
+            if (proposalTool) assert.equal(proposalTool.parameters.properties.operations.type, 'array', 'Native proposals use structured operations, not nested JSON strings');
             const lastUser = options.messages.findLastIndex(m => m.role === 'user');
             const turn = options.messages.slice(lastUser + 1);
             const turnCalls = turn.flatMap(m => m.content ?? []).filter(b => b.type === 'tool-call');
@@ -73,7 +75,7 @@ class WebApprovalAdapter extends LlmAdapter {
                     { action: 'add_member', name: 'worker', summary: '讨论规划的执行成员', role: 'WEB_APPROVAL_MEMBER' },
                     { action: 'add_task', id: 't1', subject: '讨论规划任务', layers: { general: { requirements: 'Implement the requested operator against its specification', deliverables: 'Implementation and verification evidence', acceptance: 'Pass independent correctness checks' }, specific: { requirements: 'Implement operator A', deliverables: 'A implementation', acceptance: 'A correctness' } }, assignee: 'worker', dependencies: [] },
                   ] : [];
-            if (operations.length && !turnCalls.some(c => c.name === 'agent_teams_workflow_propose')) { yield* call('agent_teams_workflow_propose', { base: context.base, title: '原生讨论配置方案', operations: JSON.stringify(operations) }); return; }
+            if (operations.length && !turnCalls.some(c => c.name === 'agent_teams_workflow_propose')) { yield* call('agent_teams_workflow_propose', { base: context.base, title: '原生讨论配置方案', operations }); return; }
             yield* textChunks('已整理方案与材料，请在编排画布中查看并确认。');
             record({ event: 'workflow-native-finished', sessionId: options.sessionId });
             return;

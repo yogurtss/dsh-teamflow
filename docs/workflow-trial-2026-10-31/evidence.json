@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-31",
+  "boundary": "Authenticated HTTP driver, real model and agents; simulated human approval; Windows danger-full-access test profile; no browser interaction",
+  "runs": [
+    {
+      "name": "before",
+      "version": "0.2.5-dev.1",
+      "passed": true,
+      "host": "0.2.1-rc.2",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "reasoningEffort": "high",
+      "requests": 59,
+      "elapsedSeconds": 557,
+      "adaptationSeconds": 178,
+      "tasks": [
+        {
+          "id": "requirements",
+          "status": "completed"
+        },
+        {
+          "id": "scope-review",
+          "status": "completed"
+        },
+        {
+          "id": "implementation",
+          "status": "completed"
+        },
+        {
+          "id": "verification",
+          "status": "completed"
+        },
+        {
+          "id": "acceptance",
+          "status": "completed"
+        }
+      ],
+      "externalCases": 20,
+      "nodeTests": 26,
+      "toolErrors": [
+        {
+          "tool": "agent_teams_workflow_propose",
+          "message": "Expected double-quoted property name in JSON at position 1823 (line 1 column 1824)"
+        },
+        {
+          "tool": "agent_teams_workflow_propose",
+          "message": "Expected double-quoted property name in JSON at position 1554 (line 1 column 1555)"
+        }
+      ],
+      "traceSha256": "a32bca38911936b98cd0f6a317f4e70c9d02b8871a678690e70e2cc46ea407e9",
+      "runtimeCodeSha256": "4fbf1bda77c3d91e920a65965ba4443eb20a5b5366bbdccf0051f92cde676de3",
+      "files": {
+        "requirements.md": "4de6540c9e378113518d217e93c1e39366d4e9e7f2ad4f51b3ca523fba768d8f",
+        "validator.mjs": "4d7fbd5e25190dd432c7aee3235c1e0d73293d6f167f7d2e1ac8b47e89041395",
+        "validator.test.mjs": "faec2733d0cbbfe8ddd2b12756517dbfda821974224fb3af2df104ab025ba16b"
+      }
+    },
+    {
+      "name": "after",
+      "version": "0.2.5-dev.2",
+      "passed": true,
+      "host": "0.2.1-rc.2",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "reasoningEffort": "high",
+      "requests": 54,
+      "elapsedSeconds": 366,
+      "adaptationSeconds": 78,
+      "tasks": [
+        {
+          "id": "requirements",
+          "status": "completed"
+        },
+        {
+          "id": "scope-review",
+          "status": "completed"
+        },
+        {
+          "id": "implementation",
+          "status": "completed"
+        },
+        {
+          "id": "verification",
+          "status": "completed"
+        },
+        {
+          "id": "acceptance",
+          "status": "completed"
+        }
+      ],
+      "externalCases": 20,
+      "nodeTests": 36,
+      "toolErrors": [
+        {
+          "tool": "agent_teams_update_task",
+          "message": "evidence_note is for terminal tasks; record active work with output and structured evidence"
+        }
+      ],
+      "traceSha256": "1831f1b94a6cbf00bbf3f4c95f846916295b658aed5f08d990d02b0bf7617334",
+      "runtimeCodeSha256": "4f489625d5524a1d39eeaf0fa1fe04f816a831719511765c22b3f25c691d07cc",
+      "files": {
+        "requirements.md": "4dcd37c1444f3f594928f0239deca9122f6502f5e79c61bd4d3b3d47a970acd8",
+        "validator.mjs": "1607d71d2714ba753a456a9f3027dee5746b74b339ba92fe599224d2449acb4e",
+        "validator.test.mjs": "216b02c2e3c051a9ec85c044753e3d17f9f9883ec11e5fda596efe61ffc2ab8d"
+      }
+    }
+  ],
+  "unitTests": {
+    "passed": 85,
+    "failed": 0
+  },
+  "packagedRegression": {
+    "passed": true,
+    "proposalSchemaSnapshot": true,
+    "coldDiscussionRecovery": true
+  }
+}

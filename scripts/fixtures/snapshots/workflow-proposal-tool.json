@@ -1,0 +1,160 @@
+{
+  "name": "agent_teams_workflow_propose",
+  "description": "Save a proposal for human preview. Does not apply changes or approve checkpoints.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "base": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "operations": {
+        "type": "array",
+        "description": "One atomic batch of 1–50 proposed edits. Submit objects directly, not a JSON-encoded string. No changes take effect before human confirmation.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "add_member",
+                "update_member",
+                "remove_member",
+                "add_task",
+                "update_task",
+                "remove_task",
+                "rerun_task",
+                "rework"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "executionPrompt": {
+              "type": "string"
+            },
+            "specificPrompt": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "reasoningEffort": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "assignee": {
+              "type": "string"
+            },
+            "layers": {
+              "type": "object",
+              "description": "Generate both layers when creating tasks: general is the reusable method and quality constraints; specific is the COMPLETE standalone execution contract, concretizing every general method, deliverable and acceptance constraint for the current goal, paths and parameters. Executors see only specific, never general; do not use references such as follow the general requirements. Each has requirements, deliverables, acceptance strings. Do not duplicate layers in description.",
+              "additionalProperties": false,
+              "properties": {
+                "general": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "requirements": {
+                      "type": "string"
+                    },
+                    "deliverables": {
+                      "type": "string"
+                    },
+                    "acceptance": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requirements",
+                    "deliverables",
+                    "acceptance"
+                  ]
+                },
+                "specific": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "requirements": {
+                      "type": "string"
+                    },
+                    "deliverables": {
+                      "type": "string"
+                    },
+                    "acceptance": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requirements",
+                    "deliverables",
+                    "acceptance"
+                  ]
+                }
+              },
+              "required": [
+                "general",
+                "specific"
+              ]
+            },
+            "adaptationIssue": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "checkpoint": {
+              "type": "boolean"
+            },
+            "configurationPending": {
+              "type": "boolean"
+            },
+            "confirmConfiguration": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action"
+          ]
+        }
+      }
+    },
+    "required": [
+      "base",
+      "title",
+      "operations"
+    ]
+  }
+}
