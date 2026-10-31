@@ -103,6 +103,21 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   } while (Date.now() < deadline);
   assert.equal(result.team.tasks[1].output, 'WEB_MEMBER_TASK_DONE', 'Approving and resuming must dispatch a real member through the scheduler');
   for (const agent of ctx.agents.list()) await agent.whenIdle();
+  result=await post('edit',{base:result.base,title:'Rerun path gates',operations:[
+    {action:'add_task',id:'path-gate',subject:'Review rerun output',description:'Read the new output',checkpoint:true,dependencies:['t1']},
+    {action:'add_task',id:'path-target',subject:'Final rerun review',description:'Confirm the new review',checkpoint:true,dependencies:['path-gate']}
+  ]});
+  result=await post('edit',{base:result.base,title:'Rerun upstream',operations:[{action:'rerun_task',id:'t1',instructions:'Recheck the work for the downstream review path'}]});
+  await post('resume_rerun_path',{taskId:'path-target',base:'stale'},409);
+  result=await post('resume_rerun_path',{taskId:'path-target',base:result.base});
+  assert.ok(result.team.tasks.filter(t=>t.id.startsWith('path-')).every(t=>!t.workflowPaused&&!t.workflowRerunRequired));
+  const pathDeadline=Date.now()+20000;
+  do{result=await post('state');if(result.team.tasks.find(t=>t.id==='t1').status==='completed')break;await new Promise(r=>setTimeout(r,50))}while(Date.now()<pathDeadline);
+  assert.deepEqual(result.ready,['path-gate']);
+  const pathMaterials=await post('materials',{discussion:'check:path-gate'});
+  result=await post('review',{taskId:'path-gate',decision:'approve',evidence:pathMaterials.team.workflow.discussions['discussion:check:path-gate'].evidence});
+  assert.deepEqual(result.ready,['path-target'],'Approval advances the authorized path without another resume');
+  record({event:'rerun-path-passed',humanGatePreserved:true,automaticContinuation:true});
   const automatic = await ctx.agents.create({ sessionId: 'session-auto-' + Date.now(), meta: { cwd: process.cwd() }, agentOptions: { provider: 'runtime-lab', model: 'manual-fixture' } });
   ctx.effect(() => () => automatic.dispose()); await automatic.agent.whenIdle();
   activeSession = automatic.agent.id; activeTeam = '';

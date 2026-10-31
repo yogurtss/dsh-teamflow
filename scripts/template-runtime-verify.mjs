@@ -40,3 +40,5 @@ if(!template||runs.some(run=>!run.passed))process.exitCode=1
 assert.deepEqual(trace.find(row=>row.event==='workflow-native-request')?.tools.find(tool=>tool.name==='agent_teams_workflow_propose'),JSON.parse(readFileSync(new URL('./fixtures/snapshots/workflow-proposal-tool.json',import.meta.url),'utf8')),'Structured proposal tool contract changed')
 
 assert.ok(trace.some(row=>row.event==='builtin-english-passed' && row.tasks===9), 'English built-in template must apply through the packaged HTTP route');
+
+assert.ok(trace.some(row=>row.event==='rerun-path-passed' && row.humanGatePreserved && row.automaticContinuation), 'Packaged rerun path must continue after human approval');

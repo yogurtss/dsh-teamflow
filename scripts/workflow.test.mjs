@@ -33,7 +33,7 @@ async function lifecycleFixture(t, source, options = {}) {
   const captain = {id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
   const dispatched = []
   let route
-  const ctx = {agents:{get:id=>id===captain.id?captain:undefined}, on(){}, effect:fn=>fn(), logger:{warn(){}}, subagents:{drainChildren:options.drain ?? (async()=>{})}}
+  const ctx = {agents:{get:id=>id===captain.id?captain:options.liveAgents?.get(id)}, on(){}, effect:fn=>fn(), logger:{warn(){}}, subagents:{drainChildren:options.drain ?? (async()=>{})}}
   const scheduler = installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async(...args)=>{dispatched.push(args);return true}})
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',maxMembers:8},scheduler,{register:value=>{route=value;return()=>{}}})
   const read = () => readTeam(stateRoot,'demo')
@@ -43,7 +43,7 @@ async function lifecycleFixture(t, source, options = {}) {
     await route.handler(req,{writeHead:c=>{code=c},end:body=>{value=JSON.parse(body)}})
     return {code,...value}
   }
-  return {read,call,dispatched,save:state=>writeTeam(stateRoot,state)}
+  return {read,call,dispatched,save:state=>writeTeam(stateRoot,state),kick:()=>scheduler.kickTeam(root,source.id,captain)}
 }
 
 test('manual and approved AI additions share the first-start boundary for work and reviews', async t => {
@@ -1159,4 +1159,52 @@ test('parallel feature template dispatches independent branches and waits at joi
     assert.equal(new Set(dispatched.map(args=>args[2])).size,expected.length,'Concurrent tasks must use distinct members')
     assert.equal(checkpointReady(source,source.tasks.find(task=>task.id==='acceptance')),completed.includes('delivery'))
   }
+})
+
+test('rerun through a downstream target queues its ancestry atomically and respects human gates',async t=>{
+  const source=team();source.members.push({...member,name:'other'},{...member,name:'third'})
+  source.tasks=[{...task('root'),status:'in_progress',attempt:2,attemptId:'current'},
+    {...task('left',['root']),workflowPaused:true,workflowRerunRequired:true},
+    {...task('right',['root']),assignee:'other',workflowPaused:true,workflowRerunRequired:true},
+    {...task('gate',['left','right']),assignee:undefined,checkpoint:{round:2,history:[]},workflowPaused:true,workflowRerunRequired:true},
+    {...task('target',['gate']),assignee:'third',workflowPaused:true,workflowRerunRequired:true},
+    {...task('sibling',['root']),workflowPaused:true,workflowRerunRequired:true},
+    {...task('after-target',['target']),workflowPaused:true,workflowRerunRequired:true}]
+  const live={status:'running'};source.members[0].id='worker-live'
+  const f=await lifecycleFixture(t,source,{liveAgents:new Map([['worker-live',live]])})
+  await f.call('resume_rerun_path',{taskId:'target',base:'stale'}).then(r=>assert.equal(r.code,409))
+  assert.deepEqual(await f.read(),JSON.parse(JSON.stringify(source)))
+  const result=await f.call('resume_rerun_path',{taskId:'target',base:workflowFingerprint(source)})
+  assert.equal(result.code,200,result.error)
+  let saved=await f.read()
+  assert.equal(saved.tasks[0].attemptId,'current','Running upstream keeps its attempt')
+  for(const id of ['left','right','gate','target']){assert.equal(saved.tasks.find(t=>t.id===id).workflowPaused,false);assert.equal(saved.tasks.find(t=>t.id===id).workflowRerunRequired,false)}
+  assert.equal(saved.tasks.find(t=>t.id==='gate').checkpoint.round,2,'Do not reset or approve checkpoints')
+  for(const id of ['sibling','after-target'])assert.deepEqual(saved.tasks.find(t=>t.id===id),source.tasks.find(t=>t.id===id))
+  assert.equal(saved.tasks.find(t=>t.id==='target').status,'pending')
+  const repeated=await f.call('resume_rerun_path',{taskId:'target',base:workflowFingerprint(saved)});assert.equal(repeated.code,409)
+  saved=await f.read();Object.assign(saved.tasks[0],{status:'completed',output:'NEW ROOT'});await f.save(saved)
+  live.status='idle';await f.kick()
+  saved=await f.read()
+  assert.equal(saved.tasks.find(t=>t.id==='left').status,'claimed');assert.equal(saved.tasks.find(t=>t.id==='right').status,'claimed')
+  assert.equal(saved.tasks.find(t=>t.id==='target').status,'pending')
+  for(const id of ['left','right'])Object.assign(saved.tasks.find(t=>t.id===id),{status:'completed',output:'NEW '+id})
+  await f.save(saved)
+  assert.equal(checkpointReady(saved,saved.tasks.find(t=>t.id==='gate')),true)
+  const materials=await f.call('materials',{discussion:'check:gate'})
+  assert.equal(materials.code,200,materials.error)
+  const accepted=await f.call('review',{taskId:'gate',decision:'approve',evidence:materials.team.workflow.discussions['discussion:check:gate'].evidence,note:'Reviewed new inputs'})
+  assert.equal(accepted.code,200,accepted.error)
+  saved=await f.read();assert.equal(saved.tasks.find(t=>t.id==='target').status,'claimed','Approval continues the already authorized path')
+  assert.equal(saved.tasks.find(t=>t.id==='sibling').workflowRerunRequired,true)
+})
+
+test('rerun path rejects blocked ancestors without partially releasing any node',async()=>{
+ const {resumeRerunPath}=await import('../lib/task-rerun.js')
+ for(const patch of [{workflowConfigPending:true},{status:'failed'},{workflowRerunRequired:false,workflowPaused:true},{reassigning:true},{assignee:'missing'}]){
+  const source=team();source.tasks=[{...task('a'),workflowPaused:true,workflowRerunRequired:true,...patch},{...task('b',['a']),workflowPaused:true,workflowRerunRequired:true}]
+  const before=structuredClone(source);assert.throws(()=>resumeRerunPath(source,'b'));assert.deepEqual(source,before)
+ }
+ const source=team();source.tasks=[{...task('a',['missing']),workflowRerunRequired:true}];assert.throws(()=>resumeRerunPath(source,'a'),/缺失/)
+ source.tasks[0].dependencies=['a'];assert.throws(()=>resumeRerunPath(source,'a'),/循环/)
 })

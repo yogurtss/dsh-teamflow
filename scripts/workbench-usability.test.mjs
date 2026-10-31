@@ -138,10 +138,10 @@ test('downstream rerun labels explain waiting versus work or review ready for ne
   assert.deepEqual(taskReadiness(source,next).dependencies,['t1'])
   source.tasks[0].status='completed'
   assert.equal(taskReadiness(source,next).label,'需要重新执行')
-  assert.match(taskReadiness(source,next).detail,/使用新结果执行/)
+  assert.match(taskReadiness(source,next).detail,/重跑到此节点/)
   next.checkpoint={round:2,history:[]}
   assert.equal(taskReadiness(source,next).label,'需要重新验收')
-  assert.match(taskReadiness(source,next).detail,/旧验收不能沿用/)
+  assert.match(taskReadiness(source,next).detail,/人工检查仍需你确认/)
   source.tasks[0].status='failed'
   assert.equal(taskReadiness(source,next).label,'等待上游新结果')
   assert.match(taskReadiness(source,next).detail,/失败/)

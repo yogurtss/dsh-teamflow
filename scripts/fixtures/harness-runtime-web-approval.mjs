@@ -44,7 +44,10 @@ class WebApprovalAdapter extends LlmAdapter {
     async *stream(options) {
         const system = options.system ?? options.messages.filter(message => message.role === 'system').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');
         if (options.purpose) { yield* textChunks('Web approval lab'); return; }
-        const blocks = options.messages.flatMap(message => message.role === 'tool' ? [{ type: 'tool-result', content: message.content, isError: message.isError, toolCallId: message.toolCallId }] : message.content ?? []);
+        // Script each assignment independently so a rerun does not reuse the prior turn's tool calls.
+        const assignmentIndex=system.includes('WEB_APPROVAL_MEMBER') ? options.messages.findLastIndex(message=>message.role==='user'&&message.content?.some(block=>block.type==='text'&&block.text.includes('AgentTeams automatic task assignment'))) : -1;
+        const turnMessages=assignmentIndex<0?options.messages:options.messages.slice(assignmentIndex);
+        const blocks = turnMessages.flatMap(message => message.role === 'tool' ? [{ type: 'tool-result', content: message.content, isError: message.isError, toolCallId: message.toolCallId }] : message.content ?? []);
         const calls = blocks.filter(block => block.type === 'tool-call');
         const names = calls.map(block => block.name);
         const userText = options.messages.filter(message => message.role === 'user').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');

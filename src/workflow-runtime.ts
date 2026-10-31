@@ -1,3 +1,4 @@
+import { resumeRerunPath } from './task-rerun.ts'
 import { localizeBuiltinTemplate } from './builtin-template-locales.ts'
 /** Human-only workflow controls and native conversation navigation. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -206,7 +207,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       }
       let openedSessionId: string | undefined
       const flowKey = `${root}:${teamId}`
-      if (controllingFlows.has(flowKey) && ['set_flow_enabled','set_task_enabled','resume_task','stop_task','edit','apply','review','start'].includes(action)) throw new Error('流程正在更新执行状态，请稍候重试')
+      if (controllingFlows.has(flowKey) && ['set_flow_enabled','set_task_enabled','resume_rerun_path','resume_task','stop_task','edit','apply','review','start'].includes(action)) throw new Error('流程正在更新执行状态，请稍候重试')
       if (action === 'set_flow_enabled') {
         controllingFlows.add(flowKey)
         try {
@@ -358,6 +359,9 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const discussion = discussionOf(team, `check:${id}`)
             if (typeof body['evidence'] !== 'string' || body['evidence'] !== discussion.evidence) throw new Error('请先打开并阅读当前验收材料')
             decideCheckpoint(team, id, decision, body['evidence'], workflowMaterials(team, id, workspace).evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '')
+          } else if (action === 'resume_rerun_path') {
+            if(body['base'] !== workflowFingerprint(team))throw new Error('团队已变化，请刷新节点后重新确认')
+            resumeRerunPath(team,string(body['taskId'],'taskId'))
           } else if (action === 'resume_task' || (toggling && body['enabled'] === true)) {
             if (team.halted) throw new Error('团队已停止，请先恢复团队')
             const task = team.tasks.find(t => t.id === body['taskId'])
@@ -378,7 +382,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if (!splitApplied && (['apply', 'edit', 'review', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
+        if (!splitApplied && (['apply', 'edit', 'review', 'resume_rerun_path', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }
@@ -386,7 +390,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       // A fresh discussion may archive the caller's old discussion after ownership was checked.
       const team = openedSessionId ? await readTeam(root, teamId) : await load()
       if (!team) throw new Error('团队不存在')
-      reply(200, { team, base: workflowFingerprint(team), ...(['review','edit','apply','resume_task','stop_task','start','set_flow_enabled'].includes(action) || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
+      reply(200, { team, base: workflowFingerprint(team), ...(['review','edit','apply','resume_rerun_path','resume_task','stop_task','start','set_flow_enabled'].includes(action) || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })
     } catch (error) {
       reply(error instanceof RequestBodyError ? error.status : 409, { error: error instanceof Error ? error.message : '操作失败' })

@@ -1,3 +1,4 @@
+import {resumeRerunPath,resetTaskForRerun} from '../lib/task-rerun.js';
 import { builtinTemplates, getBuiltinTemplate } from '../lib/builtin-templates.js';
 import { localizeBuiltinTemplate } from '../lib/builtin-template-locales.js';
 import { templateSeed, instantiateTemplate } from '../lib/templates.js';
@@ -69,6 +70,7 @@ if (process.env.TEAMFLOW_PREVIEW_RERUN) {
 if (process.env.TEAMFLOW_PREVIEW_CANCELLED) {
   Object.assign(team.tasks[0], { status: 'cancelled', output: '用户取消了上一轮任务；保留需求草稿。' })
 }
+if(process.env.TEAMFLOW_PREVIEW_RERUN_PATH){for(const task of team.tasks.slice(0,3))resetTaskForRerun(task,true,Date.now());team.tasks.push({id:'sibling',subject:'其他待重跑分支',assignee:'developer',dependencies:['t1'],status:'pending',workflowPaused:true,workflowRerunRequired:true,attempt:1,createdAt:1,updatedAt:1});}
 if (process.env.TEAMFLOW_PREVIEW_RUNNING) {
   team.tasks.push({id:'t4',subject:'运行中的独立任务',assignee:'developer',dependencies:[],status:'in_progress',attempt:1,attemptId:'preview-running',createdAt:1,updatedAt:1})
   team.taskSeq=4
@@ -141,6 +143,7 @@ createServer(async (req, res) => {
         if (!body.enabled) task.status='pending';
       }
     }
+    if(body.action==='resume_rerun_path'){if(body.base!==workflowFingerprint(team))throw Error('团队已变化，请刷新节点后重新确认');resumeRerunPath(team,body.taskId);}
     if (body.action === 'resume_task') {
       const task=team.tasks.find(task=>task.id===body.taskId)
       if(task?.workflowConfigPending) throw Error('请先填写任务／验收要求并完成节点配置')
@@ -177,6 +180,6 @@ createServer(async (req, res) => {
       discussion.native = { sessionId: `session-at-discussion-preview-${key}`, label: key };
     }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, base: workflowFingerprint(team), ...(['set_flow_enabled','restore_archive','review','set_task_enabled','state','edit','apply','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
+    send(res, 200, { team, base: workflowFingerprint(team), ...(['set_flow_enabled','restore_archive','review','set_task_enabled','state','edit','apply','resume_rerun_path','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
   } catch (error) { send(res, 409, { error: error.message }); }
 }).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));
