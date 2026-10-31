@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { mkdtemp, writeFile, mkdir, readFile, rm } from 'node:fs/promises'
 const tmpdir = () => join(process.cwd(), 'output')
@@ -171,9 +172,17 @@ test('built-in starter workflows are complete, immutable and copy into personal 
   const copy=await saveTemplate(root,item);assert.notEqual(copy.id,item.id)
   await assert.rejects(()=>saveTemplate(root,item,{id:item.id,version:1}),/只读/)
   await assert.rejects(()=>deleteTemplate(root,item.id,1),/不能删除/)
-  assert.throws(()=>getBuiltinTemplate(item.id,2),/版本不存在/)
+  assert.throws(()=>getBuiltinTemplate(item.id,item.version+1),/版本不存在/)
  }
  catalog[0].tasks[0].general.requirements='mutated'
  assert.notEqual(getBuiltinTemplate(catalog[0].id).tasks[0].general.requirements,'mutated')
  assert.equal((await listTemplates(root)).templates.length,3)
+})
+
+test('feature template v2 preserves classic v1 and leaves other built-ins unchanged',()=>{
+ const previous=JSON.parse(readFileSync(new URL('./fixtures/snapshots/builtin-templates-v1.json',import.meta.url),'utf8'))
+ for(const item of previous)assert.deepEqual(getBuiltinTemplate(item.id,1),item)
+ assert.equal(getBuiltinTemplate('builtin-feature').version,2)
+ assert.equal(getBuiltinTemplate('builtin-feature').tasks.length,9)
+ for(const id of ['builtin-bugfix','builtin-operator'])assert.deepEqual(getBuiltinTemplate(id),previous.find(item=>item.id===id))
 })

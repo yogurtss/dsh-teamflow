@@ -1,7 +1,7 @@
 [
   {
     "name": "功能开发",
-    "description": "从需求确认到独立验证，适合新功能、接口和工具开发。",
+    "description": "并行分析需求与代码影响，实现与测试准备并行，最后独立验证和代码审查汇合验收。",
     "inputs": "提供目标与使用场景、代码仓库和允许修改范围、接口与兼容性约束、运行及测试方式、完成标准。",
     "tags": [
       "开发",
@@ -25,6 +25,12 @@
         "summary": "独立验证实现与规格的一致性，复核边界与回归风险",
         "role": "独立验证实现与规格的一致性，复核边界与回归风险",
         "executionPrompt": "按本次完整任务要求工作，先检查输入与范围；不臆造缺失信息。交付可追溯的文件、结果和证据，区分实际验证与推断。发现阻塞及时报告，不擅自扩大范围或替用户批准。"
+      },
+      {
+        "name": "reviewer",
+        "summary": "只读调查代码影响，独立审查实现与兼容性风险",
+        "role": "只读调查代码影响，独立审查实现与兼容性风险",
+        "executionPrompt": "按本次完整任务要求工作，先检查输入与范围；不臆造缺失信息。交付可追溯的文件、结果和证据，区分实际验证与推断。发现阻塞及时报告，不擅自扩大范围或替用户批准。"
       }
     ],
     "tasks": [
@@ -41,15 +47,28 @@
         }
       },
       {
+        "id": "impact",
+        "subject": "代码与影响调查",
+        "assignee": "reviewer",
+        "dependencies": [],
+        "checkpoint": false,
+        "general": {
+          "requirements": "只读检查现有实现、接口、依赖与仓库约定，识别兼容性风险和可复用实现。与需求分析并行，基于用户目标形成独立证据；不修改业务代码或自行扩大范围。",
+          "deliverables": "代码定位、影响范围、风险与建议修改文件清单。",
+          "acceptance": "结论有代码或文档依据；待确认项明确，未修改业务文件。"
+        }
+      },
+      {
         "id": "scope-review",
         "subject": "确认需求与方案",
         "assignee": "",
         "dependencies": [
-          "requirements"
+          "requirements",
+          "impact"
         ],
         "checkpoint": true,
         "general": {
-          "requirements": "核对目标、范围、接口行为、兼容性风险及验收清单；明确解决关键问题后再允许实现。",
+          "requirements": "综合需求分析与代码影响调查，确认范围、接口和验收标准。明确实现目录、独立测试目录及交付文档归属，禁止并行节点修改相同文件；关键问题解决后再允许实现和测试准备。",
           "deliverables": "供用户决策的检查清单、证据链接、未决项和风险说明。",
           "acceptance": "逐项对应检查标准；由用户明确通过或退回。证据不足时不得代替用户批准。"
         }
@@ -63,9 +82,23 @@
         ],
         "checkpoint": false,
         "general": {
-          "requirements": "按已确认规格完成最小必要变更，遵循仓库约定；补充行为测试与必要文档。记录实际运行的检查，不把未执行的检查写成通过。",
+          "requirements": "按已确认规格完成最小必要实现与自测，仅修改分配的实现文件及自测文件，不改独立验证目录或其他并行节点的文件。遵循仓库约定，记录真实检查结果；接口变化或需要共享配置修改时先报告并协调。",
           "deliverables": "实现变更、测试与文档、需求到变更的对应说明、自测证据及限制。",
           "acceptance": "实现覆盖确认范围，不引入无关变更；必要检查有结果与可复现步骤。"
+        }
+      },
+      {
+        "id": "test-preparation",
+        "subject": "独立测试准备",
+        "assignee": "verifier",
+        "dependencies": [
+          "scope-review"
+        ],
+        "checkpoint": false,
+        "general": {
+          "requirements": "根据已确认规格独立编写行为、边界和异常用例，与实现并行。仅修改方案分配的独立测试目录，不修改业务代码、共享配置或锁文件；接口未明确时报告阻塞。执行条件未满足时只交付测试工具与预期，不宣称验证通过。",
+          "deliverables": "独立测试用例、测试数据、执行命令和预期结果。",
+          "acceptance": "用例对应验收条目，覆盖核心与异常路径；文件范围与实现者不重叠。"
         }
       },
       {
@@ -73,7 +106,8 @@
         "subject": "独立验证",
         "assignee": "verifier",
         "dependencies": [
-          "implementation"
+          "implementation",
+          "test-preparation"
         ],
         "checkpoint": false,
         "general": {
@@ -83,11 +117,40 @@
         }
       },
       {
+        "id": "code-review",
+        "subject": "代码与兼容性审查",
+        "assignee": "reviewer",
+        "dependencies": [
+          "implementation"
+        ],
+        "checkpoint": false,
+        "general": {
+          "requirements": "只读审查实现变更，核对已确认规格、接口兼容性、错误处理及仓库约定。与行为验证并行，不修改被审查代码或测试文件；发现问题提供定位、影响和证据，不能把尚未完成的验证当作通过。",
+          "deliverables": "代码审查结论、兼容性风险、问题定位和证据。",
+          "acceptance": "审查范围和未覆盖项明确；阻塞问题显式报告，不擅自修改或批准。"
+        }
+      },
+      {
+        "id": "delivery",
+        "subject": "汇总交付与验收材料",
+        "assignee": "analyst",
+        "dependencies": [
+          "verification",
+          "code-review"
+        ],
+        "checkpoint": false,
+        "general": {
+          "requirements": "等待行为验证和代码审查全部结束，逐项汇总需求、实现、测试与审查证据。明确失败、未验证项及残余风险，不替代修复或用户批准；只写方案指定的交付文档，不改实现和测试。",
+          "deliverables": "需求到证据的对应清单、交付说明、未决问题和验收建议。",
+          "acceptance": "两个并行分支的结论均已纳入；失败与未验证项未被隐藏，交付可追溯。"
+        }
+      },
+      {
         "id": "acceptance",
         "subject": "最终验收",
         "assignee": "",
         "dependencies": [
-          "verification"
+          "delivery"
         ],
         "checkpoint": true,
         "general": {
@@ -99,9 +162,9 @@
     ],
     "positions": {},
     "id": "builtin-feature",
-    "version": 1,
+    "version": 2,
     "createdAt": 1793404800000,
-    "updatedAt": 1793404800000
+    "updatedAt": 1793414400000
   },
   {
     "name": "问题排查与修复",

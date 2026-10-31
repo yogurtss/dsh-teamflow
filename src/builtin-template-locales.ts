@@ -82,10 +82,32 @@ const english: Record<string,string> = {
   "算子交付验收": "Operator delivery acceptance",
   "联合检查规格、实现、独立正确性与性能证据；确认精度和性能目标及适用范围，决定通过或退回。": "Review specification, implementation, independent correctness, and performance evidence together. Confirm accuracy and performance goals and applicability, then approve or reject."
 }
+Object.assign(english, {
+  "只读调查代码影响，独立审查实现与兼容性风险": "Investigate code impact read-only and independently review implementation and compatibility risks",
+  "代码与影响调查": "Code and impact investigation",
+  "只读检查现有实现、接口、依赖与仓库约定，识别兼容性风险和可复用实现。与需求分析并行，基于用户目标形成独立证据；不修改业务代码或自行扩大范围。": "Read existing code, interfaces, dependencies, and repository conventions without editing. Identify compatibility risks and reusable implementations. Investigate independently alongside requirements analysis using the user goal; do not modify production code or expand scope.",
+  "代码定位、影响范围、风险与建议修改文件清单。": "Code locations, impact scope, risks, and proposed file ownership.",
+  "结论有代码或文档依据；待确认项明确，未修改业务文件。": "Conclusions cite code or documentation; open questions are explicit and production files are unchanged.",
+  "独立测试准备": "Independent test preparation",
+  "根据已确认规格独立编写行为、边界和异常用例，与实现并行。仅修改方案分配的独立测试目录，不修改业务代码、共享配置或锁文件；接口未明确时报告阻塞。执行条件未满足时只交付测试工具与预期，不宣称验证通过。": "Prepare behavior, boundary, and invalid-input tests independently from the approved specification, alongside implementation. Edit only the dedicated test directory assigned by the plan, not production code, shared configuration, or lockfiles. Report ambiguous interfaces as blockers. If execution prerequisites are missing, deliver test tools and expectations without claiming verification passed.",
+  "独立测试用例、测试数据、执行命令和预期结果。": "Independent tests, fixtures, commands, and expected results.",
+  "用例对应验收条目，覆盖核心与异常路径；文件范围与实现者不重叠。": "Tests map to acceptance criteria and cover core and failure paths; file ownership does not overlap with the implementer.",
+  "代码与兼容性审查": "Code and compatibility review",
+  "只读审查实现变更，核对已确认规格、接口兼容性、错误处理及仓库约定。与行为验证并行，不修改被审查代码或测试文件；发现问题提供定位、影响和证据，不能把尚未完成的验证当作通过。": "Review implementation changes read-only against the approved specification, interface compatibility, error handling, and repository conventions. Work alongside behavioral verification without modifying reviewed code or tests. Report locations, impact, and evidence; do not count unfinished verification as passed.",
+  "代码审查结论、兼容性风险、问题定位和证据。": "Review findings, compatibility risks, issue locations, and evidence.",
+  "审查范围和未覆盖项明确；阻塞问题显式报告，不擅自修改或批准。": "State review scope and coverage gaps; explicitly report blockers without modifying code or approving on behalf of the user.",
+  "汇总交付与验收材料": "Assemble delivery and acceptance evidence",
+  "等待行为验证和代码审查全部结束，逐项汇总需求、实现、测试与审查证据。明确失败、未验证项及残余风险，不替代修复或用户批准；只写方案指定的交付文档，不改实现和测试。": "Wait for both behavioral verification and code review to finish. Assemble traceable evidence for requirements, implementation, tests, and review. State failures, unverified items, and residual risks without substituting for repairs or user approval. Write only the assigned delivery document, leaving implementation and tests unchanged.",
+  "需求到证据的对应清单、交付说明、未决问题和验收建议。": "Requirements-to-evidence checklist, delivery notes, open issues, and acceptance recommendation.",
+  "两个并行分支的结论均已纳入；失败与未验证项未被隐藏，交付可追溯。": "Include conclusions from both parallel branches; do not hide failed or unverified items, and keep delivery traceable.",
+  "综合需求分析与代码影响调查，确认范围、接口和验收标准。明确实现目录、独立测试目录及交付文档归属，禁止并行节点修改相同文件；关键问题解决后再允许实现和测试准备。": "Combine requirements analysis and code impact investigation to approve scope, interfaces, and acceptance criteria. Assign separate implementation paths, test paths, and delivery documentation; parallel nodes must not edit the same files. Resolve critical questions before implementation and test preparation.",
+  "按已确认规格完成最小必要实现与自测，仅修改分配的实现文件及自测文件，不改独立验证目录或其他并行节点的文件。遵循仓库约定，记录真实检查结果；接口变化或需要共享配置修改时先报告并协调。": "Implement the smallest necessary change and self-test against the approved specification. Modify only assigned implementation and self-test files, not independent verification paths or files owned by parallel nodes. Follow repository conventions and record actual checks. Report and coordinate interface changes or shared configuration edits first.",
+  "并行分析需求与代码影响，实现与测试准备并行，最后独立验证和代码审查汇合验收。": "Analyze requirements and code impact in parallel, prepare tests alongside implementation, then join independent verification and code review for acceptance."
+})
 const chinese = Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]))
 export function builtinText(text:string, language:'zh'|'en'):string { return (language==='en'?english:chinese)[text] ?? text }
 export function localizeBuiltinTemplate(template:TemplateVersion, language:'zh'|'en'):TemplateVersion {
-  if(!['builtin-feature','builtin-bugfix','builtin-operator'].includes(template.id)||template.version!==1)return template
+  if(!['builtin-feature','builtin-bugfix','builtin-operator'].includes(template.id)||!(template.version===1||template.id==='builtin-feature'&&template.version===2))return template
   const visit=(value:unknown):unknown=>typeof value==='string'?builtinText(value,language):Array.isArray(value)?value.map(visit):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[key,visit(item)])):value
   return visit(template) as TemplateVersion
 }

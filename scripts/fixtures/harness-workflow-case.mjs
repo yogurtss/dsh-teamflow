@@ -174,10 +174,10 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   for(const item of catalog){
     const owner=await ctx.agents.create({sessionId:'session-builtin-'+item.id,meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
     ctx.effect(()=>()=>owner.dispose());await owner.agent.whenIdle();activeSession=owner.agent.id;activeTeam='';
-    await post('template_save',{definition:item,templateId:item.id,version:1},409);
-    await post('template_delete',{templateId:item.id,version:1},409);
+    await post('template_save',{definition:item,templateId:item.id,version:item.version},409);
+    await post('template_delete',{templateId:item.id,version:item.version},409);
     const copied=await post('template_save',{definition:item});assert.notEqual(copied.template.id,item.id);
-    const installed=await post('template_apply',{templateId:item.id,version:1,name:item.name,description:'本次具体目标'});activeTeam=installed.team.id;
+    const installed=await post('template_apply',{templateId:item.id,version:item.version,name:item.name,description:'本次具体目标'});activeTeam=installed.team.id;
     assert.equal(installed.team.tasks.length,item.tasks.length);
     assert.ok(installed.team.tasks.every(t=>t.workflowConfigPending && !t.layers.specific.requirements));
     await post('start',{},409);
@@ -185,7 +185,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   record({event:'builtin-templates-passed',snapshot:catalog});
   const englishOwner=await ctx.agents.create({sessionId:'session-builtin-english',meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
   ctx.effect(()=>()=>englishOwner.dispose());await englishOwner.agent.whenIdle();activeSession=englishOwner.agent.id;activeTeam='';
-  const english=await post('template_apply',{templateId:'builtin-feature',version:1,name:'English feature',description:'Keep my task 具体目标',language:'en'});
+  const english=await post('template_apply',{templateId:'builtin-feature',version:2,name:'English feature',description:'Keep my task 具体目标',language:'en'});
   assert.equal(english.team.description,'Keep my task 具体目标');
   assert.ok(english.team.tasks.every(t=>!t.layers.specific.requirements && t.workflowConfigPending));
   assert.ok(english.team.tasks.every(t=>!/[\p{Script=Han}]/u.test(JSON.stringify(t.layers.general))));

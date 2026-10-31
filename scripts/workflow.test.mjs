@@ -1126,3 +1126,37 @@ test('reopening member discussions preserves history and pending proposals witho
   assert.equal(transcript.messages.length,1)
   assert.equal(restored.workflow.discussions['discussion:member:worker'].messages[0].text,'Keep my earlier requirements')
 })
+
+// Exercise the actual scheduler with the built-in graph; only dispatch transport is scripted.
+test('parallel feature template dispatches independent branches and waits at joins', async t => {
+  const {getBuiltinTemplate}=await import('../lib/builtin-templates.js')
+  const {instantiateTemplate}=await import('../lib/templates.js')
+  const phases=[
+    [[],['requirements','impact']],
+    [['requirements'],['impact']],
+    [['requirements','impact'],[]],
+    [['requirements','impact','scope-review'],['implementation','test-preparation']],
+    [['requirements','impact','scope-review','implementation'],['test-preparation','code-review']],
+    [['requirements','impact','scope-review','implementation','test-preparation'],['verification','code-review']],
+    [['requirements','impact','scope-review','implementation','test-preparation','verification'],['code-review']],
+    [['requirements','impact','scope-review','implementation','test-preparation','verification','code-review'],['delivery']],
+    [['requirements','impact','scope-review','implementation','test-preparation','verification','code-review','delivery'],[]],
+  ]
+  for(const [completed,expected] of phases){
+    const root=mkdtempSync(join(tmpdir(),'feature-parallel-'));t.after(()=>rmSync(root,{recursive:true,force:true}))
+    const source=instantiateTemplate(getBuiltinTemplate('builtin-feature'),'demo','captain-id','Port validation','Implement validatePort')
+    source.phase='running'
+    for(const task of source.tasks){task.workflowPaused=false;task.workflowConfigPending=false;task.specificContractVersion=1;task.specificSourceGoal=source.description;task.layers.specific={requirements:'Validate integer ports 1 through 65535',deliverables:'Implementation and evidence',acceptance:'Boundary checks pass'};if(completed.includes(task.id)){task.status='completed';if(task.checkpoint)task.checkpoint.decision='approve'}}
+    await createTeamDir(join(root,'.agent-teams'),source)
+    const captain={id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
+    const dispatched=[]
+    const ctx={agents:{get:id=>id===captain.id?captain:undefined},on(){},effect(){},logger:{warn(){}}}
+    const scheduler=installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async(...args)=>{dispatched.push(args);return true}})
+    await scheduler.kickTeam(root,'demo',captain)
+    const saved=await readTeam(join(root,'.agent-teams'),'demo')
+    assert.deepEqual(saved.tasks.filter(task=>task.status==='claimed').map(task=>task.id).sort(),[...expected].sort(),JSON.stringify(completed))
+    assert.equal(dispatched.length,expected.length)
+    assert.equal(new Set(dispatched.map(args=>args[2])).size,expected.length,'Concurrent tasks must use distinct members')
+    assert.equal(checkpointReady(source,source.tasks.find(task=>task.id==='acceptance')),completed.includes('delivery'))
+  }
+})

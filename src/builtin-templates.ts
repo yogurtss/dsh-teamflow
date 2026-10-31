@@ -31,9 +31,24 @@ const definitions:TemplateVersion[]=[
  node('performance','性能评测','benchmark',['correctness'],'仅在正确性验证通过后，在一致环境和输入条件下比较实现与基线。明确预热、重复次数、计时与同步方法，报告波动和资源开销；识别瓶颈，不以单次最好成绩代表整体性能。','可复现评测命令与环境、基线对比表、重复测量统计、瓶颈分析及限制。','比较条件公平且可重做；结果覆盖确认场景；未达性能目标明确报告，不擅改阈值或隐去退化。'),
  gate('acceptance','算子交付验收',['performance'],'联合检查规格、实现、独立正确性与性能证据；确认精度和性能目标及适用范围，决定通过或退回。')])
 ]
-export function builtinTemplates():TemplateVersion[]{return structuredClone(definitions)}
+
+// Keep v1 readable for existing template references; Gallery lists the latest definition.
+const featureV1 = definitions.find(item=>item.id==='builtin-feature')!
+const featureTasks = featureV1.tasks
+const featureV2: TemplateVersion = {...featureV1, version:2, updatedAt:1793414400000,
+ description:"并行分析需求与代码影响，实现与测试准备并行，最后独立验证和代码审查汇合验收。", members:[...featureV1.members,{"name":"reviewer","summary":"只读调查代码影响，独立审查实现与兼容性风险","role":"只读调查代码影响，独立审查实现与兼容性风险","executionPrompt":"按本次完整任务要求工作，先检查输入与范围；不臆造缺失信息。交付可追溯的文件、结果和证据，区分实际验证与推断。发现阻塞及时报告，不擅自扩大范围或替用户批准。"}],
+ tasks:[featureTasks[0]!,{"id":"impact","subject":"代码与影响调查","assignee":"reviewer","dependencies":[],"checkpoint":false,"general":{"requirements":"只读检查现有实现、接口、依赖与仓库约定，识别兼容性风险和可复用实现。与需求分析并行，基于用户目标形成独立证据；不修改业务代码或自行扩大范围。","deliverables":"代码定位、影响范围、风险与建议修改文件清单。","acceptance":"结论有代码或文档依据；待确认项明确，未修改业务文件。"}},
+ {...featureTasks[1]!,dependencies:['requirements','impact'],general:{...featureTasks[1]!.general,requirements:"综合需求分析与代码影响调查，确认范围、接口和验收标准。明确实现目录、独立测试目录及交付文档归属，禁止并行节点修改相同文件；关键问题解决后再允许实现和测试准备。"}},
+ {...featureTasks[2]!,general:{...featureTasks[2]!.general,requirements:"按已确认规格完成最小必要实现与自测，仅修改分配的实现文件及自测文件，不改独立验证目录或其他并行节点的文件。遵循仓库约定，记录真实检查结果；接口变化或需要共享配置修改时先报告并协调。"}},
+ {"id":"test-preparation","subject":"独立测试准备","assignee":"verifier","dependencies":["scope-review"],"checkpoint":false,"general":{"requirements":"根据已确认规格独立编写行为、边界和异常用例，与实现并行。仅修改方案分配的独立测试目录，不修改业务代码、共享配置或锁文件；接口未明确时报告阻塞。执行条件未满足时只交付测试工具与预期，不宣称验证通过。","deliverables":"独立测试用例、测试数据、执行命令和预期结果。","acceptance":"用例对应验收条目，覆盖核心与异常路径；文件范围与实现者不重叠。"}},
+ {...featureTasks[3]!,dependencies:['implementation','test-preparation']},
+ {"id":"code-review","subject":"代码与兼容性审查","assignee":"reviewer","dependencies":["implementation"],"checkpoint":false,"general":{"requirements":"只读审查实现变更，核对已确认规格、接口兼容性、错误处理及仓库约定。与行为验证并行，不修改被审查代码或测试文件；发现问题提供定位、影响和证据，不能把尚未完成的验证当作通过。","deliverables":"代码审查结论、兼容性风险、问题定位和证据。","acceptance":"审查范围和未覆盖项明确；阻塞问题显式报告，不擅自修改或批准。"}},{"id":"delivery","subject":"汇总交付与验收材料","assignee":"analyst","dependencies":["verification","code-review"],"checkpoint":false,"general":{"requirements":"等待行为验证和代码审查全部结束，逐项汇总需求、实现、测试与审查证据。明确失败、未验证项及残余风险，不替代修复或用户批准；只写方案指定的交付文档，不改实现和测试。","deliverables":"需求到证据的对应清单、交付说明、未决问题和验收建议。","acceptance":"两个并行分支的结论均已纳入；失败与未验证项未被隐藏，交付可追溯。"}},
+ {...featureTasks[4]!,dependencies:['delivery']}]
+}
+const latest=definitions.map(item=>item.id==='builtin-feature'?featureV2:item)
+export function builtinTemplates():TemplateVersion[]{return structuredClone(latest)}
 export function getBuiltinTemplate(id:string,version?:number):TemplateVersion {
- const found=definitions.find(t=>t.id===id)
+ const found=(version===1?definitions:latest).find(t=>t.id===id)
  if(!found || version!==undefined && version!==found.version)throw new Error('内置模板版本不存在')
  return structuredClone(found)
 }
