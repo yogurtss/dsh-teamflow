@@ -1,3 +1,4 @@
+import { resolveActivitySession, type ActivitySessionOwner } from './activity-session.ts'
 import { WorkflowLocale } from './workflow-i18n.tsx'
 /**
  * AgentTeams activity panel: the top-right floater monitoring every team.
@@ -936,10 +937,22 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
   const gestureRef = useRef<PanelGesture | null>(null)
   const frameRef = useRef<number | null>(null)
   const pendingLayoutRef = useRef<PanelLayout | null>(null)
-  const current = currentSessionId(useSyncExternalStore(
+  const selectedSession = currentSessionId(useSyncExternalStore(
     sessionsList.subscribe,
     sessionsList.getSnapshot,
   ))
+  const [sessionOwner,setSessionOwner]=useState<ActivitySessionOwner>()
+  const current=(sessionOwner && sessionOwner.sessionId===selectedSession ? sessionOwner.owner : selectedSession) as SessionId|undefined
+  useEffect(()=>{
+    if(!selectedSession)return
+    const controller=new AbortController();let active=true
+    void resolveActivitySession(selectedSession,controller.signal).then(result=>{
+      if(!active)return
+      if(result.activity)publishWorkflowActivity(result.activity)
+      setSessionOwner(result)
+    }).catch(()=>{ /* Keep the selected-session boundary when discovery is unavailable. */ })
+    return()=>{active=false;controller.abort()}
+  },[selectedSession])
   const autoOpenTrackerRef = useRef<{
     sessionId: SessionId | undefined
     restoreComplete: boolean

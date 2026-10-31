@@ -30,7 +30,8 @@ import { getActivitySnapshotsSnapshot, subscribeActivitySnapshots, publishWorkfl
 const snapshot = { groups: [{ id: 'fixture', name: '测试提供方', models: [{ id: '模拟模型', name: '模拟模型', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }, { id: '模拟模型 B', name: '模拟模型 B', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }] }], failures: [], status: 'ready', current: null, pending: null, error: null };
 const modelDirectory = { store: { subscribe: () => () => {}, getSnapshot: () => snapshot }, load: async () => {} } as any;
 const activityState=createWorkspaceState();
-const sessionSnapshot={current:'preview',byId:{preview:{id:'preview'}}};
+const selectedPreview=${JSON.stringify(process.env.TEAMFLOW_PREVIEW_ACTIVITY_DISCUSSION?'session-at-discussion-preview-adapt':'preview')};
+const sessionSnapshot={current:selectedPreview,byId:{[selectedPreview]:{id:selectedPreview}}};
 const sessionStore={subscribe:()=>()=>{},getSnapshot:()=>sessionSnapshot} as any;
 const modelDirectories={directoryFor:()=>modelDirectory} as any;
 
@@ -57,6 +58,7 @@ let team = {
     { id: 't3', subject: '开发与自测', description: '仅在需求通过后执行', assignee: 'developer', dependencies: ['t2'], status: 'pending', attempt: 0, createdAt: 1, updatedAt: 1 },
   ],
 };
+if(process.env.TEAMFLOW_PREVIEW_ACTIVITY_DISCUSSION)team=instantiateTemplate(getBuiltinTemplate('builtin-feature'),'preview','preview','模板适配中的团队','实现本次功能');
 if(process.env.TEAMFLOW_PREVIEW_ARCHIVED) {
   team.name='6/7 人工验收归档恢复示例';team.phase='running';team.taskSeq=7
   team.tasks=[...Array.from({length:6},(_,i)=>({id:'t'+(i+1),subject:'已完成成果 '+(i+1),assignee:'researcher',dependencies:[],status:'completed',output:'第 '+(i+1)+' 项成果已提交。',attempt:1,createdAt:1,updatedAt:1})),{id:'t7',subject:'人工检查',description:'核对六项成果并由用户批准。',dependencies:['t1','t2','t3','t4','t5','t6'],status:'pending',checkpoint:{round:1,history:[]},attempt:0,createdAt:1,updatedAt:1}]
@@ -180,6 +182,6 @@ createServer(async (req, res) => {
       discussion.native = { sessionId: `session-at-discussion-preview-${key}`, label: key };
     }
     if (body.action === 'review') decideCheckpoint(team, body.taskId, body.decision, body.evidence, workflowMaterials(team, body.taskId, process.cwd()).evidence, body.note || '');
-    send(res, 200, { team, base: workflowFingerprint(team), ...(['set_flow_enabled','restore_archive','review','set_task_enabled','state','edit','apply','resume_rerun_path','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
+    send(res, 200, { team, base: workflowFingerprint(team), ...(['set_flow_enabled','restore_archive','review','set_task_enabled','state','create','template_apply','open_discussion','edit','apply','resume_rerun_path','resume_task','stop_task','start'].includes(body.action)?{activity:await assembleTeamSnapshot({agents:{get(){}}},resolve('node_modules/workflow-preview-state'),'测试',team)}:{}), ready: body.action === 'archive_state' ? [] : team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint.decision).map(t => t.id), busy: [], ...(process.env.TEAMFLOW_PREVIEW_ACTIVITY_DISCUSSION ? {currentDiscussion:'adapt'} : process.env.TEAMFLOW_PREVIEW_DISCUSSION ? { currentDiscussion: 'member:researcher' } : {}), ...(body.action === 'open_discussion' ? { openedSessionId: discussion.native.sessionId } : {}) });
   } catch (error) { send(res, 409, { error: error.message }); }
 }).listen(port, '127.0.0.1', () => console.log(`Workflow UI fixture: http://127.0.0.1:${port}`));

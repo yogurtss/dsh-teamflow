@@ -62,3 +62,15 @@ test('restoration and human approval publish live state without changing other t
  assert.equal(getActivitySnapshotsSnapshot().teams.find(t=>t.captainSessionId==='other'),other)
  updateActivitySnapshots({teams:[],archivedTeams:[]})
 })
+
+// Independent adaptation/review sessions must keep access to their owner's activity dot.
+test('activity owner follows only authenticated TeamFlow discussion bindings',async()=>{
+ const {resolveActivitySession}=await import('../lib/client/activity-session.js')
+ let calls=0
+ const fetchState=async(url,options)=>{calls++;assert.equal(url,'/plugins/dsh-agent-teams/workflow');assert.deepEqual(JSON.parse(options.body),{sessionId:'session-at-discussion-test',action:'state'});return {ok:true,json:async()=>({currentDiscussion:'adapt',team:{captainSessionId:'captain'},activity:{captainSessionId:'captain',teamId:'template-team',phase:'staged'}})}}
+ assert.deepEqual(await resolveActivitySession('ordinary',undefined,fetchState),{sessionId:'ordinary',owner:'ordinary'});assert.equal(calls,0)
+ const bound=await resolveActivitySession('session-at-discussion-test',undefined,fetchState);assert.equal(bound.owner,'captain');assert.equal(bound.activity.teamId,'template-team')
+ for(const body of [{team:{captainSessionId:'other'}},{currentDiscussion:'adapt',team:null}])assert.equal((await resolveActivitySession('session-at-discussion-test',undefined,async()=>({ok:true,json:async()=>body}))).owner,'session-at-discussion-test')
+ const denied=await resolveActivitySession('session-at-discussion-test',undefined,async()=>({ok:false}));assert.equal(denied.owner,denied.sessionId)
+ const mismatched=await resolveActivitySession('session-at-discussion-test',undefined,async()=>({ok:true,json:async()=>({currentDiscussion:'adapt',team:{captainSessionId:'captain'},activity:{captainSessionId:'other'}})}));assert.equal(mismatched.activity,undefined)
+})

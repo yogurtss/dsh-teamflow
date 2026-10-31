@@ -24,7 +24,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
     }
     const live = ctx.agents.get(opened.openedSessionId); assert.ok(live); await live.whenIdle();
     assert.equal(live.session.header.parentSession, undefined, 'Discussion must have no execution parent');
-    const scoped = await post('state', { sessionId: live.id }); assert.equal(scoped.currentDiscussion, key);
+    const scoped = await post('state', { sessionId: live.id }); assert.equal(scoped.currentDiscussion, key);assert.equal(scoped.activity.captainSessionId,scoped.team.captainSessionId);assert.equal(scoped.activity.teamId,scoped.team.id);
     await post('state', { sessionId: live.id, teamId: 'another-team' }, 409);
     live.followup(createUserMessage({ content: [{ type: 'text', text: '继续核对当前方案，不应用修改。' }], source: { kind: 'user' } }));
     await live.whenIdle();
@@ -103,6 +103,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   } while (Date.now() < deadline);
   assert.equal(result.team.tasks[1].output, 'WEB_MEMBER_TASK_DONE', 'Approving and resuming must dispatch a real member through the scheduler');
   for (const agent of ctx.agents.list()) await agent.whenIdle();
+  result = await post('state'); // Completion cleanup can advance the revision while agents drain.
   result=await post('edit',{base:result.base,title:'Rerun path gates',operations:[
     {action:'add_task',id:'path-gate',subject:'Review rerun output',description:'Read the new output',checkpoint:true,dependencies:['t1']},
     {action:'add_task',id:'path-target',subject:'Final rerun review',description:'Confirm the new review',checkpoint:true,dependencies:['path-gate']}
@@ -192,7 +193,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
     await post('template_save',{definition:item,templateId:item.id,version:item.version},409);
     await post('template_delete',{templateId:item.id,version:item.version},409);
     const copied=await post('template_save',{definition:item});assert.notEqual(copied.template.id,item.id);
-    const installed=await post('template_apply',{templateId:item.id,version:item.version,name:item.name,description:'本次具体目标'});activeTeam=installed.team.id;
+    const installed=await post('template_apply',{templateId:item.id,version:item.version,name:item.name,description:'本次具体目标'});activeTeam=installed.team.id;assert.equal(installed.activity.teamId,activeTeam);assert.equal(installed.activity.phase,'staged');
     assert.equal(installed.team.tasks.length,item.tasks.length);
     assert.ok(installed.team.tasks.every(t=>t.workflowConfigPending && !t.layers.specific.requirements));
     await post('start',{},409);
