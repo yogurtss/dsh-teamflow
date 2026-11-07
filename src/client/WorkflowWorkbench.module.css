@@ -375,6 +375,8 @@ form.editor { display: flex; flex-direction: column; padding: 0; }
   .columns[data-reviewing='true']>.resizeHandle { display:none; }
 }
 
+label.galleryPermission { flex-direction: row; align-items: center; gap: 8px; }
+label.galleryPermission input[type="checkbox"] { width: auto; }
 /* Shared quiet navigation. A library entry is not a selected page. */
 .pageTabs { gap:6px; padding:10px 20px; }
 .pageTabs button { position:relative; min-height:32px; padding:6px 11px; gap:7px; border:1px solid transparent; border-radius:8px; color:var(--wb-muted); background:transparent; font-size:12px; font-weight:500; box-shadow:none; }
