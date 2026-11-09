@@ -437,3 +437,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .edge[data-flow-branch='reject'] text { fill:var(--loop-reject); }
 
 .node[data-node-shape='archive'] { border-radius: 8px 8px 22px 22px; border-top: 5px solid light-dark(#0e7490,#67e8f9); background: color-mix(in srgb, light-dark(#0e7490,#67e8f9) 4%, var(--wb-bg)); }
+
+.adaptationProgress { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--wb-border); background:color-mix(in srgb,#3b82f6 7%,var(--wb-bg)); flex-wrap:wrap; }
+.adaptationProgress button { display:inline-flex; align-items:center; gap:8px; flex-shrink:0; }
+.adaptationProgress p { margin:0; font-size:12px; opacity:.8; flex:1; min-width:180px; }
+.adaptationSpinner { display:inline-flex; animation:adaptationTurn 1.6s linear infinite; }
+@keyframes adaptationTurn { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .adaptationSpinner { animation:none; } }

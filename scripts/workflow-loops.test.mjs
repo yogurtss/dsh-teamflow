@@ -373,7 +373,7 @@ test('workflow and global control tokens include queued loop control changes',()
 })
 
 test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
- const root=await mkdtemp(join(tmpdir(),'teamflow-watchdog-isolation-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const root=await mkdtemp(join(tmpdir(),'teamflow-watchdog-isolation-'))
  const stateRoot=join(root,'.agent-teams'),effects=[],warnings=[]
  let watchdog
  const interval=globalThis.setInterval
@@ -382,7 +382,7 @@ test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
  const ctx={agents:{get:id=>id==='captain'?captain:{id,status:'running'}},subagents:{drainChildren:async()=>{}},effect:fn=>effects.push(fn()),on(){},logger:{warn:message=>warnings.push(message)}}
  let scheduler
  try{scheduler=installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async()=>true})}finally{globalThis.setInterval=interval}
- t.after(()=>effects.forEach(fn=>fn?.()))
+ t.after(async()=>{effects.forEach(fn=>fn?.());await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})})
  for(const id of ['broken','healthy']){
   const {team,loop}=fixture();team.id=id;loop.timeoutMinutes=1;startLoop(team,loop.id)
   beginTaskAttempt(team.tasks[0],'worker');team.tasks[0].status='in_progress'
@@ -393,7 +393,7 @@ test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
  try{
   watchdog()
   let state
-  for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,10));state=await readTeam(stateRoot,'healthy');if(state.workflow.loops[0].status==='paused')break}
+  for(let i=0;i<500;i++){await new Promise(r=>setTimeout(r,10));state=await readTeam(stateRoot,'healthy');if(state.workflow.loops[0].status==='paused' && state.tasks[0].status==='pending')break}
   assert.equal(state.workflow.loops[0].status,'paused');assert.ok(warnings.length)
  }finally{Date.now=clock}
 })
