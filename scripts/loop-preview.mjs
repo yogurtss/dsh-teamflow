@@ -21,7 +21,7 @@ const task = (id, subject, dependencies = [], checkpoint = false) => ({ id, subj
   workflowPaused: true, workflowAwaitingStart: true, ...(checkpoint ? { checkpoint: { round: 1, history: [] } } : {}) })
 await createTeamDir(root, { id: 'demo', name: '门控循环验证', description: '保留原节点，多轮改进并审核', captainSessionId: 'captain', phase: 'running', createdAt: 1, taskSeq: 4,
   members: ['worker','reviewer'].map(name => ({ name, id: name, summary: name === 'worker' ? '实现与验证' : '独立审核', status: 'idle', joinedAt: 1 })),
-  tasks: [task('a','方案'),task('b','实现与验证',['a']),task('gate','交付门控',['b'],true),task('after','最终交付',['gate'])], workflow: { explicitQuality: true, positions: {}, discussions: {}, history: [] } })
+  tasks: [task('a','方案'),task('b','实现与验证',['a']),task('gate',process.env.TEAMFLOW_GATE_TITLE ?? '交付门控',['b'],true),task('after','最终交付',['gate'])], workflow: { explicitQuality: true, positions: {}, discussions: {}, history: [] } })
 const live = new Map(['captain','worker','reviewer'].map(id => [id,{id,status:'idle',session:{header:{id,cwd:workspace},ownEvents:()=>[]}}]))
 const cleanups = [], timers = new Set(); let route
 const ctx = { agents: { get: id => live.get(id) }, effect: fn => cleanups.push(fn()), on: () => () => {}, logger: { warn: console.warn, debug() {} }, subagents: { drainChildren: async () => {} } }

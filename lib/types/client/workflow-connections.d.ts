@@ -2,11 +2,12 @@ import { type WorkflowText } from './workflow-text.ts';
 import type { TeamTask } from '../types.ts';
 export declare const WORKFLOW_NODE_WIDTH = 225;
 export declare const WORKFLOW_PORT_Y = 55;
+export declare const WORKFLOW_GATE_PORT_Y = 75;
 /** Anchors use the node's outer border box, shared by paths, snapping and CSS. */
 export declare function connectionPort(point: {
     x: number;
     y: number;
-}, side: 'input' | 'output'): {
+}, side: 'input' | 'output', checkpoint?: boolean): {
     x: number;
     y: number;
 };
