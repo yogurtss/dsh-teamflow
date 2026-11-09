@@ -1,3 +1,5 @@
+import { AdaptationProgress } from './AdaptationProgress.tsx'
+import { adaptationPhase, adaptationConflicts } from './adaptation-progress.ts'
 import { draftGalleryAccess } from "./workbench-drafts.ts"
 import { galleryAccessKeys } from "../gallery-access.ts"
 import { workflowRequest } from './workflow-request.ts'
@@ -107,7 +109,11 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const [proposalFocus, setProposalFocus] = useState(0)
   const [attentionFocus, setAttentionFocus] = useState<{selector:string; revision:number}>()
   const [mutating, setWorking] = useState(false)
-  const working=mutating||revalidating
+  const [adaptationOpening, setAdaptationOpening] = useState<string>()
+  const [adaptationOpenError, setAdaptationOpenError] = useState<string>()
+  const adaptationRequest = useRef<{ teamId: string }>()
+  const adaptationBusy = (!!adaptationOpening && adaptationOpening === data?.team.id) || !!data?.busy.includes('adapt')
+  const working=mutating||revalidating||adaptationBusy
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   const [storageError, setStorageError] = useState('')
   const loadedDraftScope = useRef<string>()
@@ -136,6 +142,8 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const initializedDiscussion = useRef(false)
   const team = data?.team
   const flow = team ? flowControlState(team) : undefined
+  const adaptationDiscussion = team?.workflow?.discussions['discussion:adapt']
+  const adaptationStatus = adaptationPhase({ opening: !!team && adaptationOpening === team.id, busy: !!data?.busy.includes('adapt'), disconnected: !!connectionError || revalidating, error: !!team && adaptationOpenError === team.id, hasSession: !!adaptationDiscussion?.native, proposal: adaptationDiscussion?.proposal, base: data?.base })
   const selection = view.target
   const discussion = targetDiscussion(selection)
   const selectedTask = selection.type === 'task' || selection.type === 'check' ? selection.id : undefined
@@ -251,7 +259,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   useEffect(() => {
     if (editor && !editor.id) dialog.current?.querySelector<HTMLElement>('[data-workflow-editor] input:not(:disabled), [data-workflow-editor] textarea')?.focus()
   }, [editor])
-  useEffect(() => { if (teamId && teamId !== activeId) { setActiveId(teamId); setData(undefined); updateView(current => ({...initialWorkbenchView(),revision:current.revision+1})); setPositions({}); initializedDiscussion.current = false; generation.current++ } }, [sessionId, teamId])
+  useEffect(() => { if (teamId && teamId !== activeId) { setActiveId(teamId); setData(undefined); updateView(current => ({...initialWorkbenchView(),revision:current.revision+1})); setPositions({}); initializedDiscussion.current = false; adaptationRequest.current=undefined;setAdaptationOpening(undefined);setAdaptationOpenError(undefined);setEmbeddedDiscussion(undefined);generation.current++ } }, [sessionId, teamId])
   const refresh = async (signal?:AbortSignal): Promise<void> => {
     if(refreshInFlight.current||mutationInFlight.current)return
     refreshInFlight.current=true
@@ -285,6 +293,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }, [activeId, mutating, archiveView])
   async function perform(action: string, fields: Record<string, unknown> = {}): Promise<Response | undefined> {
     if(revalidating)return
+    if(adaptationBusy && adaptationConflicts.has(action)){setError(l('AI 正在适配，请等待生成结束后再修改或启动流程。'));return}
     if(archiveView && action !== 'restore_archive') {setError(l("请先恢复归档，再修改或重新执行。"));return}
     if(mutationInFlight.current)return
     if(connectionError){setError(l('请先重新连接并核对最新状态，再操作流程。'));return}
@@ -301,7 +310,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       if(result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='restore_archive'?false:archiveView),result);setData(result); setActiveId(result.team.id) }
       return result
-    } catch (err) { if (mounted.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
+    } catch (err) { if (mounted.current && token === generation.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
     finally { mutationInFlight.current=false;if (mounted.current) { setWorking(false) } }
   }
   async function createFlow(): Promise<void> {
@@ -384,6 +393,30 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       onClick={event => { event.stopPropagation(); void perform('set_task_enabled', {taskId:task.id,enabled:control.stopping ? false : !control.checked,updatedAt:task.updatedAt}) }}>{label}</button>
   }
   async function startEmbedded(key: string, targetId = activeId, fresh = false): Promise<void> {
+    if (key === 'adapt') {
+      setGalleryMode(undefined); setShowOutcomes(false); setEditing(false)
+      selectDiscussion(key)
+      if (!targetId) return
+      // Restore the existing conversation locally; opening it is not a new generation.
+      const existing = data?.team.id === targetId ? data.team.workflow?.discussions['discussion:adapt']?.native : undefined
+      if (!fresh && existing) { setEmbeddedDiscussion(key); return }
+      if (adaptationRequest.current?.teamId === targetId) return
+      if (mutationInFlight.current || revalidating || connectionError || (fresh && adaptationBusy)) return
+      const request = { teamId: targetId }
+      adaptationRequest.current = request; setAdaptationOpening(targetId); setAdaptationOpenError(undefined)
+      try {
+        const result = await perform('open_discussion', { discussion: key, teamId: targetId, fresh })
+        if (!mounted.current || adaptationRequest.current !== request) return
+        if (!result?.openedSessionId?.startsWith('session-at-discussion-') || result.openedSessionId === result.team.captainSessionId) {
+          setAdaptationOpenError(targetId); return
+        }
+        // Remember the result even if the user browsed the graph; never steal their selection.
+        if (targetDiscussion(viewRef.current.target) === key) setEmbeddedDiscussion(key)
+      } finally {
+        if (adaptationRequest.current === request) { adaptationRequest.current = undefined; if (mounted.current) setAdaptationOpening(undefined) }
+      }
+      return
+    }
     selectDiscussion(key)
     const revision=viewRef.current.revision
     const result = await perform('open_discussion', { discussion: key, teamId: targetId, fresh })
@@ -642,11 +675,12 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>
           <button onClick={closeWorkbench} aria-label={l("关闭编排工作台")}>{l("关闭")}</button></div></header>
       <nav className={css.pageTabs} aria-label={l("Teamflow 页面")}><button aria-pressed={!galleryMode && !showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(false)}}><BrandIcon/>{team?l("当前流程"):l("从零创建")}</button><button hidden={!team} aria-pressed={showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(true)}}><WorkflowIcon name="task"/>{l("交付内容")}</button><button aria-pressed={galleryMode==='browse'} className={css.galleryEntry} onClick={()=>{setShowOutcomes(false);setGalleryMode('browse')}}><BrandIcon name="gallery"/>{l("流程模板库 ")}</button>{team&&<button disabled={working||!!unsaved.length||!team.tasks.length} title={unsaved.length?l("请先保存属性草稿"):undefined} onClick={()=>{setShowOutcomes(false);setGalleryMode('save')}}><BrandIcon name="save"/>{l("保存为模板")}</button>}{team?.workflow?.templateSource&&<small>{l("来自 ")}{team.workflow.templateSource.name} · v{team.workflow.templateSource.version}</small>}</nav>
+      {!archiveView && team?.workflow?.templateSource && (team.phase === 'staged' || !!adaptationDiscussion) && <AdaptationProgress phase={adaptationStatus} disabled={mutating && !adaptationOpening && !adaptationDiscussion?.native} onOpen={() => void startEmbedded('adapt')} />}
       {galleryMode&&<TemplateGallery key={galleryMode} sessionId={sessionId} team={team} archived={archiveView} mode={galleryMode} onBack={()=>setGalleryMode(undefined)} onApply={async(template,name,goal)=>{const result=await perform('template_apply',{templateId:template.id,version:template.version,name,description:goal,language:l.language});if(!result)throw new Error(l("未能创建流程，请查看页面错误或刷新重试"));setGalleryMode(undefined);setEditing(false);await startEmbedded('adapt',result.team.id)}}/>}
       {showOutcomes && !galleryMode && team && <OutcomeShowcase key={team.id+':'+sessionId} team={team} sessionId={sessionId} archived={archiveView} onTask={(id,review)=>{if(review)void openReview(id);else locateTask(id)}}/>}
       <div className={css.workbenchBody} hidden={!!galleryMode || showOutcomes}>
       {team && <nav className={css.commandBar} aria-label={l("创建与视图")}>
-        {team.workflow?.templateSource&&team.phase==='staged'&&<button disabled={working} onClick={()=>void startEmbedded('adapt')}><BrandIcon/>{l("统一适配本次任务")}</button>}<strong>{l("创建")}</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button><button disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="review" />{l("人工节点")}</button><button disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
+        <strong>{l("创建")}</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button><button disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="review" />{l("人工节点")}</button><button disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
         <span className={css.commandSpacer} /><button aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? l("显示右侧面板") : l("收起右侧面板")}</button>
       </nav>}
       {revalidating&&<p role="status" className={css.hint}>{l('已显示上次状态，正在同步最新进度…')}</p>}
@@ -772,13 +806,14 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           discussion={embeddedDiscussion === discussion && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : undefined}
           proposal={proposal ? <section className={css.proposal}>{renderProposalReview()}</section> : undefined}
         />}
-        {!editor && !selectedEdge && !activeTask && !reviewingCheckpoint && <aside className={css.discussion} data-template-review={reviewingTemplate}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3 data-review-heading tabIndex={-1}>{reviewTask ? l("验收 · {0}", reviewTask.subject) : discussionTask ? l("任务讨论 · {0}", discussionTask.subject) : member ? l("成员职责 · {0}", member.name) : reviewingTemplate ? l("统一适配本次任务") : l("流程修改")}</h3>
+        {!editor && !selectedEdge && !activeTask && !reviewingCheckpoint && <aside className={css.discussion} data-template-review={reviewingTemplate}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3 data-review-heading tabIndex={-1}>{reviewTask ? l("验收 · {0}", reviewTask.subject) : discussionTask ? l("任务讨论 · {0}", discussionTask.subject) : member ? l("成员职责 · {0}", member.name) : discussion === 'adapt' ? l("本次任务适配") : l("流程修改")}</h3>
           <small>{reviewTask ? l("一起检查成果，由你决定是否通过") : l("讨论不影响执行，修改确认后生效")}</small></div></header>
           <MessageArea className={css.messages}>
             {reviewingTemplate && <summary>{l("讨论记录与资料")}</summary>}
+            {discussion === 'adapt' && <p role="status" className={css.hint}>{adaptationBusy ? l('AI 正在生成任务方案，完成后需你确认才会生效。') : l('可在上方查看适配状态；切换面板不会丢失这次讨论。')}</p>}
             <p className={css.hint}>{reviewTask ? l("在此窗口内共同检查成果并确认验收决定。") : discussionTask ? l("基于已保存的任务要求、负责人、上下游和提交结果讨论；未保存草稿不会发送给 AI。") : member ? l("在这里与独立配置顾问讨论；队长对话保持独立。") : l("在此窗口内讨论团队与流程，修改方案会显示在这里。")}</p>
             {discussionTask && <div><button onClick={() => locateTask(discussionTask.id)}>{l("返回任务属性")}</button><button disabled={working || archiveView} onClick={() => void startEmbedded('graph')}>{l("讨论整体流程与拆分")}</button></div>}
-            {archiveView ? <p className={css.hint}>{l("恢复并编辑流程后可继续讨论。")}</p> : embeddedDiscussion === discussion && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : <button className={css.primary} disabled={working} onClick={() => member ? prepareDiscussion(member.name) : void startEmbedded(discussion)}>{l(conversation?.native ? "继续在此处讨论" : "在此处开始讨论")}</button>}
+            {archiveView ? <p className={css.hint}>{l("恢复并编辑流程后可继续讨论。")}</p> : (embeddedDiscussion === discussion || discussion === 'adapt' && !!conversation?.native) && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : <button className={css.primary} disabled={working} onClick={() => member ? prepareDiscussion(member.name) : void startEmbedded(discussion)}>{l(conversation?.native ? "继续在此处讨论" : "在此处开始讨论")}</button>}
             <details open={archiveView || !proposal && selection.type === 'member'}><summary>{l("已保存资料（不含待确认修改）")}</summary><WorkflowContext team={team} discussion={discussion} onSelect={key => key.startsWith('member:') ? edit('member', key.slice(7)) : selectDiscussion(key)} openExecution={openExecution} /></details>
             {conversation?.materials && <details open><summary>{l("本轮验收材料与证据")}</summary><ReviewMaterials text={conversation.materials} /></details>}
             {embeddedDiscussion !== discussion && data.busy.includes(discussion) && <p role="status">{l("原生对话正在整理方案…")}</p>}
@@ -830,5 +865,5 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
 }
 
 export function WorkflowWorkbench(props: Parameters<typeof Workbench>[0]) {
-  return <WorkflowLocale t={props.t}><Workbench {...props}/></WorkflowLocale>
+  return <WorkflowLocale t={props.t}><Workbench key={props.sessionId} {...props}/></WorkflowLocale>
 }

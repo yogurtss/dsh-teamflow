@@ -398,3 +398,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 @keyframes runningSurface { 0%,100% { background:color-mix(in srgb,var(--wb-accent) 3%,var(--wb-bg)); } 50% { background:color-mix(in srgb,var(--wb-accent) 12%,var(--wb-bg)); } }
 
 .blockers { flex:none; padding:10px 20px; border-bottom:1px solid var(--wb-border); font-size:12px; background:var(--wb-bg); }.blockers>summary { cursor:pointer; color:var(--wb-muted); }.blockers>div { max-height:180px; overflow:auto; }.blockers section { padding:10px 0; border-top:1px solid var(--wb-border); margin-top:8px; }.blockers strong { margin-left:10px; }.blockers p { color:var(--wb-muted); margin:6px 0; }
+
+.adaptationProgress { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--wb-border); background:color-mix(in srgb,#3b82f6 7%,var(--wb-bg)); flex-wrap:wrap; }
+.adaptationProgress button { display:inline-flex; align-items:center; gap:8px; flex-shrink:0; }
+.adaptationProgress p { margin:0; font-size:12px; opacity:.8; flex:1; min-width:180px; }
+.adaptationSpinner { display:inline-flex; animation:adaptationTurn 1.6s linear infinite; }
+@keyframes adaptationTurn { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .adaptationSpinner { animation:none; } }
