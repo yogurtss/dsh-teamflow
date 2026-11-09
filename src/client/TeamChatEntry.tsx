@@ -19,8 +19,11 @@ export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRu
 }
 
 export function TeamTurnCard({ sessionId, turn, useChat, t, openMember }: PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<'agentTeams'> & AgentTeamsCardInjected) {
-  const nodes = useChat(snapshot => snapshot.nodes)
-  const cards = teamCardsForTurn(nodes.values(), turn.turn)
+  // Harness keeps its node store identity stable while replay fills it in.
+  // Select the cards inside the subscription so a tail mounted before replay
+  // completes observes the restored nodes (including after navigation).
+  const cards = useChat(snapshot => teamCardsForTurn(snapshot.nodes.values(), turn.turn),
+    (previous, next) => previous.length === next.length && previous.every((node, index) => node === next[index]))
   if (turn.status !== 'closed' || cards.length === 0) return null
   return <div className={css.turnCards} data-team-turn-cards>{cards.map(node => <AgentTeamsSummary key={node.key}
     data={node.data as import('./agent-teams-card-definition.ts').AgentTeamsCardData}

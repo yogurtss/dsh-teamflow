@@ -1,7 +1,51 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { registerHooks } from 'node:module'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { currentSessionId, openAgentTeamMember } from '../lib/client/session-navigation.js'
 import { toolResultFailed, teamCardsForTurn } from '../lib/client/agent-teams-card-definition.js'
+
+test('turn cards observe replay into the same node store after navigation', async () => {
+  const hooks = registerHooks({ resolve(specifier, context, next) {
+    let source
+    if (context.parentURL?.endsWith('/client/TeamChatEntry.js')) {
+      if (specifier === './AgentTeamsCard.js') source = 'export const AgentTeamsSummary = ({data}) => data.teamName'
+      if (specifier === './WorkflowWorkbench.js') source = 'export const WorkflowWorkbench = () => null'
+      if (specifier.endsWith('.module.css')) source = 'export default {}'
+    }
+    return source === undefined ? next(specifier, context) : { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true }
+  } })
+  let TeamTurnCard
+  try { ({ TeamTurnCard } = await import('../lib/client/TeamChatEntry.js')) }
+  finally { hooks.deregister() }
+  const nodes = new Map(), snapshot = { nodes }
+  let selector, equal, selected
+  const useChat = (select, eq = Object.is) => {
+    selector = select; equal = eq; selected = select(snapshot); return selected
+  }
+  const props = { sessionId: 'captain', turn: { turn: 1, status: 'closed' }, useChat, t: key => key, openMember() {} }
+  const render = () => renderToStaticMarkup(React.createElement(TeamTurnCard, props))
+  const card = (key, turn = 1) => ({ key, kind: 'agent-teams', location: { kind: 'step', turn: { turn, status: 'closed' } }, data: { teamName: key, teamId: key, members: [] } })
+  assert.equal(render(), '')
+  nodes.set('restored', card('restored'))
+  assert.equal(equal(selected, selector(snapshot)), false, 'replay must notify even though the node container did not change')
+  assert.match(render(), /restored/)
+  assert.equal(equal(selected, selector(snapshot)), true, 'unchanged cards must not trigger render loops')
+  nodes.set('other-turn', card('other-turn', 2))
+  assert.equal(equal(selected, selector(snapshot)), true, 'unrelated turns do not rerender this card')
+  nodes.set('restored', { ...nodes.get('restored'), data: { teamName: 'updated' } })
+  assert.equal(equal(selected, selector(snapshot)), false)
+  assert.match(render(), /updated/)
+  nodes.clear()
+  assert.equal(equal(selected, selector(snapshot)), false, 'unloaded cards are removed')
+  assert.equal(render(), '')
+  nodes.set('returned', card('returned'))
+  assert.equal(equal(selected, selector(snapshot)), false, 'returning to the conversation restores the card again')
+  assert.match(render(), /returned/)
+  props.turn = { turn: 1, status: 'running' }
+  assert.equal(render(), '', 'open turns keep their inline card instead of a duplicate tail')
+})
 
 test('known member navigation does not wait for another remote catalog request',async()=>{
  const address={parentSessionId:'parent',childSessionId:'child',mode:'continuable'},opened=[]
