@@ -37,7 +37,7 @@ This release accepts DSH `0.2.1-rc.5`; the repository's development dependencies
 
 **Use a template:** open **Workflow** in the sidebar, browse the Gallery, and enter what you want to accomplish. You can browse before choosing a project. When applying the template, select an existing workspace or use **Add workspace** to choose or create a folder. From a chat, you can also open **Teamflow → Gallery**.
 
-The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. Built-in templates are read-only; save a personal copy to customize one.
+The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. For work that needs repeated improvement, choose **Iterative operator optimization** (5 rounds) or **Fix and regression loop** (3 rounds): independent AI gates return feedback to the same tasks, and exhausted budgets pause for user action. Setup and delivery remain one-off tasks. Built-in templates are read-only; save a personal copy to customize one.
 
 **Start from a goal:** send a request in a project conversation:
 
