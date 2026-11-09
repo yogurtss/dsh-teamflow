@@ -84,12 +84,17 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
     teamName: snapshot?.name ?? data.teamName,
     members: snapshot?.members.map((member) => ({ id: member.id, name: member.name, role: member.role })) ?? data.members,
   }), [data, owner, snapshot])
+  const completed = snapshot?.tasks.filter(task => task.status === 'completed').length ?? 0
+  const total = snapshot?.tasks.length ?? 0
   return (
     <section className={css.root} data-agent-teams-card data-team-id={resolved.teamId}>
       <header className={css.head}>
         <img className={css.leadAvatar} src={LEAD_ART} alt="" aria-hidden />
-        <span className={css.teamName} title={resolved.teamName}>{resolved.teamName}</span>
-        <span className={css.memberCount}>{t('card.memberCount', { count: resolved.members.length })}</span>
+        <div className={css.heading}>
+          <span className={css.eyebrow}>TEAMFLOW</span>
+          <span className={css.teamName} title={resolved.teamName}>{resolved.teamName}</span>
+          <span className={css.memberCount}>{t('card.memberCount', { count: resolved.members.length })}</span>
+        </div>
         <button
           type="button"
           className={css.panelButton}
@@ -100,6 +105,16 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
           {t('activity.panelButton')}
         </button>
       </header>
+      {snapshot?.description && <p className={css.description}>{snapshot.description}</p>}
+      {total > 0 && <div className={css.progressSection}>
+        <div className={css.progressLabel}>
+          <span>{t('card.progress')}</span>
+          <strong>{t('card.completedCount', { completed, total })}</strong>
+        </div>
+        <div className={css.progressTrack} role="progressbar" aria-label={t('card.progress')} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
+          <span style={{ width: `${completed / total * 100}%` }} />
+        </div>
+      </div>}
       {resolved.members.length > 0 && (
         <div className={css.members}>
           {resolved.members.map((member) => (
@@ -117,7 +132,10 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
               ) : (
                 <span className={css.memberInitial}>{member.name.trim().slice(0, 1).toUpperCase() || '?'}</span>
               )}
-              <span className={css.memberName}>{member.name}</span>
+              <span className={css.memberInfo}>
+                <span className={css.memberName}>{member.name}</span>
+                {member.role && <span className={css.memberRole}>{member.role}</span>}
+              </span>
             </button>
           ))}
         </div>

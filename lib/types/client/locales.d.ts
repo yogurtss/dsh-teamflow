@@ -76,6 +76,8 @@ export declare const zh: {
     'workspace.taskSummary': string;
     'workspace.verdictStale': string;
     'card.memberCount': string;
+    'card.progress': string;
+    'card.completedCount': string;
     'action.openActivityPanel': string;
     'activity.panelButton': string;
     'activity.badgeAria': string;
@@ -355,6 +357,8 @@ export declare const en: {
     'workspace.taskSummary': string;
     'workspace.verdictStale': string;
     'card.memberCount': string;
+    'card.progress': string;
+    'card.completedCount': string;
     'action.openActivityPanel': string;
     'activity.panelButton': string;
     'activity.badgeAria': string;
