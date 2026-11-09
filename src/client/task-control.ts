@@ -3,7 +3,7 @@ import type { AgentTeamsLocaleKey } from './locales.ts'
 
 /** Playback grants scheduling permission; it never satisfies a dependency. */
 export type ControlTask = Pick<ActivityTask, 'id'|'status'|'dependencies'|'checkpoint'|'workflowPaused'|'workflowAwaitingStart'|'workflowConfigPending'|'workflowRerunRequired'|'updatedAt'>
-export interface ControlTeam { tasks: readonly ControlTask[]; phase?: string; halted?: boolean }
+export interface ControlTeam { tasks: readonly ControlTask[]; phase?: string; halted?: boolean; workflow?: { loops?: readonly Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'>[] } }
 export function taskControlState(team: ControlTeam, task: ControlTask, historic = false) {
   const terminal = ['completed','failed','cancelled'].includes(task.status)
   const stopping = !!task.workflowPaused && ['claimed','in_progress'].includes(task.status)
@@ -11,7 +11,7 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
   const reviewReady = !!task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && !task.workflowPaused && !task.workflowConfigPending && !task.workflowRerunRequired && !waiting.length && team.phase !== 'staged' && !team.halted && !historic
   const disabled = historic || !!team.halted || terminal || !!task.workflowConfigPending || !!task.workflowRerunRequired || !!task.checkpoint?.decision
   const checked = !terminal && !task.workflowPaused && !task.workflowConfigPending && !task.workflowRerunRequired && !task.checkpoint?.decision
-  const label: AgentTeamsLocaleKey = terminal ? task.checkpoint?.decision === 'approve' ? 'task.status.reviewPassed' : task.status === 'completed' ? 'task.status.completed' : task.status === 'failed' ? 'task.status.failed' : 'task.status.cancelled'
+  let label: AgentTeamsLocaleKey = terminal ? task.checkpoint?.decision === 'approve' ? 'task.status.reviewPassed' : task.status === 'completed' ? 'task.status.completed' : task.status === 'failed' ? 'task.status.failed' : 'task.status.cancelled'
     : task.checkpoint?.decision === 'reject' ? 'task.status.reviewRejected'
     : task.workflowConfigPending ? 'task.status.configurationPending'
     : task.workflowRerunRequired ? waiting.length ? 'task.control.rerunWaiting' : task.checkpoint ? 'task.control.reviewRequired' : 'task.control.rerunRequired'
@@ -31,6 +31,11 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
   const queued = checked && !active
   const actionLabel: AgentTeamsLocaleKey = stopping ? 'task.control.retryStop'
     : !checked ? 'task.control.start' : active ? 'task.control.pause' : 'task.control.dequeue'
+  const loop = team.workflow?.loops?.find(loop => loop.gateId === task.id || loop.bodyIds.includes(task.id))
+  if (loop?.status === 'paused') label = 'task.control.paused'
+  else if (loop?.status === 'cancelled') label = 'task.status.cancelled'
+  else if (loop?.status === 'ready') label = 'task.control.awaitingStart'
+  else if (loop?.gateId === task.id && loop.status === 'reviewing') label = loop.mode === 'ai' ? active ? 'task.status.inProgress' : 'task.control.queued' : 'task.status.reviewReady'
   const visual = label.slice(label.lastIndexOf('.') + 1)
   return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel,visual}
 }

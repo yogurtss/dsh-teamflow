@@ -3,6 +3,7 @@ import { type GalleryAccess } from "./gallery-access.ts";
 import type { TeamState } from './types.ts';
 import type { WorkflowOperation } from './workflow-types.ts';
 import { type TaskBrief } from './template-brief.ts';
+import type { LoopConfig } from './workflow-loop-types.ts';
 export interface TemplateMember extends GalleryAccess {
     name: string;
     summary: string;
@@ -18,6 +19,7 @@ export interface TemplateTask {
     general: TaskBrief;
 }
 export interface TemplateDefinition {
+    loops?: LoopConfig[];
     name: string;
     description: string;
     tags: string[];

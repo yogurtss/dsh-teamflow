@@ -1,4 +1,8 @@
 import { resumeTeamState } from './quality-gates.ts'
+import { configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
+import { readLoopHistory } from './workflow-loop-history.ts'
+import { cp } from 'node:fs/promises'
+import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import { rerunPath, startWorkflowPath, resumeRerunPath } from './task-rerun.ts'
 import { localizeBuiltinTemplate } from './builtin-template-locales.ts'
@@ -156,11 +160,17 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             }] }))
           }else await createTeamDir(root, { name, id: teamId, captainSessionId: captain.id, description: typeof body['description'] === 'string' ? body['description'] : '',
             phase: 'staged', members: [], tasks: [], taskSeq: 0, createdAt: Date.now(),
-            workflow: { positions: {}, discussions: {}, history: [] } })
+            workflow: { positions: {}, discussions: {}, history: [], explicitQuality: true } })
         })
       }
       if (!teamId || sanitizeKey(teamId) !== teamId) throw new Error('无效团队 ID')
       const lock = `team:${root}:${teamId}`
+      if (action === 'loop_history') {
+        const archived = body['archived'] === true
+        const source = archived ? await readArchivedTeam(root, teamId) : await readTeam(root, teamId)
+        if (address || !source || !(await sessionLeadsTeamAsync(ctx, source, captain.id))) throw new Error('当前会话不能查看循环历史')
+        reply(200, await readLoopHistory(archived ? join(root, 'archive') : root, source, string(body['loopId'], 'loopId'), typeof body['cursor'] === 'string' ? body['cursor'] : undefined)); return
+      }
       if(action==='template_seed'){
         const source=await readTeam(root,teamId)??await readArchivedTeam(root,teamId)
         if(!source||!(await sessionLeadsTeamAsync(ctx,source,captain.id)))throw new Error('当前会话不能读取此流程')
@@ -186,6 +196,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           if(!archived || !(await sessionLeadsTeamAsync(ctx,archived,captain.id))) throw new Error('当前会话不能恢复此归档')
           if(await readTeam(root,teamId) || await findTeamByCaptain(root,captain.id,await leadIdentityOfAsync(ctx,captain.session))) throw new Error('当前对话已有可编辑团队，请先查看当前团队')
           const copy=prepareArchivedWorkflow(archived)
+          if (copy.workflow?.loops?.some(loop => loop.historyHead)) await cp(join(root, 'archive', teamId, 'loop-history'), join(root, teamId, 'loop-history'), { recursive: true, errorOnExist: true, force: false })
           await createTeamDir(root,copy)
           return copy
         }))
@@ -197,6 +208,15 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         if (!team || (address && !boundDiscussion(team, caller)) || !(await sessionLeadsTeamAsync(ctx, team, captain.id))) throw new Error('当前会话不能管理此团队')
         if (team.workflow?.templateSource) nameTemplateCaptain(ctx, captain, team.name)
         return team
+      }
+      if (action === 'loop_materials') {
+        const team = await load(), loop = loopsOf(team).find(l => l.id === body['loopId'])
+        if (!loop || loop.status !== 'reviewing') throw new Error('循环尚未进入审核')
+        reply(200, { artifactEvidence: await loopArtifactEvidence(workspace, team, loop), fingerprint: loopInputFingerprint(team, loop), runId: loop.runId, round: loop.round, tasks: loop.bodyIds.map(id => team.tasks.find(t => t.id === id)) }); return
+      }
+      if (action === 'state') await withTeamLock(lock, async () => { const team = await load(); if (reconcileLoops(team)) await writeTeam(root, team) })
+      if (['start_path','resume_rerun_path','resume_task','continue_task','reopen_review'].includes(action) || action === 'set_task_enabled' && body['enabled'] === true) {
+        if (loopForTask(await load(), String(body['taskId']))) throw new Error('请通过循环面板启动或继续，避免跳过门控和轮次上限')
       }
       const currentDiscussion = address ? boundDiscussion(await load(), caller)?.key : undefined
       const key = typeof body['discussion'] === 'string' ? body['discussion'] : currentDiscussion ?? 'graph'
@@ -226,12 +246,12 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
               const owner=task.assignee==='captain'?captain:ctx.agents.get(team.members.find(m=>m.name===task.assignee&&m.status!=='removed')?.id as SessionId)
               if(['claimed','in_progress'].includes(task.status)&&owner?.status==='running')throw new Error('执行会话仍在运行，无需重复继续；如需重跑请先暂停')
             }
-            if (task?.checkpoint && (toggling || bulk)) {
+            if (task?.checkpoint && loopForTask(team, task.id)?.mode !== 'ai' && (toggling || bulk)) {
               if (task.status !== 'pending') throw new Error('该人工审核不能暂停')
               task.workflowPaused = true; task.workflowAwaitingStart = false; task.updatedAt = Date.now()
               await writeTeam(root, team); return
             }
-            if (!task || task.checkpoint || ['completed', 'failed', 'cancelled'].includes(task.status)) {
+            if (!task || task.checkpoint && loopForTask(team, task.id)?.mode !== 'ai' || ['completed', 'failed', 'cancelled'].includes(task.status)) {
               if (bulk) return
               throw new Error('该任务不能暂停编辑')
             }
@@ -273,7 +293,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       }
       let openedSessionId: string | undefined
       const flowKey = `${root}:${teamId}`
-      if (controllingFlows.has(flowKey) && ['set_flow_enabled','set_task_enabled','start_path','resume_rerun_path','resume_task','stop_task','continue_task','resume_team','edit','apply','review','reopen_review','start'].includes(action)) throw new Error('流程正在更新执行状态，请稍候重试')
+      if (controllingFlows.has(flowKey) && ['loop_configure','loop_start','loop_decide','loop_pause','loop_cancel','set_flow_enabled','set_task_enabled','start_path','resume_rerun_path','resume_task','stop_task','continue_task','resume_team','edit','apply','review','reopen_review','start'].includes(action)) throw new Error('流程正在更新执行状态，请稍候重试')
       // Validate the requested scope before retiring interrupted capabilities.
       const pathStart=action==='start_path'||action==='resume_rerun_path'||action==='resume_task'||(toggling&&body['enabled']===true)
       const allStart=action==='set_flow_enabled'&&body['enabled']===true
@@ -297,7 +317,18 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           if(interrupted.length){const team=await load();body['base']=workflowFingerprint(team);body['version']=flowControlVersion(team);if(toggling)body['updatedAt']=team.tasks.find(t=>t.id===body['taskId'])?.updatedAt}
         }finally{controllingFlows.delete(flowKey)}
       }
-      if(action==='continue_task'){
+      if (action === 'loop_pause' || action === 'loop_cancel') {
+        controllingFlows.add(flowKey)
+        try {
+          const ids = await withTeamLock(lock, async () => {
+            const team = await load(), loop = loopsOf(team).find(l => l.id === body['loopId'])
+            if (!loop || body['base'] !== workflowFingerprint(team)) throw new Error('循环状态已变化，请刷新')
+            pauseLoop(team, loop.id, action === 'loop_cancel'); await writeTeam(root, team)
+            return [...loop.bodyIds, loop.gateId]
+          })
+          for (const id of ids) await stopTask(id, true)
+        } finally { controllingFlows.delete(flowKey) }
+      } else if(action==='continue_task'){
         controllingFlows.add(flowKey)
         try {
           await stopTask(body['taskId'])
@@ -315,7 +346,8 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           const ids = await withTeamLock(lock, async () => {
             const team = await load()
             if (team.halted || team.phase === 'staged' || body['version'] !== flowControlVersion(team)) throw new Error('流程已变化或尚未启动，请刷新后重试')
-            const tasks = team.tasks.filter(task => !['completed','failed','cancelled'].includes(task.status) && !task.checkpoint?.decision && !task.workflowConfigPending)
+            if (body['enabled']) for (const loop of loopsOf(team)) if (loop.status === 'ready') startLoop(team, loop.id)
+            const tasks = team.tasks.filter(task => (!body['enabled'] || !loopForTask(team, task.id)) && !['completed','failed','cancelled'].includes(task.status) && !task.checkpoint?.decision && !task.workflowConfigPending)
             if (body['enabled'] && tasks.some(task => task.workflowPaused && (task.status !== 'pending' || task.reassigning || team.members.some(m => m.name === task.assignee && m.stopping)))) throw new Error('请等待当前执行停止完成，或重试暂停流程')
             const targets = tasks.filter(task => body['enabled'] ? task.workflowPaused || task.workflowRerunRequired : !task.workflowPaused || ['claimed','in_progress'].includes(task.status))
             for (const task of targets) {
@@ -369,7 +401,21 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         await withTeamLock(lock, async () => {
           let team = await load()
           const state = workflowState(team)
-          if (action === 'layout') {
+          if (action === 'loop_configure') {
+            if (body['base'] !== workflowFingerprint(team)) throw new Error('流程已变化，请刷新')
+            configureLoop(team, parseLoopConfig(body['config']))
+          } else if (action === 'loop_start') {
+            if (body['base'] !== workflowFingerprint(team)) throw new Error('流程已变化，请刷新')
+            startLoop(team, string(body['loopId'], 'loopId'), Number(body['additionalRounds'] ?? 0))
+          } else if (action === 'loop_decide') {
+            const loop = loopsOf(team).find(l => l.id === body['loopId'])
+            if (!loop || loop.mode !== 'human') throw new Error('此门控由 AI 审核')
+            if (body['artifactEvidence'] !== await loopArtifactEvidence(workspace, team, loop)) throw new Error('审核文件已变化，请重新读取材料')
+            loop.reviewArtifactEvidence = body['artifactEvidence'] as string
+            if (!Array.isArray(body['taskIds']) || body['taskIds'].some(id => typeof id !== 'string')) throw new Error('返工目标无效')
+            decideLoop(team, loop.id, { decisionId: string(body['decisionId'], 'decisionId'), runId: string(body['runId'], 'runId'), round: Number(body['round']),
+              fingerprint: string(body['fingerprint'], 'fingerprint'), decision: body['decision'] as 'pass' | 'revise' | 'blocked', note: string(body['note'], 'note'), taskIds: body['taskIds'] as string[] }, 'human')
+          } else if (action === 'layout') {
             const positions = body['positions'] ?? { [String(body['taskId'])]: { x: body['x'], y: body['y'] } }
             if (!positions || typeof positions !== 'object' || Array.isArray(positions)) throw new Error('无效节点布局')
             const validated: Record<string, { x: number; y: number }> = {}
@@ -490,7 +536,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         // Lifecycle observers also acquire the team lock. Retire the old idle
         // sessions before commit, then drain outside that lock to avoid deadlock.
         if (retired.length) await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), retired as SessionId[])
-        if ((['resume_team', 'apply', 'edit', 'review', 'start_path','resume_rerun_path', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
+        if ((['loop_start','loop_decide','resume_team', 'apply', 'edit', 'review', 'start_path','resume_rerun_path', 'resume_task'].includes(action) || (toggling && body['enabled'] === true))) {
           try { await runtime.kickTeam(workspace, teamId, await parentOf(ctx, captain, await load())) }
           catch (error) { ctx.logger.warn(`agent-teams: saved workflow change; scheduling retry required for ${teamId}: ${String(error)}`) }
         }
@@ -503,7 +549,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         const live=task.assignee==='captain'?captain:member?.id?ctx.agents.get(member.id as SessionId):undefined
         const state=task.reassigning||(member?.stopping&&['claimed','in_progress'].includes(task.status))?'stopping':['claimed','in_progress'].includes(task.status)?live?.status==='running'?'active':'interrupted':'unknown'
         return [task.id,state]
-      })), ...(['create','template_apply','state','resume_team','continue_task','open_discussion','review','reopen_review','edit','apply','start_path','resume_rerun_path','resume_task','stop_task','start','set_flow_enabled'].includes(action) || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
+      })), ...(['loop_configure','loop_start','loop_pause','loop_cancel','loop_decide','create','template_apply','state','resume_team','continue_task','open_discussion','review','reopen_review','edit','apply','start_path','resume_rerun_path','resume_task','stop_task','start','set_flow_enabled'].includes(action) || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })
     } catch (error) {
       reply(error instanceof RequestBodyError ? error.status : 409, { error: error instanceof Error ? error.message : '操作失败' })

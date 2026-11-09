@@ -7,6 +7,7 @@ import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
 import { canRestartTask, rerunImpact, resetTaskForRerun } from './task-rerun.ts'
 import { taskNeedsConfiguration } from './task-description.ts'
+import { configureLoop, loopForTask, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
 
 export function workflowState(team: TeamState): WorkflowState {
   return team.workflow ??= { positions: {}, discussions: {}, history: [] }
@@ -40,6 +41,7 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
     if (op['layers'] !== undefined) throw new Error('任务只使用 description 字符串；通用要求请在保存模板时提炼')
     for (const field of ['configurationPending', 'confirmConfiguration']) if (op[field] !== undefined && typeof op[field] !== 'boolean') throw new Error(`${field} 必须是布尔值`)
     switch (action) {
+      case 'configure_loop': return { action, ...parseLoopConfig(op) }
       case 'add_member': return { action, ...parseGalleryAccess(op), name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'update_member': return { action, ...parseGalleryAccess(op), name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'remove_member': return { action, name: text(op['name'], 'name', true)! }
@@ -89,7 +91,7 @@ export function validateWorkflowGraph(team: TeamState): void {
     visiting.add(task.id)
     if (!task.subject.trim()) throw new Error('任务名称不能为空')
     if (!task.checkpoint && !['completed', 'failed', 'cancelled'].includes(task.status) && task.assignee !== undefined && !members.has(task.assignee) && task.assignee !== 'captain') throw new Error(`执行成员不存在：${task.assignee}`)
-    if (task.checkpoint && task.assignee) throw new Error('人工检查不能分配给执行成员')
+    if (task.checkpoint && task.assignee && loopForTask(team, task.id)?.mode !== 'ai') throw new Error('人工检查不能分配给执行成员')
     for (const id of task.dependencies) {
       if (!ids.has(id)) throw new Error(`依赖任务不存在：${id}`)
       visit(taskOf(team, id))
@@ -97,8 +99,11 @@ export function validateWorkflowGraph(team: TeamState): void {
     visiting.delete(task.id); done.add(task.id)
   }
   team.tasks.forEach(visit)
+  validateLoopGraph(team)
 }
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
+  const loop = loopForTask(team, task.id)
+  if (loop?.gateId === task.id) return loop.mode === 'human' && loop.status === 'reviewing' && !team.halted && team.phase !== 'staged'
   return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !taskNeedsConfiguration(task) && !task.workflowRerunRequired && !task.checkpoint.decision
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
@@ -120,6 +125,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
   const team = structuredClone(original)
   const now = Date.now()
   for (const op of operations) {
+    if (op.action === 'configure_loop') { configureLoop(team, op); continue }
+    if ('id' in op && op.id && loopForTask(team, op.id) && !(loopForTask(team, op.id)?.status === 'ready' && op.action === 'update_task'
+      && (op.dependencies === undefined || JSON.stringify(op.dependencies) === JSON.stringify(taskOf(team, op.id).dependencies))
+      && (op.assignee === undefined || op.assignee === taskOf(team, op.id).assignee))) throw new Error('循环节点请使用循环控制；运行中不能修改拓扑或单独重跑')
+    if ((op.action === 'update_member' || op.action === 'remove_member') && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
     if (op.action === 'add_member') {
       if (sanitizeKey(op.name) === 'captain' || team.members.some(m => sanitizeKey(m.name) === sanitizeKey(op.name))) throw new Error('成员名称重复或保留')
       if (team.members.filter(m => m.status !== 'removed').length >= maxMembers) throw new Error('已达到团队成员上限')
@@ -197,6 +207,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       const owner = team.members.find(member => member.name === original.assignee && member.status !== 'removed')
       if (!owner || owner.stopping || team.tasks.some(task => task.assignee === owner.name && (['claimed', 'in_progress'].includes(task.status) || task.reassigning))) throw new Error('执行成员不可用或仍在运行，请先停止该成员的任务')
       const impact = rerunImpact(team.tasks, original.id)
+      if (impact.descendants.some(task => loopForTask(team, task.id))) throw new Error('重跑会改变循环输入，请新建流程以保留已保存的轮次历史')
       if (impact.active.length) throw new Error('受影响的下游任务仍在运行，请先停止后重跑')
       const instructions = op.instructions?.trim()
       if (!instructions) throw new Error('请在编辑任务中填写本次重跑要求')
@@ -260,6 +271,7 @@ export function applyWorkflowProposal(team: TeamState, proposal: WorkflowProposa
 }
 /** Only the authenticated human route calls this; no model tool can decide a gate. */
 export function decideCheckpoint(team: TeamState, id: string, decision: 'approve' | 'reject', evidence: string, current: string, note: string, materials?: string): void {
+  if (loopForTask(team, id)) throw new Error('请使用循环门控提交审核决定')
   const task = taskOf(team, id)
   if (!checkpointReady(team, task) || !task.checkpoint || task.checkpoint.decision) throw new Error('该检查点当前不能验收')
   if (!evidence || evidence !== current) throw new Error('验收材料已变化，请刷新材料后重新检查')

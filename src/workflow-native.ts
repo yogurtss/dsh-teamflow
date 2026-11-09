@@ -54,6 +54,7 @@ const PERSONA = `你是 TeamFlow 的独立配置顾问或验收 Agent，在 Harn
 成员 summary 说明职责和交付物；role 是长期职责；executionPrompt 是通用执行指令；specificPrompt 是可选的本次补充指令。成员配置只能调整该成员和其现有任务。
 任务要求只使用 description 字符串，完整描述目标、范围、输入、交付物和验收标准；不要生成通用层或 layers。通用要求仅在保存模板时提炼。目标明确时直接生成完整方案，缺少关键信息才先与用户讨论。
 任务讨论只能调整当前普通任务（update_task）或提出该任务重跑（rerun_task），不能修改成员或其他任务，也不能确认配置。可以讨论拆分方案，跨节点修改须转到整体流程讨论。任务要求、负责人、上下游、已有结果和失败记录以每轮上下文为准。
+显式循环可在整体流程讨论提出 configure_loop：gateId 为已有人工检查节点，entryId 为上游入口，mode 为 human 或 ai，AI 模式必须指定独立 reviewer，maxRounds 默认 3（1–20，包含首次），timeoutMinutes 默认 30。先创建成员、任务和门控，再配置循环；dependencies 中禁止回退边。循环按原节点迭代，不使用 rework 新增节点。新建流程只运行显式评审，不额外添加隐藏修复链。
 流程连接表示任务交接：上游完成后下游才能开始。先讨论得到团队方案，用户可以随时在画布调整。
 人工检查由你整理上游成果、证据缺口、待确认要点，再与用户讨论。用户在画布点击通过或退回。你不能代替用户批准。
 退回后讨论返工对象。仅可编辑未开始或已停止的任务。用户希望某个成员重跑时，默认提出 rerun_task，指定该成员一个已结束的任务，并在 instructions 中明确本轮新增要求，不能为空；它重置同一任务，保留历史执行记录，将上一轮结果和新增要求一起交给执行 Agent 重新验证。所有依赖下游（包括已完成任务与人工检查）重置并挂起，由用户在画布逐个确认后重跑或验收。无关分支不变。
@@ -146,7 +147,9 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       type: 'array', required: true,
       description: 'One atomic batch of 1–50 proposed edits. Submit objects directly, not a JSON-encoded string. No changes take effect before human confirmation.',
       items: { type: 'object', additionalProperties: false, properties: {
-        action: { type: 'string', required: true, enum: ['add_member','update_member','remove_member','add_task','update_task','remove_task','rerun_task','rework'] },
+        action: { type: 'string', required: true, enum: ['add_member','update_member','remove_member','add_task','update_task','remove_task','rerun_task','rework','configure_loop'] },
+        gateId: { type: 'string' }, entryId: { type: 'string' }, mode: { type: 'string', enum: ['human','ai'] }, reviewer: { type: 'string' },
+        maxRounds: { type: 'number' }, timeoutMinutes: { type: 'number' },
         id: { type: 'string', description: 'Existing task ID for task edits/removal/rerun, or checkpoint ID for rework. Optional new ID for add_task.' }, name: { type: 'string', description: 'Required for member operations; use the exact member name.' }, subject: { type: 'string', description: 'Required non-empty title for add_task.' }, summary: { type: 'string', description: 'Required responsibility summary for add_member.' },
         role: { type: 'string' }, executionPrompt: { type: 'string' }, specificPrompt: { type: 'string' },
         provider: { type: 'string' }, model: { type: 'string' }, reasoningEffort: { type: 'string' },

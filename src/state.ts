@@ -24,6 +24,8 @@ import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
 import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
+import { loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
+import { writeLoopTeam } from './workflow-loop-history.ts'
 
 export {
   amendTaskContract,
@@ -241,7 +243,7 @@ export function invalidateTaskAttempt(
 export async function createTeamDir(stateRoot: string, state: TeamState): Promise<void> {
   const dir = join(stateRoot, state.id)
   await mkdir(join(dir, 'inbox'), { recursive: true })
-  await atomicWriteText(join(dir, 'team.json'), JSON.stringify(state, null, 2))
+  await writeTeam(stateRoot, state)
 }
 
 /**
@@ -298,6 +300,12 @@ export function readTeamSync(stateRoot: string, teamId: string): TeamState | und
  * @param state - the record to persist.
  */
 export async function writeTeam(stateRoot: string, state: TeamState): Promise<void> {
+  if (loopsOf(state).length || state.workflow?.loopRevision !== undefined) {
+    validateLoopGraph(state)
+    reconcileLoops(state)
+    await writeLoopTeam(stateRoot, state)
+    return
+  }
   await atomicWriteText(join(stateRoot, state.id, 'team.json'), JSON.stringify(state, null, 2))
 }
 
@@ -1156,6 +1164,7 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     if (task.id === '' || taskIds.has(task.id)) return false
     taskIds.add(task.id)
   }
+  try { validateLoopGraph(value as unknown as TeamState) } catch { return false }
   return true
 }
 

@@ -1,6 +1,7 @@
 import type { GalleryAccess } from "./gallery-access.ts"
 /** Persistent human-controlled workflow and isolated discussion contracts. */
 export type WorkflowOperation =
+  | ({ action: 'configure_loop' } & import('./workflow-loop-types.ts').LoopConfig)
   | (GalleryAccess & { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | (GalleryAccess & { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | { action: 'remove_member'; name: string }
@@ -43,6 +44,10 @@ export interface WorkflowDiscussion {
   materialsRound?: number
 }
 export interface WorkflowState {
+  loops?: import('./workflow-loop-types.ts').WorkflowLoop[]
+  loopRevision?: number
+  /** New canvases execute only explicitly configured review nodes. */
+  explicitQuality?: boolean
   templateDefinition?: import('./templates.ts').TemplateDefinition
   templateSource?: import('./templates.ts').TemplateSource
   /** Accepted for old saved teams; no longer controls behavior. */

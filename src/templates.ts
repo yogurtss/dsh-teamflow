@@ -3,10 +3,13 @@ import { parseGalleryAccess, type GalleryAccess } from "./gallery-access.ts"
 import type { TeamState } from './types.ts'
 import type { WorkflowOperation } from './workflow-types.ts'
 import { emptyBrief, parseBrief, type TaskBrief } from './template-brief.ts'
+import { deriveLoop, parseLoopConfig, validateLoopGraph } from './workflow-loop-config.ts'
+import type { LoopConfig } from './workflow-loop-types.ts'
 
 export interface TemplateMember extends GalleryAccess { name: string; summary: string; role: string; executionPrompt: string }
 export interface TemplateTask { id: string; subject: string; assignee: string; dependencies: string[]; checkpoint: boolean; general: TaskBrief }
 export interface TemplateDefinition {
+  loops?: LoopConfig[]
   name: string; description: string; tags: string[]; inputs: string
   members: TemplateMember[]; tasks: TemplateTask[]; positions: Record<string,{x:number;y:number}>
 }
@@ -36,7 +39,7 @@ export const templateDefinitionParameter = {
 } as const
 
 export function templateGenerationFormat(team: TeamState): Omit<TemplateDefinition, 'positions'> {
-  const { positions: _positions, ...format } = templateSeed(team)
+  const { positions: _positions, loops: _loops, ...format } = templateSeed(team)
   // Match the strict model-facing schema. Permissions belong to the human
   // configuration and are restored by extractedTemplate, never generated.
   return { ...format, members: format.members.map(({name,summary,role,executionPrompt}) => ({name,summary,role,executionPrompt})) }
@@ -75,17 +78,27 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   const done=new Set<string>(), visiting=new Set<string>()
   const visit=(id:string):void=>{if(visiting.has(id))throw new Error('模板连接产生循环');if(done.has(id))return;visiting.add(id);tasks.find(t=>t.id===id)!.dependencies.forEach(visit);visiting.delete(id);done.add(id)}
   tasks.forEach(t=>visit(t.id))
+  const loops = v['loops'] === undefined ? undefined : array(v['loops'], 16).map(parseLoopConfig)
+  if (loops?.length) {
+    const check: TeamState = { id: 'template', name: 'template', captainSessionId: 'template', createdAt: 0, taskSeq: 0,
+      members: members.map(m => ({ ...m, id: '', status: 'idle', joinedAt: 0 })),
+      tasks: tasks.map(t => ({ ...t, assignee: t.assignee || undefined, status: 'pending', createdAt: 0, updatedAt: 0, checkpoint: t.checkpoint ? { round: 1, history: [] } : undefined })),
+      workflow: { positions: {}, discussions: {}, history: [] } }
+    check.workflow!.loops = loops.map(config => deriveLoop(check, config, config.gateId, 'template'))
+    validateLoopGraph(check)
+  }
   const positions:TemplateDefinition['positions']={}
   for(const [key,raw] of Object.entries(object(v['positions'] ?? {}))) {
     const p=object(raw)
     if (!key.startsWith('task:') || !ids.has(key.slice(5)) || !['x','y'].every(k=>typeof p[k]==='number' && Number.isFinite(p[k]) && p[k]>=0 && p[k]<=10000)) throw new Error('模板布局无效')
     positions[key]={x:p['x'] as number,y:p['y'] as number}
   }
-  return {name:text(v['name'],true,120),description:text(v['description'],false,2000),inputs:text(v['inputs'],false,4000),tags:[...new Set(array(v['tags'],12).map(t=>text(t,true,40)))],members,tasks,positions}
+  return {name:text(v['name'],true,120),description:text(v['description'],false,2000),inputs:text(v['inputs'],false,4000),tags:[...new Set(array(v['tags'],12).map(t=>text(t,true,40)))],members,tasks,positions,...loops?.length ? { loops } : {}}
 }
 /** A manual starting point; legacy descriptions are not silently promoted to generic instructions. */
 export function templateSeed(team: TeamState): TemplateDefinition {
   return parseTemplate({name:team.name,description:'',inputs:'',tags:[],
+    loops: team.workflow?.loops?.map(({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes }) => ({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes })),
     members:team.members.filter(m=>m.status!=='removed'||team.tasks.some(t=>t.assignee===m.name)).map(m=>({name:m.name,summary:m.summary??'',role:m.role??'',executionPrompt:m.executionPrompt??'', ...parseGalleryAccess({...m})})),
     tasks:team.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.checkpoint?'':t.assignee??'',dependencies:t.dependencies,checkpoint:!!t.checkpoint,general:emptyBrief()})),
     positions:Object.fromEntries(Object.entries(team.workflow?.positions??{}).filter(([key])=>team.tasks.some(t=>key===`task:${t.id}`)))})
@@ -101,16 +114,22 @@ export function extractedTemplate(team:TeamState, value:unknown):TemplateDefinit
     name, summary, role, executionPrompt,
     ...parseGalleryAccess({ ...source.members.find(member => member.name === name) }),
   }))
+  if (source.loops) result.loops = source.loops
   return result
 }
 export function instantiateTemplate(template:TemplateVersion, id:string, captainSessionId:string, name:string, goal:string, now=Date.now()):TeamState {
   const clean=parseTemplate(template)
-  return {id,name:name.trim()||clean.name,description:goal.trim(),captainSessionId,createdAt:now,phase:'staged',planReviewState:'awaiting_review',
+  const team: TeamState = {id,name:name.trim()||clean.name,description:goal.trim(),captainSessionId,createdAt:now,phase:'staged',planReviewState:'awaiting_review',
     members:clean.members.map(m=>({...m,id:'',status:'idle',joinedAt:now,specificPrompt:''})),
     tasks:clean.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.assignee||undefined,dependencies:[...t.dependencies],kind:'work',status:'pending',attempt:0,createdAt:now,updatedAt:now,
       description:'',workflowConfigPending:true,workflowPaused:true,...t.checkpoint?{checkpoint:{round:1,history:[]}}:{}})),
     taskSeq:Math.max(0,...clean.tasks.map(t=>/^t\d+$/.test(t.id)?Number(t.id.slice(1)):0)),
-    workflow:{templateDefinition:structuredClone(clean),positions:structuredClone(clean.positions),discussions:{},history:[],templateSource:{id:template.id,version:template.version,name:template.name}}}
+    workflow:{explicitQuality:true,templateDefinition:structuredClone(clean),positions:structuredClone(clean.positions),discussions:{},history:[],templateSource:{id:template.id,version:template.version,name:template.name}}}
+  if (clean.loops?.length) {
+    team.workflow!.loops = clean.loops.map(config => deriveLoop(team, config, crypto.randomUUID(), crypto.randomUUID()))
+    for (const loop of team.workflow!.loops) { const gate = team.tasks.find(t => t.id === loop.gateId)!; gate.assignee = loop.mode === 'ai' ? loop.reviewer : undefined }
+  }
+  return team
 }
 /** The adaptation agent may fill the instance, never alter the saved graph or template definition. */
 export function validateAdaptation(team:TeamState, operations:WorkflowOperation[]):void {

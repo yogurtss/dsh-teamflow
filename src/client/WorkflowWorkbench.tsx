@@ -1,3 +1,4 @@
+import { LoopPanel } from './LoopPanel.tsx'
 import { draftGalleryAccess } from "./workbench-drafts.ts"
 import { galleryAccessKeys } from "../gallery-access.ts"
 import { workflowRequest } from './workflow-request.ts'
@@ -158,6 +159,8 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const reviewingCheckpoint = !!reviewTask && !editor && !selectedTask && !selectedEdge
   const discussionTask = discussion.startsWith('task:') ? team?.tasks.find(t => t.id === discussion.slice(5) && !t.checkpoint) : undefined
   const activeTask = team?.tasks.find(t => t.id === selectedTask)
+  const activeLoop = team?.workflow?.loops?.find(loop => loop.gateId === activeTask?.id || loop.bodyIds.includes(activeTask?.id ?? ''))
+  const loopLabel = l.language === 'en' ? 'Loop gate' : '循环门控'
   const terminalEdit = !!editor && editor.type !== 'member' && !!activeTask && canRestartTask(activeTask)
   const member = discussion.startsWith('member:') ? team?.members.find(m => m.name === discussion.slice(7)) : undefined
   const defaultPositions = useMemo(() => arrangeTasks(team?.tasks ?? []), [team?.tasks])
@@ -360,6 +363,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   function renderReadiness(task: TeamTask) {
     if (!team) return null
     const state = taskReadiness(team,task,l,data?.execution?.[task.id])
+    if (team.workflow?.loops?.some(loop => loop.gateId === task.id || loop.bodyIds.includes(task.id))) return <section className={css.readiness}><strong>{state.label}</strong><p>{state.detail}</p></section>
     const labels={path:'运行到此节点',review:'打开验收',edit:'完善节点配置',rerun:'修改并重跑',continue:'继续此任务',stop:'重试停止',member:'调整负责人'}
     const action=state.action
     const run=()=>{if(action==='review')void openReview(task.id);else if(action==='edit'||action==='rerun'||action==='member')edit(task.checkpoint?'check':'task',task.id);else if(action==='continue')void perform(task.checkpoint?'resume_task':'continue_task',{taskId:task.id,base:data?.base});else if(action==='path')void perform('start_path',{taskId:task.id,base:data?.base});else if(action==='stop')void perform('stop_task',{taskId:task.id})}
@@ -374,6 +378,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }
   function renderTaskControl(task: TeamTask) {
     if (!team || archiveView) return null
+    if (team.workflow?.loops?.some(loop => loop.gateId === task.id || loop.bodyIds.includes(task.id))) return null
     const control = taskControlState(team, {...task, workflowAwaitingStart:awaitsFirstStart(task)})
     if (control.canRerun) return <button type="button" data-node-rerun disabled={working} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();edit('task',task.id)}}>{l("修改并重跑")}</button>
     if (control.terminal || control.disabled) return null
@@ -549,6 +554,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     })
   }
   async function openReview(id: string): Promise<void> {
+    if (team?.workflow?.loops?.some(loop => loop.gateId === id)) { setEditing(false); locateTask(id); return }
     setShowOutcomes(false)
     setGalleryMode(undefined); setEditing(false); setOpened(true)
     setInspectorWidth(width => Math.max(width, 640))
@@ -679,7 +685,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           {library === 'tasks' ? <section className={css.taskList}><h3>{l("任务流程")}</h3><p className={css.hint}>{l("任务决定做什么，Agent 决定由谁执行。")}</p>{team.tasks.map(task => <button key={task.id} data-kind={task.checkpoint ? 'check' : 'task'} aria-pressed={selectedTask === task.id} onClick={() => {
             choose({ type: task.checkpoint ? 'check' : 'task', id: task.id })
             requestAnimationFrame(() => { const p = pos(task.id); canvas.current?.scrollTo({ left: Math.max(0, p.x * zoom - 48), top: Math.max(0, p.y * zoom - 48), behavior: 'smooth' }) })
-          }}><small className={css.iconLabel}><WorkflowIcon name={task.checkpoint ? 'review' : 'task'} />{task.checkpoint ? l("人工节点") : l("任务节点")} · {task.id}</small><strong>{task.subject}{unsaved.some(item => item.target.id === task.id && item.target.type !== 'member') && <em className={css.dirtyDot}> {l(" · 未保存")}</em>}</strong><span title={taskReadiness(team,task,l).detail}>{taskStatus(task, data.ready)}</span></button>)}{!team.tasks.length && <p className={css.hint}>{l("从顶部创建任务节点或人工节点。")}</p>}</section> : <><h3>{l("Agent 成员 ")}<button disabled={working || archiveView} aria-label={l("添加成员")} onClick={() => edit('member')}>{l("＋ 添加")}</button></h3>
+          }}><small className={css.iconLabel}><WorkflowIcon name={task.checkpoint ? 'review' : 'task'} />{team.workflow?.loops?.some(loop => loop.gateId === task.id) ? loopLabel : task.checkpoint ? team.workflow?.loops?.some(loop => loop.gateId === task.id) ? loopLabel : l("人工节点") : l("任务节点")} · {task.id}</small><strong>{task.subject}{unsaved.some(item => item.target.id === task.id && item.target.type !== 'member') && <em className={css.dirtyDot}> {l(" · 未保存")}</em>}</strong><span title={taskReadiness(team,task,l).detail}>{taskStatus(task, data.ready)}</span></button>)}{!team.tasks.length && <p className={css.hint}>{l("从顶部创建任务节点或人工节点。")}</p>}</section> : <><h3>{l("Agent 成员 ")}<button disabled={working || archiveView} aria-label={l("添加成员")} onClick={() => edit('member')}>{l("＋ 添加")}</button></h3>
           {team.members.filter(m => archiveView || m.status !== 'removed').map(m => <article key={m.name} className={relatedMember === m.name ? css.selected : ''} onClick={event => { if (!(event.target as HTMLElement).closest('button')) { edit('member', m.name) } }}>
             <button className={css.member} aria-pressed={selection.type === 'member' && selection.id === m.name} onClick={() => { edit('member', m.name) }}><img src={memberArtUrl(m.name, m.role ?? '')} alt="" /><span><strong>{m.name}{unsaved.some(item => item.target.type === 'member' && item.target.id === m.name) && <em className={css.dirtyDot}> {l(" · 未保存")}</em>}</strong><span>{m.summary || m.role || l("尚未填写职责概述")}</span></span></button>
             <small className={css.iconLabel}><WorkflowIcon name="agent" />Agent · {m.model || l("继承队长模型")}</small><div><button disabled={working || archiveView} onClick={() => prepareDiscussion(m.name)}><WorkflowIcon name="chat" />{l("讨论调整 ↗")}</button>
@@ -697,12 +703,13 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                   <path d={path} markerEnd={selected ? 'url(#workflow-arrow-active)' : 'url(#workflow-arrow)'} />
                   <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={l("交接：{0} → {1}", team.tasks.find(task => task.id === dep)?.subject ?? dep, t.subject)} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { choose({ type:'edge',from:dep,to:t.id }) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose({ type:'edge',from:dep,to:t.id }) } }} />
                 </g> }))}
+                {team.workflow?.loops?.map(loop => { const a=pos(loop.gateId), b=pos(loop.entryId); const y=Math.max(a.y,b.y)+155; return <g key={loop.id} className={css.edge}><path d={`M${a.x+112},${a.y+110} C${a.x+112},${y+50} ${b.x+112},${y+50} ${b.x+112},${b.y+110}`} strokeDasharray="7 5" markerEnd="url(#workflow-arrow)"/><text x={(a.x+b.x)/2+112} y={y+30} fill="currentColor" fontSize="12">{l.language==='en'?'Revise':'按意见改进'} · {loop.round}/{loop.maxRounds}</text></g> })}
                 {link && <path d={connectionPath(connectionPort(pos(link.from),'output'),link)} />}
               </svg>
               {team.tasks.map(task => { const p = pos(task.id), control=taskControlState(team,{...task,workflowAwaitingStart:awaitsFirstStart(task)},archiveView); return <article key={task.id} data-canvas-node={task.id} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${task.checkpoint ? css.checkpoint : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
-                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={task.checkpoint ? 'review' : 'task'} />{task.checkpoint ? l("人工节点") : l("任务节点")} · {task.id}{renderTaskControl(task)}</div>
+                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={task.checkpoint ? 'review' : 'task'} />{task.checkpoint ? team.workflow?.loops?.some(loop => loop.gateId === task.id) ? loopLabel : l("人工节点") : l("任务节点")} · {task.id}{renderTaskControl(task)}</div>
                 <button className={css.nodeBody} >
-                  <strong title={task.subject}>{task.subject}</strong><span className={css.taskOwner} title={task.assignee}>{task.checkpoint ? l("人工验收 · 由你确认") : l("执行 Agent · {0}", task.assignee || l("自动分配"))}</span><TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} /></button>
+                  <strong title={task.subject}>{task.subject}</strong><span className={css.taskOwner} title={task.assignee}>{team.workflow?.loops?.find(loop=>loop.gateId===task.id)?.mode==='ai' ? `AI · ${task.assignee}` : task.checkpoint ? l("人工验收 · 由你确认") : l("执行 Agent · {0}", task.assignee || l("自动分配"))}</span><TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} /></button>
                 <button className={`${css.port} ${css.input}`} data-connection-handle data-input-id={task.id} aria-label={l("{0} 输入端", task.subject)} />
                 <button className={`${css.port} ${css.output}`} data-connection-handle aria-label={l("{0} 输出端", task.subject)} disabled={working || archiveView || !editing || (taskEditing && !editor?.id)} title={l("从圆点拖出连接线")} onPointerDown={event => {
                   if (event.button !== 0) return
@@ -740,23 +747,24 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
         </main>
         <div className={css.resizeHandle} role="separator" aria-label={l("调整右侧面板宽度")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
         <section className={css.inspector} aria-label={l("属性与讨论面板")}><header className={css.inspectorHeader}><strong>{reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
+          {activeTask && !selectedEdge && <LoopPanel key={activeTask.id} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
           {selectedEdge && <aside className={css.editor} aria-label={l("交接详情")}><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>{l("上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。")}</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>{l("删除连线")}</button></aside>}
-          {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? l("人工验收属性") : l("任务属性")}><header className={css.taskHeading}>
-            <small>{activeTask.checkpoint ? l("人工验收属性") : l("任务属性")} · {activeTask.id}</small>
+          {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? activeLoop ? loopLabel : l("人工验收属性") : l("任务属性")}><header className={css.taskHeading}>
+            <small>{activeTask.checkpoint ? activeLoop ? loopLabel : l("人工验收属性") : l("任务属性")} · {activeTask.id}</small>
             <h3 data-task-heading tabIndex={-1}>{activeTask.subject}</h3>
-            {!archiveView && editorTarget(team,selection,true) && <button onClick={() => setEditing(true)}>{!activeTask.checkpoint && ['completed','failed','cancelled'].includes(activeTask.status) ? l("修改并重跑") : l("编辑节点")}</button>}
+            {!archiveView && (!activeLoop || activeLoop.status === 'ready') && editorTarget(team,selection,true) && <button onClick={() => setEditing(true)}>{!activeTask.checkpoint && ['completed','failed','cancelled'].includes(activeTask.status) ? l("修改并重跑") : l("编辑节点")}</button>}
           </header>
           <section className={css.taskBrief}><strong>{l("任务要求 / 验收要求")}</strong><p>{activeTask.description || l("暂无任务说明")}</p></section>
           {renderReadiness(activeTask)}
           {!['completed', 'failed', 'cancelled'].includes(activeTask.status) && renderTaskControl(activeTask)}{renderRerunPath(activeTask)}
-          {activeTask.checkpoint && <p>{l("第 ")}{activeTask.checkpoint.round} {l(" 轮 · ")}{activeTask.checkpoint.note || l("暂无验收意见")}</p>}<div>
+          {activeTask.checkpoint && !activeLoop && <p>{l("第 ")}{activeTask.checkpoint.round} {l(" 轮 · ")}{activeTask.checkpoint.note || l("暂无验收意见")}</p>}<div>
             {!archiveView && !activeTask.checkpoint && <button className={css.primary} disabled={working} onClick={() => void startEmbedded(`task:${activeTask.id}`)}><WorkflowIcon name="chat" />{l("与 AI 讨论任务")}</button>}
-            {!archiveView && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>{l("修改负责人并重跑此任务")}</button>}
+            {!archiveView && !activeLoop && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>{l("修改负责人并重跑此任务")}</button>}
           </div><TaskRecord task={activeTask} team={team} showContract={false} />
-            {activeTask.checkpoint && <button className={css.primary} disabled={working} onClick={() => void openReview(activeTask.id)}>{data.ready.includes(activeTask.id) && !archiveView ? l("开始验收") : l("查看验收工作台")}</button>}
+            {activeTask.checkpoint && !team.workflow?.loops?.some(loop=>loop.gateId===activeTask.id) && <button className={css.primary} disabled={working} onClick={() => void openReview(activeTask.id)}>{data.ready.includes(activeTask.id) && !archiveView ? l("开始验收") : l("查看验收工作台")}</button>}
           </aside>}
 
-        {reviewingCheckpoint && reviewTask && <ReviewWorkbench key={`${team.id}:${reviewTask.id}:${reviewTask.checkpoint?.round}`} team={team} task={reviewTask} conversation={conversation} ready={data.ready.includes(reviewTask.id)} archived={archiveView} busy={working} note={note} onNote={setNote}
+        {reviewingCheckpoint && reviewTask && !team.workflow?.loops?.some(loop=>loop.gateId===reviewTask.id) && <ReviewWorkbench key={`${team.id}:${reviewTask.id}:${reviewTask.checkpoint?.round}`} team={team} task={reviewTask} conversation={conversation} ready={data.ready.includes(reviewTask.id)} archived={archiveView} busy={working} note={note} onNote={setNote}
           onReopen={()=>void perform('reopen_review',{taskId:reviewTask.id,base:data.base})}
           onRerun={async (taskId,instructions)=>!!(await saveEdit([{action:'rerun_task',id:taskId,instructions}],l('安排验收返工')))}
           reworkBlocked={unsaved.length?l('请先保存属性草稿'):undefined} continuation={<>{!reviewTask.checkpoint?.decision&&renderReadiness(reviewTask)}{renderRerunPath(reviewTask)}</>}
