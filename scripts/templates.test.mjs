@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { parseTemplate, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
+import { parseTemplate, templateGenerationFormat, templateDefinitionParameter, templateSeed, extractedTemplate, instantiateTemplate, templateTopology, validateAdaptation } from '../lib/templates.js'
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from '../lib/template-store.js'
 import { builtinTemplates, getBuiltinTemplate } from '../lib/builtin-templates.js'
 import { resolveTeamProfile } from '../lib/profiles.js'
@@ -156,4 +156,14 @@ test('Gallery switches remain independent through templates, AI extraction and i
   assert.equal(updated.members[0].gallerySkill, true)
   assert.equal(updated.members[0].galleryMcp, true)
   assert.throws(() => parseWorkflowOperations([{ action: 'update_member', name: 'worker', gallerySkill: 'false' }]), /布尔值/)
+})
+
+test('generated template example conforms to the strict tool schema and preserves human Gallery permissions',()=>{
+ const source=team();Object.assign(source.members[0],{gallerySkill:true,galleryMcp:false})
+ const generated=templateGenerationFormat(source)
+ for(const member of generated.members)for(const key of Object.keys(member))assert.ok(Object.hasOwn(templateDefinitionParameter.properties.members.items.properties,key),'Unexpected model member field: '+key)
+ const proposed=structuredClone(generated);proposed.members[0].executionPrompt='Reusable instructions'
+ const result=extractedTemplate(source,proposed)
+ assert.equal(result.members[0].gallerySkill,true);assert.equal(result.members[0].galleryMcp,false)
+ assert.equal(source.members[0].gallerySkill,true)
 })

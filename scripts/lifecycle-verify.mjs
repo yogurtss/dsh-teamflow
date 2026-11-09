@@ -1337,10 +1337,11 @@ try {
   for (let waited = 0; waited < 2000; waited += 20) {
     // A torn read during a degraded non-atomic overwrite must not kill the
     // run; treat it as "not settled yet" and keep polling.
-    const settled = ((afterCaptainIdle?.tasks.filter(candidate => (
+    const candidates = afterCaptainIdle?.tasks.filter(candidate => (
       candidate.id === t8.task_id || candidate.id === t9.task_id
-    )) ?? []).every(candidate => candidate.assignee !== 'captain'
-      && (candidate.status === 'claimed' || candidate.status === 'in_progress')))
+    )) ?? []
+    const settled = candidates.length === 2 && candidates.every(candidate => candidate.assignee !== 'captain'
+      && (candidate.status === 'claimed' || candidate.status === 'in_progress'))
     if (settled) break
     await new Promise(resolve => setTimeout(resolve, 20))
     afterCaptainIdle = await state().catch(() => undefined)

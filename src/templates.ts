@@ -37,7 +37,9 @@ export const templateDefinitionParameter = {
 
 export function templateGenerationFormat(team: TeamState): Omit<TemplateDefinition, 'positions'> {
   const { positions: _positions, ...format } = templateSeed(team)
-  return format
+  // Match the strict model-facing schema. Permissions belong to the human
+  // configuration and are restored by extractedTemplate, never generated.
+  return { ...format, members: format.members.map(({name,summary,role,executionPrompt}) => ({name,summary,role,executionPrompt})) }
 }
 const object = (v: unknown): Record<string,unknown> => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('模板格式无效')

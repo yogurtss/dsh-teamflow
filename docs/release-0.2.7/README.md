@@ -1,0 +1,9 @@
+# 0.2.7 stable promotion review
+
+Scope: the complete main..dev changes from aff3e98 through 65bf496, plus the template-extraction fix and stable metadata prepared on 2026-11-09. Reviewed polling/audit worker lifetime, read cancellation and mutation fencing, display cache ownership, native navigation, discussion revision updates, Gallery flag persistence and activation, templates, generated artifacts, tests and documentation.
+
+The original post-merge run 42343723276 failed its real-host Web approval scenario across the matrix. The Gallery-enabled template example contained permission keys excluded by the strict model tool schema. A new regression reproduces that mismatch. The fix limits model-facing examples to editable member fields; extraction restores Gallery permissions from the source team. It does not change permission authority or task scheduling.
+
+Local checks: backend/client typechecks, production build and artifact integrity passed. All verification commands passed across the local runs. Windows temporary-file reads intermittently failed in lifecycle fixtures; the polling condition now requires both task records instead of accepting an empty snapshot. The lifecycle suite passed all three modes with isolated temporary fixtures. Dependency-isolation tests require a temp directory outside the repository and passed separately there. Promotion requires a passing complete compatibility gate for this candidate before main is moved.
+
+Preserved boundaries: stable Git installation remains github:yogurtss/dsh-teamflow#main; development continues on dev. No npm publish, user profile update, forced history rewrite or classic tag movement. The exact compatibility policy is unchanged. Prior Gallery live model/reconnect evidence predates this integration; this promotion does not claim a fresh external-Gallery live-model test. Native DSH transcript hydration and remote latency remain outside the measured plugin-side performance improvements.
