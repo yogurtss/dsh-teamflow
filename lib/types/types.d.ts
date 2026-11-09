@@ -295,6 +295,8 @@ export interface TeamMember extends GalleryAccess {
     } & GalleryAccess;
     joinedAt: number;
     status: MemberStatus;
+    /** Distinguish archive retirement from a deliberate roster removal. Absent on legacy archives. */
+    restoreOnUnarchive?: boolean;
     /** Execution admission is closed while a failed/pending handoff is drained. */
     stopping?: boolean;
     /**

@@ -17,7 +17,7 @@ export function workflowState(team: TeamState): WorkflowState {
 export function workflowFingerprint(team: TeamState): string {
   // Discussion turns and layout moves do not invalidate a proposal; execution does.
   return createHash('sha256').update(JSON.stringify({ phase: team.phase, halted: team.halted,
-    goal: team.description, templateSource: team.workflow?.templateSource, templateDefinition: team.workflow?.templateDefinition, members: team.members, tasks: team.tasks })).digest('hex')
+    goal: team.description, templateSource: team.workflow?.templateSource, templateDefinition: team.workflow?.templateDefinition, loops: team.workflow?.loops, members: team.members, tasks: team.tasks })).digest('hex')
 }
 function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('操作必须是对象')
@@ -149,6 +149,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (op.action === 'remove_member') {
         if (team.tasks.some(t => t.assignee === member.name && t.status === 'pending')) throw new Error('先重新分配该成员的待执行任务')
         member.status = 'removed'
+        member.restoreOnUnarchive = false
       } else {
         Object.assign(member, parseGalleryAccess({...op}))
         if (op.summary !== undefined) member.summary = op.summary

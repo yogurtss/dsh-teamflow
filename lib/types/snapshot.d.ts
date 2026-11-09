@@ -72,7 +72,7 @@ export interface TeamActivitySnapshot {
     readonly phase: 'staged' | 'running';
     readonly workflowEnabled?: boolean;
     readonly workflow?: {
-        loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode'>[];
+        loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'queued'>[];
     };
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;

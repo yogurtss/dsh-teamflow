@@ -24,7 +24,8 @@ export function prepareArchivedWorkflow(archived: TeamState): TeamState {
   for(const discussion of Object.values(team.workflow.discussions)) if(discussion.proposal?.status==='pending') discussion.proposal.status='dismissed'
   for(const member of team.members) {
     if(member.id) member.previousSessionIds=[...new Set([...member.previousSessionIds??[],member.id])]
-    member.id='';member.status='idle';member.stopping=false;delete member.runtimeSetup
+    member.id='';member.status=member.restoreOnUnarchive === false ? 'removed' : 'idle';member.stopping=false;delete member.runtimeSetup
+    delete member.restoreOnUnarchive
     delete member.activeProvider;delete member.activeModel;delete member.fallbackActive
   }
   for(const task of team.tasks) {

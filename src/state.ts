@@ -799,6 +799,7 @@ function isTeamMember(value: unknown): value is TeamMember {
     && isOptionalString(value['summary'])
     && (value['previousSessionIds'] === undefined || (Array.isArray(value['previousSessionIds']) && value['previousSessionIds'].every(id => typeof id === 'string')))
     && (value['stopping'] === undefined || typeof value['stopping'] === 'boolean')
+    && (value['restoreOnUnarchive'] === undefined || typeof value['restoreOnUnarchive'] === 'boolean')
     && isOptionalString(value['provider'])
     && isOptionalString(value['model'])
     && isOptionalString(value['reasoningEffort'])

@@ -351,3 +351,49 @@ test('twenty-round history keeps hot state bounded and reloads original evidence
   assert.equal(oldest.round, 1)
   t.diagnostic(JSON.stringify({ rounds: 20, historyRecords: loop.historyCount, hotBytes, baselineBytes: initialBytes, totalMs: Math.round(performance.now() - started), historyReadMs: Math.round(performance.now() - pageStart) }))
 })
+
+
+test('global pause cancels queued loops so later external completion cannot restart them',async t=>{
+ const {team,loop}=fixture();team.tasks.unshift(task('input'));team.tasks.find(t=>t.id==='a').dependencies=['input']
+ startLoop(team,loop.id);assert.equal(loop.queued,true)
+ const f=await routeFixture(t,team),saved=await f.read()
+ const paused=await f.call('set_flow_enabled',{enabled:false,version:flowControlVersion(saved)})
+ assert.equal(paused.code,200,paused.error)
+ const current=await f.read(),queued=current.workflow.loops[0]
+ assert.equal(queued.queued,undefined);assert.equal(queued.status,'paused')
+ finish(current,['input']);assert.equal(queued.status,'paused');assert.equal(current.tasks.find(t=>t.id==='a').workflowPaused,true)
+})
+
+test('workflow and global control tokens include queued loop control changes',()=>{
+ const {team,loop}=fixture();team.tasks.unshift(task('input'));team.tasks.find(t=>t.id==='a').dependencies=['input']
+ const workflowBefore=workflowFingerprint(team),controlBefore=flowControlVersion(team)
+ startLoop(team,loop.id)
+ assert.notEqual(workflowFingerprint(team),workflowBefore)
+ assert.notEqual(flowControlVersion(team),controlBefore)
+})
+
+test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teamflow-watchdog-isolation-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const stateRoot=join(root,'.agent-teams'),effects=[],warnings=[]
+ let watchdog
+ const interval=globalThis.setInterval
+ globalThis.setInterval=fn=>{watchdog=fn;return {unref(){}}}
+ const captain={id:'captain',status:'idle',session:{header:{cwd:root}}}
+ const ctx={agents:{get:id=>id==='captain'?captain:{id,status:'running'}},subagents:{drainChildren:async()=>{}},effect:fn=>effects.push(fn()),on(){},logger:{warn:message=>warnings.push(message)}}
+ let scheduler
+ try{scheduler=installTeamScheduler(ctx,{stateDir:'.agent-teams',dispatch:async()=>true})}finally{globalThis.setInterval=interval}
+ t.after(()=>effects.forEach(fn=>fn?.()))
+ for(const id of ['broken','healthy']){
+  const {team,loop}=fixture();team.id=id;loop.timeoutMinutes=1;startLoop(team,loop.id)
+  beginTaskAttempt(team.tasks[0],'worker');team.tasks[0].status='in_progress'
+  await createTeamDir(stateRoot,team);await scheduler.kickTeam(root,id,captain)
+ }
+ await writeFile(join(stateRoot,'broken','team.json'),'{bad')
+ const clock=Date.now;Date.now=()=>clock()+120000
+ try{
+  watchdog()
+  let state
+  for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,10));state=await readTeam(stateRoot,'healthy');if(state.workflow.loops[0].status==='paused')break}
+  assert.equal(state.workflow.loops[0].status,'paused');assert.ok(warnings.length)
+ }finally{Date.now=clock}
+})

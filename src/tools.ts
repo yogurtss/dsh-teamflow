@@ -1479,6 +1479,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           requeued.push(task.id)
         }
         member.status = 'removed'
+        member.restoreOnUnarchive = false
         await discardMailboxMessages(stateRoot, fresh.id, member.name, (await readUnreadMailbox(stateRoot, fresh.id, member.name)).map(message => message.id))
         await writeTeam(stateRoot, fresh)
         appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-teams/member-removed', {
@@ -2622,6 +2623,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         // retires durable catalog entries left behind by remove_member.
         const roster = fresh.members.map(member => ({ ...member }))
         for (const member of fresh.members) {
+          member.restoreOnUnarchive ??= member.status !== 'removed'
           await discardMailboxMessages(stateRoot, fresh.id, member.name, (await readUnreadMailbox(stateRoot, fresh.id, member.name)).map(message => message.id))
           if (member.status === 'removed') continue
           member.status = 'removed'

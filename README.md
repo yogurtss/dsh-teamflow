@@ -21,11 +21,11 @@ Built on [AgentTeams](https://github.com/NanmiCoder/dsh-agent-teams), TeamFlow n
 
 **Continue and rerun**: Start all resumes unfinished, paused, or interrupted work and preserves completed results. Run through a node resumes its required ancestors and pauses later descendants; human checkpoints still require approval. Continuing needs no new input. An explicit rerun requires a reason in the card editor. Reconnection reads current state without replaying mutations. Blockers and recovery explains configuration, dependencies, review, and execution issues with next actions.
 
-This README describes stable version **`0.2.10`** on `main`. See the [release notes](./release-notes/v0.2.10.md); ongoing development remains on `dev`. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
+This README describes development version **`0.2.11-dev.1`** on `dev`. See the [release notes](./release-notes/v0.2.11-dev.1.md); `main` retains the original non-loop workflow, with general fixes backported separately. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
 
 | Channel | Git source | Purpose |
 | --- | --- | --- |
-| Stable | `github:yogurtss/dsh-teamflow#main` | Approved TeamFlow release described here; the default installation below |
+| Stable | `github:yogurtss/dsh-teamflow#main` | Original non-loop workflow; excludes the development features described here |
 | Development | `github:yogurtss/dsh-teamflow#dev` | Upcoming changes under development |
 | Classic | `github:yogurtss/dsh-teamflow#classic` | Historical version without Gallery |
 
