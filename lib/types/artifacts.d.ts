@@ -35,6 +35,13 @@ export declare function readOutcomePreview(workspace: string, path: string): Out
  * list would let a change outside the list pass as "unchanged".
  */
 export declare const MAX_EXPANDED_ARTIFACTS = 200;
+export declare const MAX_ARTIFACT_BYTES: number;
+export declare const MAX_SCOPE_BYTES: number;
+export declare const ARTIFACT_CACHE_TTL_MS = 5000;
+/** Opt-in display cache only. Authoritative evidence reads default to fresh bytes. */
+export interface ArtifactReadOptions {
+    cache?: boolean;
+}
 /** Result of reading a declared scope: what was read, and what could not be. */
 export interface ArtifactScopeRead {
     artifacts: ArtifactDigest[];
@@ -45,7 +52,7 @@ export interface ArtifactScopeRead {
  * keep explicitly named paths even when they do not exist (a later creation is
  * drift too), and report every part that could not be fully resolved.
  */
-export declare function readArtifactScope(workspace: string, patterns: readonly string[]): ArtifactScopeRead;
+export declare function readArtifactScope(workspace: string, patterns: readonly string[], options?: ArtifactReadOptions): ArtifactScopeRead;
 /**
  * Read the current bytes of workspace-relative paths (directories expand).
  * Illegal and unreadable paths are reported, never silently dropped.

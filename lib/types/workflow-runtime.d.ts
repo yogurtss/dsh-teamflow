@@ -4,7 +4,8 @@ import type { TeamState } from './types.ts';
 import { type installWorkflowConversations } from './workflow-native.ts';
 import type { AgentTeamsRuntime, ToolsConfig } from './tools.ts';
 import { type WebRouteHost } from './web-routes.ts';
-export declare function workflowMaterials(team: TeamState, taskId: string, workspace: string): {
+import { type ArtifactScopeRead } from './artifacts.ts';
+export declare function workflowMaterials(team: TeamState, taskId: string, workspace: string, suppliedFiles?: ArtifactScopeRead): {
     text: string;
     evidence: string;
 };

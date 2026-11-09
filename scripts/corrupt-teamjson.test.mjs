@@ -42,6 +42,18 @@ async function workspaceWith(team) {
   return { root, stateRoot }
 }
 
+test('team reads recover from a transient truncated overwrite but reject persistent corruption', async t => {
+  const { readTeam } = await import('../src/state.ts')
+  const { root, stateRoot } = await workspaceWith(CORRUPT_JSON)
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const pending = readTeam(stateRoot, TEAM_ID)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  await writeFile(join(stateRoot, TEAM_ID, 'team.json'), JSON.stringify(validTeam()))
+  assert.equal((await pending).id, TEAM_ID)
+  await writeFile(join(stateRoot, TEAM_ID, 'team.json'), CORRUPT_JSON)
+  await assert.rejects(readTeam(stateRoot, TEAM_ID), SyntaxError)
+})
+
 function memberSession(cwd) {
   return {
     header: { cwd },

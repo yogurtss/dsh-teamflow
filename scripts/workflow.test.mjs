@@ -8,7 +8,7 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
+import { archiveTeamDir, cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
 import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
 import { registerAgentTeamsTools } from '../lib/tools.js'
 import { installWorkflowConversations, workflowDiscussion } from '../lib/workflow-native.js'
@@ -17,7 +17,7 @@ import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/ses
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
-import { arrangeTasks, fitGraph } from '../lib/client/workflow-layout.js'
+import { arrangeTasks, arrangeWorkflow, loopBodyIds, loopRegion, fitGraph } from '../lib/client/workflow-layout.js'
 import { flowControlVersion, flowControlState, taskControlState } from '../lib/client/task-control.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
@@ -46,6 +46,16 @@ async function lifecycleFixture(t, source, options = {}) {
   }
   return {workspace:root,read,call,dispatched,save:state=>writeTeam(stateRoot,state),kick:()=>scheduler.kickTeam(root,source.id,captain)}
 }
+
+test('system archive executes without a member claim and survives team archival and restore',async t=>{
+ const source=team();source.workflow={positions:{},discussions:{},history:[]};source.tasks[0].status='completed';source.tasks[0].output='Saved result'
+ const state=applyWorkflowOperations(source,[{action:'add_task',id:'archive',kind:'archive',subject:'Archive',dependencies:['t1'],archive:{copyFiles:false,paths:[]}}]);const f=await lifecycleFixture(t,state);await f.kick()
+ let current;for(let i=0;i<200;i++){current=await f.read();if(current.tasks.at(-1).status==='completed')break;await new Promise(r=>setTimeout(r,5))}
+ const archived=current.tasks.at(-1);assert.equal(archived.status,'completed');assert.equal(f.dispatched.length,0);const recordId=archived.archiveRecords[0].id
+ const before=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(before.code,200);assert.equal(before.manifest.tasks[0].output,'Saved result')
+ await archiveTeamDir(join(f.workspace,'.agent-teams'),'demo');const historical=await f.call('task_archive',{taskId:'archive',recordId,archived:true});assert.equal(historical.code,200);assert.deepEqual(historical.manifest,before.manifest)
+ const restore=await f.call('restore_archive');assert.equal(restore.code,200,JSON.stringify(restore));const restored=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(restored.code,200);assert.deepEqual(restored.manifest,before.manifest)
+})
 
 test('conditional state omits unchanged large payloads but updates for live execution and edits',async t=>{
  const liveAgents=new Map(),source=team();source.members[0].id='worker-session';source.tasks[0].status='claimed'
@@ -726,6 +736,19 @@ test('canvas layout separates branching cards and fits tall as well as wide grap
   assert.ok(fitGraph(800, 400, 600, 1200) * 1200 <= 368)
   assert.ok(fitGraph(400, 800, 1200, 600) * 1200 <= 368)
   assert.equal(fitGraph(1200, 800, 600, 400), 1)
+})
+
+test('loop layout keeps multiple steps and parallel joins inside distinct regions with visible exits', () => {
+  const tasks = [task('prepare'), task('a',['prepare']), task('b',['a']), task('c',['a']), task('join',['b','c']), task('gate',['join']), task('next',['gate']), task('gate2',['next']), task('deliver',['gate2'])]
+  const loops = [{ entryId:'a', gateId:'gate' }, { entryId:'next', gateId:'gate2' }]
+  const before = structuredClone(tasks), points = arrangeWorkflow(tasks, loops)
+  assert.deepEqual(loopBodyIds(tasks, loops[0]), ['a','b','c','join'])
+  assert.ok(points.gate.y > points.join.y && points.gate.y > points.c.y)
+  assert.ok(points.next.x > points.gate.x && points.deliver.x > points.gate2.x)
+  for (const a of tasks) for (const b of tasks) if (a.id !== b.id) assert.ok(Math.abs(points[a.id].x-points[b.id].x)>=225 || Math.abs(points[a.id].y-points[b.id].y)>=150, `${a.id}/${b.id} overlap`)
+  for (const loop of loops) { const region=loopRegion(tasks,loop,id=>points[id]); assert.ok(region.bottom>points[loop.gateId].y+150); assert.match(region.returnPath,/ H/); }
+  assert.deepEqual(tasks, before, 'Layout must never add backward dependencies')
+  assert.deepEqual(arrangeWorkflow(tasks),arrangeTasks(tasks))
 })
 
 test('opening a new review round refreshes the native conversation once', async t => {

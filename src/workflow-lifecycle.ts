@@ -4,7 +4,9 @@ import { TERMINAL_TASK_STATUSES } from './types.ts'
 import { resetTaskForRerun } from './task-rerun.ts'
 
 export function assertWorkflowArchivable(team: TeamState): void {
-  if (!team.workflow && !team.tasks.some(task=>task.checkpoint)) return
+  // A default quality policy alone does not turn a tool-created team into an edited workbench workflow.
+  const policyOnly = team.workflow?.explicitQuality && Object.keys(team.workflow).every(key => ['explicitQuality','positions','discussions','history'].includes(key)) && !Object.keys(team.workflow.positions).length && !Object.keys(team.workflow.discussions).length && !team.workflow.history.length
+  if ((!team.workflow || policyOnly) && !team.tasks.some(task=>task.checkpoint)) return
   const unfinished=team.tasks.filter(task=>!TERMINAL_TASK_STATUSES.includes(task.status))
   if(unfinished.length) throw new Error(`流程还有未完成节点，不能归档：${unfinished.map(task=>`${task.id} ${task.subject}`).join('、')}。聊天中的“验收通过”不会完成正式人工审批；请在团队与流程打开验收材料并点击“通过验收”。明确放弃时，先由用户停止团队，再归档。`)
 }
@@ -15,6 +17,10 @@ export function prepareArchivedWorkflow(archived: TeamState): TeamState {
   const team=structuredClone(archived), now=Date.now()
   team.phase='staged';team.planReviewState='awaiting_review';team.halted=false;delete team.haltedAt
   team.workflow??={positions:{},discussions:{},history:[]}
+  if (team.workflow.loops?.length) {
+    team.workflow.loopRevision = 0
+    for (const loop of team.workflow.loops) if (loop.status !== 'passed') { loop.status = 'paused'; loop.reason = '从归档恢复，等待人工继续'; delete loop.queued }
+  }
   for(const discussion of Object.values(team.workflow.discussions)) if(discussion.proposal?.status==='pending') discussion.proposal.status='dismissed'
   for(const member of team.members) {
     if(member.id) member.previousSessionIds=[...new Set([...member.previousSessionIds??[],member.id])]
@@ -28,6 +34,8 @@ export function prepareArchivedWorkflow(archived: TeamState): TeamState {
     task.workflowRerunRequired=false
     if(task.checkpoint) {
       delete task.assignee
+      const loop = team.workflow.loops?.find(l => l.gateId === task.id)
+      if (loop?.mode === 'ai') task.assignee = loop.reviewer
       const discussion=team.workflow.discussions[`discussion:check:${task.id}`]
       if(discussion) {delete discussion.materials;delete discussion.evidence;delete discussion.materialsRound;if(discussion.native) delete discussion.native.reviewEvidence}
     }

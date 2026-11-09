@@ -1,4 +1,5 @@
 import { parseGalleryAccess } from "./gallery-access.ts"
+import { parseTaskArchive, validArchiveFields } from './task-archive-config.ts'
 /** Human workflow operations. Model output is a proposal, never execution authority. */
 import { createHash, randomUUID } from 'node:crypto'
 import type { TeamState, TeamTask } from './types.ts'
@@ -7,6 +8,7 @@ import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
 import { canRestartTask, rerunImpact, resetTaskForRerun } from './task-rerun.ts'
 import { taskNeedsConfiguration } from './task-description.ts'
+import { configureLoop, loopForTask, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
 
 export function workflowState(team: TeamState): WorkflowState {
   return team.workflow ??= { positions: {}, discussions: {}, history: [] }
@@ -40,19 +42,24 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
     if (op['layers'] !== undefined) throw new Error('任务只使用 description 字符串；通用要求请在保存模板时提炼')
     for (const field of ['configurationPending', 'confirmConfiguration']) if (op[field] !== undefined && typeof op[field] !== 'boolean') throw new Error(`${field} 必须是布尔值`)
     switch (action) {
+      case 'configure_loop': return { action, ...parseLoopConfig(op) }
       case 'add_member': return { action, ...parseGalleryAccess(op), name: text(op['name'], 'name', true)!, summary: text(op['summary'], 'summary', true)!, ...fields(['role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'update_member': return { action, ...parseGalleryAccess(op), name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'remove_member': return { action, name: text(op['name'], 'name', true)! }
       case 'add_task': {
+        if (op['kind'] !== undefined && !['work','archive'].includes(String(op['kind']))) throw new Error('流程任务类型必须为 work 或 archive')
+        if (op['archive'] !== undefined && op['kind'] !== 'archive') throw new Error('仅归档节点可以配置归档')
+        if (op['kind'] === 'archive' && (op['checkpoint'] || op['assignee'])) throw new Error('归档节点由系统执行，不设置成员或门控')
         if (op['checkpoint'] !== undefined && typeof op['checkpoint'] !== 'boolean') throw new Error('checkpoint 必须是布尔值')
-        return { action, subject: text(op['subject'], 'subject', true)!, ...fields(['id', 'description', 'assignee', 'adaptationIssue']),
+        return { action, ...op['kind'] === 'archive' ? {kind:'archive' as const,archive:parseTaskArchive(op['archive'])} : {}, subject: text(op['subject'], 'subject', true)!, ...fields(['id', 'description', 'assignee', 'adaptationIssue']),
           dependencies: strings(op['dependencies'], 'dependencies'), checkpoint: op['checkpoint'] === true, ...op['configurationPending'] === true ? { configurationPending: true } : {} }
       }
       case 'update_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['subject', 'description', 'assignee', 'adaptationIssue']),
+        ...op['archive'] === undefined ? {} : {archive:parseTaskArchive(op['archive'])},
         ...op['confirmConfiguration'] === true ? { confirmConfiguration: true } : {},
         ...op['dependencies'] === undefined ? {} : { dependencies: strings(op['dependencies'], 'dependencies') } }
       case 'remove_task': return { action, id: text(op['id'], 'id', true)! }
-      case 'rerun_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['instructions', 'subject', 'description', 'assignee', 'adaptationIssue']) }
+      case 'rerun_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['instructions', 'subject', 'description', 'assignee', 'adaptationIssue']),...op['archive']===undefined?{}:{archive:parseTaskArchive(op['archive'])} }
       case 'rework': return { action, id: text(op['id'], 'id', true)!, taskIds: strings(op['taskIds'], 'taskIds'), instructions: text(op['instructions'], 'instructions', true)! }
       default: throw new Error(`未知修改操作：${String(action)}`)
     }
@@ -88,8 +95,9 @@ export function validateWorkflowGraph(team: TeamState): void {
     if (done.has(task.id)) return
     visiting.add(task.id)
     if (!task.subject.trim()) throw new Error('任务名称不能为空')
+    if (!validArchiveFields(task as unknown as Record<string,unknown>)) throw new Error('归档节点配置无效或设置了执行成员')
     if (!task.checkpoint && !['completed', 'failed', 'cancelled'].includes(task.status) && task.assignee !== undefined && !members.has(task.assignee) && task.assignee !== 'captain') throw new Error(`执行成员不存在：${task.assignee}`)
-    if (task.checkpoint && task.assignee) throw new Error('人工检查不能分配给执行成员')
+    if (task.checkpoint && task.assignee && loopForTask(team, task.id)?.mode !== 'ai') throw new Error('人工检查不能分配给执行成员')
     for (const id of task.dependencies) {
       if (!ids.has(id)) throw new Error(`依赖任务不存在：${id}`)
       visit(taskOf(team, id))
@@ -97,8 +105,11 @@ export function validateWorkflowGraph(team: TeamState): void {
     visiting.delete(task.id); done.add(task.id)
   }
   team.tasks.forEach(visit)
+  validateLoopGraph(team)
 }
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
+  const loop = loopForTask(team, task.id)
+  if (loop?.gateId === task.id) return loop.mode === 'human' && loop.status === 'reviewing' && !team.halted && team.phase !== 'staged'
   return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !taskNeedsConfiguration(task) && !task.workflowRerunRequired && !task.checkpoint.decision
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
@@ -120,6 +131,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
   const team = structuredClone(original)
   const now = Date.now()
   for (const op of operations) {
+    if (op.action === 'configure_loop') { configureLoop(team, op); continue }
+    if ('id' in op && op.id && loopForTask(team, op.id) && !(loopForTask(team, op.id)?.status === 'ready' && op.action === 'update_task'
+      && (op.dependencies === undefined || JSON.stringify(op.dependencies) === JSON.stringify(taskOf(team, op.id).dependencies))
+      && (op.assignee === undefined || op.assignee === taskOf(team, op.id).assignee))) throw new Error('循环节点请使用循环控制；运行中不能修改拓扑或单独重跑')
+    if ((op.action === 'update_member' || op.action === 'remove_member') && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
     if (op.action === 'add_member') {
       if (sanitizeKey(op.name) === 'captain' || team.members.some(m => sanitizeKey(m.name) === sanitizeKey(op.name))) throw new Error('成员名称重复或保留')
       if (team.members.filter(m => m.status !== 'removed').length >= maxMembers) throw new Error('已达到团队成员上限')
@@ -153,7 +169,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         team.taskSeq = Math.max(team.taskSeq, sequence)
       }
       team.tasks.push({ id, subject: op.subject, description: op.description, adaptationIssue: op.adaptationIssue, assignee: op.checkpoint ? undefined : op.assignee || undefined,
-        dependencies: op.dependencies, kind: 'work', status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
+        dependencies: op.dependencies, kind: op.kind ?? 'work', ...op.kind === 'archive' ? {archive:parseTaskArchive(op.archive)} : {}, status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
         ...op.configurationPending || !!op.adaptationIssue?.trim() ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
         ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
@@ -170,6 +186,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       updateDescription(task,op)
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
       if (op.dependencies !== undefined) task.dependencies = op.dependencies
+      if (op.archive !== undefined) { if(task.kind !== 'archive') throw new Error('仅归档节点可以配置归档'); task.archive=parseTaskArchive(op.archive) }
       if (op.confirmConfiguration && task.workflowConfigPending) {
         if(task.adaptationIssue?.trim())throw new Error(`任务「${task.subject}」仍有需要确认的问题：${task.adaptationIssue}。请补充任务要求，并在问题解决后清除问题说明。`)
         if (!task.subject.trim() || !task.description?.trim()) throw new Error(`请填写 ${task.subject} 的名称与任务／验收要求，再完成配置`)
@@ -194,9 +211,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if(original.adaptationIssue?.trim())throw new Error(`任务「${original.subject}」仍有需要确认的问题：${original.adaptationIssue}。请补充任务要求，并在问题解决后清除问题说明。`)
       original.workflowConfigPending=false
       if (op.assignee !== undefined) original.assignee = op.assignee || undefined
+      if(op.archive!==undefined){if(original.kind!=='archive')throw new Error('仅归档节点可以配置归档');original.archive=parseTaskArchive(op.archive)}
       const owner = team.members.find(member => member.name === original.assignee && member.status !== 'removed')
-      if (!owner || owner.stopping || team.tasks.some(task => task.assignee === owner.name && (['claimed', 'in_progress'].includes(task.status) || task.reassigning))) throw new Error('执行成员不可用或仍在运行，请先停止该成员的任务')
+      if (original.kind !== 'archive' && (!owner || owner.stopping || team.tasks.some(task => task.assignee === owner.name && (['claimed', 'in_progress'].includes(task.status) || task.reassigning)))) throw new Error('执行成员不可用或仍在运行，请先停止该成员的任务')
       const impact = rerunImpact(team.tasks, original.id)
+      if (impact.descendants.some(task => loopForTask(team, task.id))) throw new Error('重跑会改变循环输入，请新建流程以保留已保存的轮次历史')
       if (impact.active.length) throw new Error('受影响的下游任务仍在运行，请先停止后重跑')
       const instructions = op.instructions?.trim()
       if (!instructions) throw new Error('请在编辑任务中填写本次重跑要求')
@@ -228,7 +247,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         const id = nextTaskId(team); mapping.set(task.id, id)
         team.tasks.push({ id, subject: `${task.subject} · 返工 ${gate.checkpoint.round + 1}`,
           description: `${task.description ?? ''}\n\n返工要求：${op.instructions}`, assignee: task.assignee,
-          dependencies: task.dependencies.map(dep => mapping.get(dep) ?? dep), kind: task.kind,
+          dependencies: task.dependencies.map(dep => mapping.get(dep) ?? dep), kind: task.kind, ...task.archive ? {archive:structuredClone(task.archive)} : {},
           objective: task.objective, acceptance: task.acceptance, inScope: task.inScope, outOfScope: task.outOfScope, verify: task.verify,
           deliverables: task.deliverables, nonGoals: task.nonGoals, coverageOf: task.coverageOf, round: task.round,
           contractSnapshot: task.contractSnapshot, revisions: task.revisions, sourceFindingIds: task.sourceFindingIds,
@@ -260,6 +279,7 @@ export function applyWorkflowProposal(team: TeamState, proposal: WorkflowProposa
 }
 /** Only the authenticated human route calls this; no model tool can decide a gate. */
 export function decideCheckpoint(team: TeamState, id: string, decision: 'approve' | 'reject', evidence: string, current: string, note: string, materials?: string): void {
+  if (loopForTask(team, id)) throw new Error('请使用循环门控提交审核决定')
   const task = taskOf(team, id)
   if (!checkpointReady(team, task) || !task.checkpoint || task.checkpoint.decision) throw new Error('该检查点当前不能验收')
   if (!evidence || evidence !== current) throw new Error('验收材料已变化，请刷新材料后重新检查')
@@ -269,4 +289,15 @@ export function decideCheckpoint(team: TeamState, id: string, decision: 'approve
   gate.history.push({ round: gate.round, decision, at, note, evidence, ...(materials === undefined ? {} : { materials }) })
   task.updatedAt = at
   if (decision === 'approve') { task.status = 'completed'; task.output = `人工验收通过：${note}` }
+}
+
+/** One atomic human action: preserve reviewed evidence and create the complete rework branch. */
+export function branchCheckpoint(team:TeamState,id:string,taskIds:string[],evidence:string,current:string,note:string,materials:string):TeamState {
+  if(!note.trim())throw new Error('请填写返工要求')
+  const copy=structuredClone(team)
+  decideCheckpoint(copy,id,'reject',evidence,current,note,materials)
+  const result=applyWorkflowOperations(copy,[{action:'rework',id,taskIds,instructions:note}])
+  const gate=result.tasks.find(t=>t.id===id)!
+  gate.checkpoint!.history.at(-1)!.decision='branch'
+  return result
 }

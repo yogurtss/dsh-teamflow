@@ -13,6 +13,7 @@
  * otherwise be reported as fully verified.
  * @module dsh-agent-teams/workspace-audit
  */
+import { type ArtifactReadOptions } from './artifacts.ts';
 import type { DeliveryAudit } from './quality-gates.ts';
 import type { TeamState } from './types.ts';
 /**
@@ -24,4 +25,4 @@ import type { TeamState } from './types.ts';
  * the verdicts bound (so a new file cannot slip into a broad scope), and every
  * gap that makes this audit incomplete.
  */
-export declare function auditTeamWorkspace(workspace: string, team: TeamState): DeliveryAudit;
+export declare function auditTeamWorkspace(workspace: string, team: TeamState, options?: ArtifactReadOptions): DeliveryAudit;

@@ -173,6 +173,38 @@ async function mount() {
   }
 }
 
+test('inline plans atomically create optional human and AI loops with durable task references', async () => {
+  const fixture = await mount()
+  try {
+    const captain = fixture.createCaptain('loop-planner')
+    const plan = { members: [{ name: 'writer' }, { name: 'reviewer' }], tasks: [
+      { id: 'prepare', subject: 'Prepare', description: 'Prepare once', assignee: 'writer' },
+      { id: 'draft', subject: 'Draft', description: 'Improve draft', assignee: 'writer', dependencies: ['prepare'] },
+      { id: 'ai-gate', subject: 'AI review', description: 'Check draft acceptance', checkpoint: true, dependencies: ['draft'] },
+      { id: 'design', subject: 'Design', description: 'Improve design', assignee: 'writer', dependencies: ['ai-gate'] },
+      { id: 'human-gate', subject: 'Human review', description: 'Human accepts design', checkpoint: true, dependencies: ['design'] },
+      { id: 'deliver', subject: 'Deliver', description: 'Deliver once', assignee: 'writer', dependencies: ['human-gate'] },
+    ], loops: [
+      { gateId: 'ai-gate', entryId: 'draft', mode: 'ai', reviewer: 'reviewer', maxRounds: 2, timeoutMinutes: 5 },
+      { gateId: 'human-gate', entryId: 'design', mode: 'human' },
+    ] }
+    const invalid = structuredClone(plan); invalid.loops[0].reviewer = 'writer'
+    const rejected = await fixture.execute(captain, { name: 'invalid-loop', approval: 'required', plan: invalid })
+    assert.equal(rejected.isError, true)
+    assert.equal(await fixture.exists('invalid-loop'), false)
+    const result = await fixture.execute(captain, { name: 'mixed-loops', approval: 'required', plan })
+    assert.ok(!result.isError, JSON.stringify(result))
+    const saved = await fixture.loadTeam('mixed-loops')
+    assert.equal(saved.phase, 'staged'); assert.equal(saved.workflow.explicitQuality, true)
+    assert.equal(saved.tasks.length, 6); assert.equal(saved.workflow.loops.length, 2)
+    const [ai, human] = saved.workflow.loops
+    assert.deepEqual(ai.bodyIds, ['t2']); assert.equal(ai.gateId, 't3'); assert.equal(ai.maxRounds, 2)
+    assert.deepEqual(human.bodyIds, ['t4']); assert.equal(human.gateId, 't5'); assert.equal(human.maxRounds, 3)
+    assert.equal(saved.tasks[2].assignee, 'reviewer'); assert.equal(saved.tasks[4].assignee, undefined)
+    assert.ok(saved.members.every(member => member.id === ''))
+  } finally { await fixture.dispose() }
+})
+
 for (const [label, plan] of [['an empty-array shell', EMPTY_ARRAY_SHELL], ['a placeholder-member shell', PLACEHOLDER_MEMBER_SHELL]]) {
   await test(`a profile with ${label} creates the configured profile team (issue #234)`, async () => {
     const fixture = await mount()

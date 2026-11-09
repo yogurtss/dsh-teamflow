@@ -86,6 +86,7 @@ export interface TeamActivitySnapshot {
   readonly captainSessionId: string
   readonly phase: 'staged' | 'running'
   readonly workflowEnabled?: boolean
+  readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
   readonly members: readonly TeamActivityMember[]
@@ -214,6 +215,7 @@ export async function assembleTeamSnapshot(
     captainSessionId: state.captainSessionId,
     phase: state.phase ?? 'running',
     ...state.workflow === undefined ? {} : { workflowEnabled: true },
+    ...state.workflow?.loops?.length ? { workflow: { loops: state.workflow.loops.map(({gateId,bodyIds,status,mode}) => ({gateId,bodyIds,status,mode})) } } : {},
     ...state.phase === 'staged'
       ? { planReviewState: state.planReviewState ?? 'awaiting_review' as const }
       : {},
@@ -286,8 +288,11 @@ export async function collectTeamsActivity(
           auditWorkspace,
           ...root.workspacePath === undefined ? {} : { workspacePath: root.workspacePath },
         }))
-      } catch {
-        ctx.logger.warn(`agent-teams: skipped unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
+      } catch (error) {
+        ctx.logger.warn(`agent-teams: unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
+        // A partial success would tell the browser this team was deleted.
+        // Fail the refresh so it preserves the last successful cards instead.
+        throw error
       }
     }
   }

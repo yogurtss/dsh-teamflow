@@ -15,6 +15,9 @@ export interface OutcomePreview {
   size?: number
   modifiedAt?: number
   sha256?: string
+  /** Prefix preview only; sha256 is deliberately omitted for truncated content. */
+  truncated?: boolean
+  previewBytes?: number
 }
 /** RFC-style quoted fields, including embedded delimiters/newlines; bounded display only. */
 export function outcomeCsv(text: string, maxRows = 100, maxColumns = 50): { rows: string[][]; truncated: boolean } {

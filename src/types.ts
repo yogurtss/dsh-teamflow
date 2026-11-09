@@ -32,6 +32,7 @@ export type TaskKind =
   | 'repair'
   | 'integration'
   | 'work'
+  | 'archive'
 
 export const TASK_KINDS: readonly TaskKind[] = [
   'requirements',
@@ -41,6 +42,7 @@ export const TASK_KINDS: readonly TaskKind[] = [
   'repair',
   'integration',
   'work',
+  'archive',
 ]
 
 /** Review / requirements conclusion. Only `pass` may complete those kinds. */
@@ -210,6 +212,8 @@ export interface TeamTask {
   reassigning?: boolean
   /** Quality-gate kind. Missing values are treated as `work`. */
   kind?: TaskKind
+  archive?: import('./task-archive-config.ts').TaskArchiveConfig
+  archiveRecords?: import('./task-archive-config.ts').TaskArchiveRecord[]
   /** Review / requirements / repair loop index, 1-based when present. */
   round?: number
   verdict?: ReviewVerdict

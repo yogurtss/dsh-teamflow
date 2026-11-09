@@ -5,6 +5,9 @@ export interface ControlTeam {
     tasks: readonly ControlTask[];
     phase?: string;
     halted?: boolean;
+    workflow?: {
+        loops?: readonly Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode'>[];
+    };
 }
 export declare function taskControlState(team: ControlTeam, task: ControlTask, historic?: boolean): {
     disabled: boolean;

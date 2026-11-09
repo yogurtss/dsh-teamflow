@@ -1,8 +1,10 @@
 import { type GalleryAccess } from "./gallery-access.ts";
+import { type TaskArchiveConfig } from './task-archive-config.ts';
 /** Runtime-independent template format. Only explicitly portable fields are exported. */
 import type { TeamState } from './types.ts';
 import type { WorkflowOperation } from './workflow-types.ts';
 import { type TaskBrief } from './template-brief.ts';
+import type { LoopConfig } from './workflow-loop-types.ts';
 export interface TemplateMember extends GalleryAccess {
     name: string;
     summary: string;
@@ -16,8 +18,11 @@ export interface TemplateTask {
     dependencies: string[];
     checkpoint: boolean;
     general: TaskBrief;
+    kind?: 'archive';
+    archive?: TaskArchiveConfig;
 }
 export interface TemplateDefinition {
+    loops?: LoopConfig[];
     name: string;
     description: string;
     tags: string[];
@@ -121,6 +126,27 @@ export declare const templateDefinitionParameter: {
                     readonly checkpoint: {
                         readonly type: "boolean";
                         readonly required: true;
+                    };
+                    readonly kind: {
+                        readonly type: "string";
+                        readonly enum: readonly ["work", "archive"];
+                    };
+                    readonly archive: {
+                        readonly type: "object";
+                        readonly additionalProperties: false;
+                        readonly properties: {
+                            readonly copyFiles: {
+                                readonly type: "boolean";
+                                readonly description: "Copy declared files (up to 100 MiB). Default false: record hashes and evidence references only.";
+                            };
+                            readonly paths: {
+                                readonly type: "array";
+                                readonly items: {
+                                    readonly type: "string";
+                                };
+                                readonly description: "Workspace-relative file scope. Empty defaults to upstream deliverables and changed paths.";
+                            };
+                        };
                     };
                     readonly general: {
                         readonly type: "object";

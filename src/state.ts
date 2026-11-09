@@ -19,11 +19,14 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path'
 import type { MemberToolFilter } from './tool-policies.ts'
 import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES, type ReviewFinding, type TaskStatus, type TeamMember, type TeamMessage, type TeamProfileSnapshot, type TeamState, type TeamTask } from './types.ts'
+import { validArchiveFields } from './task-archive-config.ts'
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
 import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
+import { loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
+import { writeLoopTeam } from './workflow-loop-history.ts'
 
 export {
   amendTaskContract,
@@ -241,7 +244,7 @@ export function invalidateTaskAttempt(
 export async function createTeamDir(stateRoot: string, state: TeamState): Promise<void> {
   const dir = join(stateRoot, state.id)
   await mkdir(join(dir, 'inbox'), { recursive: true })
-  await atomicWriteText(join(dir, 'team.json'), JSON.stringify(state, null, 2))
+  await writeTeam(stateRoot, state)
 }
 
 /**
@@ -250,6 +253,7 @@ export async function createTeamDir(stateRoot: string, state: TeamState): Promis
  * @param teamId - the team's sanitized id.
  */
 export async function readTeam(stateRoot: string, teamId: string): Promise<TeamState | undefined> {
+  for (let attempt = 0; ; attempt++) {
   try {
     const raw = await readFile(join(stateRoot, teamId, 'team.json'), 'utf8')
     const value: unknown = JSON.parse(stripLeadingBom(raw))
@@ -259,10 +263,18 @@ export async function readTeam(stateRoot: string, teamId: string): Promise<TeamS
     }
     return team
   } catch (error: unknown) {
+    // Windows may require an in-place write after rename retries. A reader
+    // can briefly observe its truncated JSON; retry without treating it as
+    // deletion or accepting persistently corrupt state.
+    if (error instanceof SyntaxError && attempt < 3) {
+      await sleep(50)
+      continue
+    }
     if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined
     }
     throw error
+  }
   }
 }
 
@@ -298,6 +310,12 @@ export function readTeamSync(stateRoot: string, teamId: string): TeamState | und
  * @param state - the record to persist.
  */
 export async function writeTeam(stateRoot: string, state: TeamState): Promise<void> {
+  if (loopsOf(state).length || state.workflow?.loopRevision !== undefined) {
+    validateLoopGraph(state)
+    reconcileLoops(state)
+    await writeLoopTeam(stateRoot, state)
+    return
+  }
   await atomicWriteText(join(stateRoot, state.id, 'team.json'), JSON.stringify(state, null, 2))
 }
 
@@ -1107,6 +1125,7 @@ export function isTeamTask(value: unknown): value is TeamTask {
     && isFiniteNumber(value['createdAt'])
     && isFiniteNumber(value['updatedAt'])
     && hasValidQualityTaskFields(value)
+    && validArchiveFields(value)
 }
 
 /** Validate the full team record before it can participate in authorization. */
@@ -1156,6 +1175,7 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     if (task.id === '' || taskIds.has(task.id)) return false
     taskIds.add(task.id)
   }
+  try { validateLoopGraph(value as unknown as TeamState) } catch { return false }
   return true
 }
 

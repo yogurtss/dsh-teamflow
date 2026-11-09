@@ -14,7 +14,7 @@
  * @module dsh-agent-teams/workspace-audit
  */
 
-import { readArtifactScope } from './artifacts.ts'
+import { readArtifactScope, type ArtifactReadOptions } from './artifacts.ts'
 import { deliveryArtifactPaths, deliveryScopePatterns } from './quality-gates.ts'
 import type { DeliveryAudit } from './quality-gates.ts'
 import type { ArtifactDigest, ArtifactScopeGap, TeamState } from './types.ts'
@@ -28,11 +28,11 @@ import type { ArtifactDigest, ArtifactScopeGap, TeamState } from './types.ts'
  * the verdicts bound (so a new file cannot slip into a broad scope), and every
  * gap that makes this audit incomplete.
  */
-export function auditTeamWorkspace(workspace: string, team: TeamState): DeliveryAudit {
+export function auditTeamWorkspace(workspace: string, team: TeamState, options: ArtifactReadOptions = {}): DeliveryAudit {
   const paths = deliveryArtifactPaths(team)
   const scopePatterns = deliveryScopePatterns(team)
-  const pathRead = paths.length === 0 ? { artifacts: [] as ArtifactDigest[], gaps: [] as ArtifactScopeGap[] } : readArtifactScope(workspace, paths)
-  const scopeRead = scopePatterns.length === 0 ? { artifacts: [] as ArtifactDigest[], gaps: [] as ArtifactScopeGap[] } : readArtifactScope(workspace, scopePatterns)
+  const pathRead = paths.length === 0 ? { artifacts: [] as ArtifactDigest[], gaps: [] as ArtifactScopeGap[] } : readArtifactScope(workspace, paths, options)
+  const scopeRead = scopePatterns.length === 0 ? { artifacts: [] as ArtifactDigest[], gaps: [] as ArtifactScopeGap[] } : readArtifactScope(workspace, scopePatterns, options)
   const gaps: ArtifactScopeGap[] = [...pathRead.gaps, ...scopeRead.gaps]
   const seen = new Set(gaps.map((gap) => `${gap.pattern}\u0000${gap.reason}`))
   const recordGap = (pattern: string, reason: string): void => {

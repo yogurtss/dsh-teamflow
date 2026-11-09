@@ -67,11 +67,12 @@ export function OutcomeShowcase({ team, sessionId, archived, onTask }: { team: T
           {error ? <p role="alert">{workflowMessage(error,l)}</p> : !preview ? <p>{l('正在读取文件…')}</p> : <>
             <p className={css.meta}>{preview.size !== undefined && `${preview.size.toLocaleString()} bytes · `}{preview.modifiedAt !== undefined && new Date(preview.modifiedAt).toLocaleString()}</p>
             {preview.status !== 'ready' ? <p>{statusText(preview.status)}</p> : <>
+              {preview.truncated && <p className={css.notice}>{l('仅展示文件开头 256 KiB；内容已截断，不代表完整审计或验收通过。')}</p>}
               {preview.kind === 'image' ? <img src={preview.dataUrl} alt={validFile} onError={e => { e.currentTarget.alt = l('图片无法解码，请在工作区查看原文件。') }} /> : <>
                 {(preview.kind === 'markdown' || preview.kind === 'csv') && <button aria-pressed={raw} onClick={() => setRaw(!raw)}>{raw ? l('预览') : l('查看原文')}</button>}
                 {!raw && preview.kind === 'markdown' ? <OutcomeMarkdown text={preview.text ?? ''} /> : !raw && csv ? <><div className={css.tableScroll}><table><tbody>{csv.rows.map((row,i) => <tr key={i}>{row.map((cell,j) => i === 0 ? <th key={j}>{cell}</th> : <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div>{csv.truncated && <p>{l('仅预览前 100 行、50 列。')}</p>}</> : <pre>{preview.text || l('文件为空')}</pre>}
               </>}
-              <details><summary>{l('当前文件指纹')}</summary><code>{preview.sha256}</code></details>
+              {preview.sha256 && <details><summary>{l('当前文件指纹')}</summary><code>{preview.sha256}</code></details>}
             </>}
           </>}
         </section> : <>

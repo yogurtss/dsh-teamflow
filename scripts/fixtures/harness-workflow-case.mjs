@@ -11,13 +11,19 @@ export function ownSessionEvents(session) {
 /** Runs against the packaged plugin, real authentication, scheduler and LLM service. */
 export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, record, ctx, events }) {
   let activeSession = captain.id, activeTeam = 'runtime-lab';
-  const post = async (action, fields = {}, expected = 200) => {
-    if(action==='resume_task'&&fields.base===undefined)fields={...fields,base:(await post('state')).base};
+  const post = async (action, fields = {}, expected = 200, retry = 0) => {
+    const refreshBase = action === 'resume_task' && fields.base === undefined;
+    if(refreshBase)fields={...fields,base:(await post('state')).base};
     const response = await fetch(baseUrl + '/plugins/dsh-agent-teams/workflow', {
       method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl, cookie },
       body: JSON.stringify({ sessionId: activeSession, teamId: activeTeam, action, ...fields }), signal: AbortSignal.timeout(25000),
     });
     const result = await response.json();
+    // Live member settlement can update the team between the read and resume.
+    // Retry only an explicitly rejected stale token, never an unknown outcome.
+    if (refreshBase && expected === 200 && response.status === 409 && result.error === '团队已变化，请刷新节点后重新确认' && retry < 3) {
+      return post(action, { ...fields, base: undefined }, expected, retry + 1);
+    }
     assert.equal(response.status, expected, JSON.stringify(result)); return result;
   };
   const nativeDiscussion = async (key) => {
@@ -102,6 +108,28 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   result=await post('review',{taskId:'g2',decision:'approve',evidence:result.team.workflow.discussions['discussion:check:g2'].evidence,note:'重新核对通过'});
   assert.equal(result.team.tasks.find(t=>t.id==='g2').status,'completed');
   record({event:'returned-review-reopened',historyRetained:true,humanApproval:true});
+  result=await post('edit',{base:result.base,title:'Branch review and archive',operations:[
+    {action:'add_task',id:'branch-review',subject:'Review for improvements',description:'Check implementation evidence',checkpoint:true,dependencies:['t1']},
+    {action:'add_task',id:'result-archive',subject:'Archive approved results',description:'Preserve versions and evidence',kind:'archive',archive:{copyFiles:true,paths:['outcome-report.md']},dependencies:['branch-review']},
+  ]});
+  result=await post('resume_task',{taskId:'branch-review'});
+  result=await post('materials',{discussion:'check:branch-review'});
+  const branchEvidence=result.team.workflow.discussions['discussion:check:branch-review'].evidence;
+  const originalOutput=result.team.tasks.find(t=>t.id==='t1').output;
+  result=await post('review',{taskId:'branch-review',decision:'branch',taskIds:['t1'],evidence:branchEvidence,note:'Improve and provide fresh verification'});
+  const branchGate=result.team.tasks.find(t=>t.id==='branch-review');assert.equal(branchGate.checkpoint.round,2);assert.equal(branchGate.checkpoint.history[0].decision,'branch');assert.equal(result.team.tasks.find(t=>t.id==='t1').output,originalOutput);
+  const branchDeadline=Date.now()+20000;
+  do{result=await post('state');if(result.ready.includes('branch-review'))break;await new Promise(r=>setTimeout(r,50))}while(Date.now()<branchDeadline);
+  assert.ok(result.ready.includes('branch-review'));
+  result=await post('materials',{discussion:'check:branch-review'});
+  result=await post('review',{taskId:'branch-review',decision:'approve',evidence:result.team.workflow.discussions['discussion:check:branch-review'].evidence,note:'Verified revised output'});
+  await post('resume_task',{taskId:'result-archive'});
+  const archiveDeadline=Date.now()+20000;
+  do{result=await post('state');if(result.team.tasks.find(t=>t.id==='result-archive').status==='completed')break;await new Promise(r=>setTimeout(r,50))}while(Date.now()<archiveDeadline);
+  const archive=result.team.tasks.find(t=>t.id==='result-archive');assert.equal(archive.status,'completed');assert.equal(archive.assignee,undefined);assert.equal(archive.archiveRecords.length,1);
+  const archiveSaved=await post('task_archive',{taskId:archive.id,recordId:archive.archiveRecords[0].id});assert.equal(archiveSaved.manifest.files[0].copied,true);assert.ok(archiveSaved.manifest.tasks.some(t=>t.id==='branch-review'&&t.checkpoint.history.length===2));
+  await post('task_archive',{sessionId:'unknown-session',taskId:archive.id,recordId:archive.archiveRecords[0].id},409);
+  record({event:'branch-archive-passed',immutableEvidence:true,systemOwned:true,fileCopies:true});
   const manual = await ctx.agents.create({ sessionId: 'session-workflow-' + Date.now(), meta: { cwd: process.cwd() }, agentOptions: { provider: 'runtime-lab', model: 'manual-fixture' } });
   ctx.effect(() => () => manual.dispose());
   await manual.agent.whenIdle(); activeSession = manual.agent.id; activeTeam = '';
@@ -216,7 +244,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   record({event:'workflow-template-passed',extraction:true,fixedGraph:true,unifiedAdaptation:true,independentVersion:true,execution:true,
     snapshot:{task:{description:result.team.tasks[0].description},sourceVersion:result.team.workflow.templateSource.version,templateVersion:v2.template.version}});
   const catalog = (await post('template_list')).templates.filter(t=>t.id.startsWith('builtin-'));
-  assert.equal(catalog.length,3);
+  assert.equal(catalog.length,5);
   for(const item of catalog){
     const owner=await ctx.agents.create({sessionId:'session-builtin-'+item.id,meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
     ctx.effect(()=>()=>owner.dispose());await owner.agent.whenIdle();activeSession=owner.agent.id;activeTeam='';

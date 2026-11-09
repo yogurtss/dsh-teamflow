@@ -11,6 +11,14 @@ export interface TaskReadiness { label:string; detail:string; dependencies:strin
 export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText = sourceText, execution?:ExecutionState): TaskReadiness {
   const result = (label: string, detail = label, dependencies: string[] = [], action?:ReadinessAction): TaskReadiness => ({ label, detail, dependencies, action })
   const control = taskControlState(team, { ...task, workflowAwaitingStart: awaitsFirstStart(task) })
+  const loop = team.workflow?.loops?.find(loop => loop.gateId === task.id || loop.bodyIds.includes(task.id))
+  if (loop) {
+    const en = l.language === 'en', round = `${loop.round}/${loop.maxRounds}`
+    if (loop.status === 'paused' || loop.status === 'cancelled') return result(en ? `Loop ${loop.status} · ${round}` : `循环${loop.status === 'paused' ? '已暂停' : '已结束'} · ${round}`, loop.reason ?? (en ? 'Use the loop controls.' : '请使用循环控制面板。'))
+    if (loop.status === 'ready') return result(en ? `Loop ready · ${round}` : `循环待启动 · ${round}`, loop.queued ? en ? 'Waiting for external inputs.' : '已排队，等待外部输入完成。' : en ? 'Start this loop from its panel.' : '在循环面板启动本轮执行。')
+    if (loop.gateId === task.id && loop.status === 'reviewing') return result(en ? `Reviewing · ${round}` : `本轮审核中 · ${round}`, loop.mode === 'human' ? en ? 'Read the materials and decide in the loop panel.' : '在循环面板阅读材料并提交意见。' : en ? 'The designated AI reviewer is evaluating this round.' : '指定 AI 审核成员正在评审本轮结果。')
+    if (task.status === 'failed') return result(en ? 'Failed; included in gate review' : '执行失败，提交门控评审', en ? 'The loop gate decides which existing tasks need revision.' : '由循环门控决定哪些原节点需要改进。')
+  }
   if (task.checkpoint?.decision === 'reject') return result(l("已退回"), task.checkpoint.note || l("等待调整方案并返工。"),[],'review')
   if (task.status === 'completed') return result(task.checkpoint ? l("验收通过") : l("已完成"))
   if (task.status === 'failed') return result(l("执行失败"), l("查看执行记录中的失败原因，再决定是否修改并重跑。"),[],'rerun')
@@ -19,7 +27,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
   if (team.halted) return result(l("团队已停止"), l("团队停止期间不会派发此任务。"))
   if (control.stopping || execution==='stopping') return result(l(zh[control.label]), l("已禁止再次调度，正在等待执行会话停止；失败时可重试停止。"),[],'stop')
   if (execution==='interrupted' && ['in_progress','claimed'].includes(task.status)) return result(l('执行已中断'),l('任务尚未提交完成，但宿主已无运行中的执行会话。继续会封存旧尝试并重新派发，已完成的其他任务保留。'),[],'continue')
-  if (task.status === 'in_progress' || task.status === 'claimed') return result(l(zh[control.label]), task.status === 'claimed' ? l(zh['task.control.claimedHint']) : l("执行 Agent 正在处理任务。"))
+  if (task.status === 'in_progress' || task.status === 'claimed') return result(l(zh[control.label]), task.status === 'claimed' ? l(zh['task.control.claimedHint']) : task.kind==='archive'?l('系统正在生成成果归档。'):l("执行 Agent 正在处理任务。"))
   const blocked = task.dependencies.filter(id => !team.tasks.some(t => t.id === id && t.status === 'completed'))
   const upstream = blocked.map(id => {
     const item = team.tasks.find(t => t.id === id)
@@ -31,6 +39,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
   if (team.phase === 'staged') return result(l(zh[control.label]), l("团队方案尚未确认启动。"))
   if (blocked.length) return result(l(zh[control.label]), l("等待：{0}", upstream), blocked, 'path')
   if (task.checkpoint) return result(l(zh[control.label]), l("上游已完成，打开材料并作出验收决定。"),[],'review')
+  if (task.kind === 'archive') return result(l('等待归档'),l('上游已完成，系统将自动生成成果清单。'))
   if (task.assignee === 'captain') return result(l("等待队长"), l("依赖已满足，等待队长领取。"))
   const candidates = team.members.filter(m => m.status !== 'removed' && (!task.assignee || m.name === task.assignee))
   if (!candidates.length) return result(l("缺少执行 Agent"), task.assignee ? l("执行成员 {0} 不可用，请调整负责人。", task.assignee) : l("请创建或恢复至少一个执行 Agent。"),[],'member')
