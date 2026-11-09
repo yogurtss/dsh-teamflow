@@ -7,7 +7,7 @@
  *   --report-dir /tmp/agentteams-real-ab
  */
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, symlinkSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, symlinkSync, rmSync, readdirSync } from 'node:fs';
 import { resolve, join, dirname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -20,8 +20,8 @@ for(const flag of ['--runtime-dir','--report-dir','--baseline-artifact']) if(!ar
 const only=args.get('--only'); if(only&&!['baseline','candidate','upgrade','candidate-finish','candidate-cold','candidate-cold-resume','cancellation'].includes(only))throw Error('Invalid --only');
 if(only!=='baseline'&&!args.has('--candidate-artifact'))throw Error('--candidate-artifact required');
 const caseName=args.get('--case')??'review';
-if(!['review','complex','issue159'].includes(caseName))throw Error('Unknown benchmark case');
-const caseFile=caseName==='complex'?'fixtures/harness-complex-case.mjs':caseName==='issue159'?'fixtures/harness-issue159-case.mjs':'fixtures/harness-model-case.mjs';
+if(!['review','complex','issue159','loop-generation','plain-generation'].includes(caseName))throw Error('Unknown benchmark case');
+const caseFile=caseName==='plain-generation'?'fixtures/harness-plain-generation-case.mjs':caseName==='loop-generation'?'fixtures/harness-loop-generation-case.mjs':caseName==='complex'?'fixtures/harness-complex-case.mjs':caseName==='issue159'?'fixtures/harness-issue159-case.mjs':'fixtures/harness-model-case.mjs';
 const caseDefinition=await import('./'+caseFile);
 if(only==='candidate-finish'&&!caseDefinition.finishPrompt)throw Error('Selected case does not support interrupted-work continuation');
 if(only==='candidate-cold-resume'&&!caseDefinition.resumeColdPrompt)throw Error('Selected case does not support interrupted regression continuation');
@@ -33,11 +33,13 @@ mkdirSync(report,{recursive:true});
 const req=createRequire(join(runtime,'package.json')), yaml=req('yaml');
 const credentialFile=resolve(args.get('--credential-file')??join(homedir(),'.dsh','.credentials.yaml'));
 const settingsFile=resolve(args.get('--settings')??join(homedir(),'.dsh','settings.yaml'));
-const settings=yaml.parse(readFileSync(settingsFile,'utf8'))??{};
+const settingsDocument=yaml.parse(readFileSync(settingsFile,'utf8'))??{};
+const settings=Array.isArray(settingsDocument)?Object.fromEntries(settingsDocument.filter(row=>row.id&&!row.disabled&&row.config).map(row=>[row.id,row.config])):settingsDocument;
 const chosen=settings['agent-default-model'];
-if(chosen?.provider!=='deepseek-official'||typeof chosen.model!=='string')throw Error('This benchmark requires the configured deepseek-official model; no provider is silently substituted');
+if(!['deepseek-official','deepseek-account'].includes(chosen?.provider)||typeof chosen.model!=='string')throw Error('This benchmark requires a configured DeepSeek official/account model; no provider is silently substituted');
+const account=chosen.provider==='deepseek-account';
 const model={provider:chosen.provider,model:chosen.model,...chosen.reasoningEffort?{reasoningEffort:chosen.reasoningEffort}:{}};
-const configured=settings['llm-deepseek']??{};
+const configured=settings[account?'llm-deepseek-account':'llm-deepseek']??{};
 const credentialRef=configured.apiKeyEnv??'DEEPSEEK_API_KEY';
 if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(credentialRef))throw Error('Invalid configured credential reference');
 const {parseCredentialsDocument,renderFlatLayoutMigration}=await import(pathToFileURL(req.resolve('@deepseek-ai/dsh-credentials-local')).href);
@@ -45,15 +47,18 @@ const {parseCredentialsDocument,renderFlatLayoutMigration}=await import(pathToFi
 // Refuse the legacy format because the official provider would migrate it.
 const credentialText=existsSync(credentialFile)?readFileSync(credentialFile,'utf8'):'';
 if(renderFlatLayoutMigration(credentialText)!==undefined)throw Error('Credential store needs migration; benchmark refuses to modify it');
-const credentialAvailable=Boolean(process.env[credentialRef])||parseCredentialsDocument(credentialText,credentialFile).refs.has(credentialRef);
+const credentialDocument=parseCredentialsDocument(credentialText,credentialFile);
+const credentialAvailable=account?credentialDocument.records.has('deepseek-account-platform/default'):Boolean(process.env[credentialRef])||credentialDocument.refs.has(credentialRef);
 console.log(JSON.stringify({provider:model.provider,model:model.model,credentialAvailable}));
 const hash=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
 const json=(path,value)=>writeFileSync(path,JSON.stringify(value,null,2)+'\n');
 if(!credentialAvailable) { json(join(report,'result.json'),{passed:false,blocked:'Configured model credential unavailable',provider:model.provider,model:model.model});process.exit(2); }
 // A URL containing a credential is never copied into a generated profile.
 if(configured.baseURL) {const url=new URL(configured.baseURL);if(url.username||url.password||url.search)throw Error('Credential-bearing adapter URL cannot be persisted by benchmark');}
-const adapter={apiKeyEnv:credentialRef,...configured.maxTokens?{maxTokens:configured.maxTokens}:{},...configured.baseURL?{baseURL:configured.baseURL}:{},...configured.models?{models:configured.models}:{}};
-const lock=JSON.parse(readFileSync(join(runtime,'package-lock.json'),'utf8'));
+const adapter={...account?{}:{apiKeyEnv:credentialRef},...configured.maxTokens?{maxTokens:configured.maxTokens}:{},...configured.baseURL?{baseURL:configured.baseURL}:{},...!account&&configured.models?{models:configured.models}:{}};
+const lock=existsSync(join(runtime,'package-lock.json'))?JSON.parse(readFileSync(join(runtime,'package-lock.json'),'utf8')):{packages:Object.fromEntries(readdirSync(join(runtime,'node_modules/@deepseek-ai')).filter(name=>/^dsh(?:-|$)/.test(name)).map(name=>{
+    const path='node_modules/@deepseek-ai/'+name;return [path,JSON.parse(readFileSync(join(runtime,path,'package.json'),'utf8'))];
+}))};
 const cohort=Object.entries(lock.packages).filter(([path])=>/node_modules\/@deepseek-ai\/dsh(?:-[^/]+)?$/.test(path)).map(([path,entry])=>({path,version:entry.version,disk:JSON.parse(readFileSync(join(runtime,path,'package.json'),'utf8')).version}));
 const hostVersion=JSON.parse(readFileSync(join(runtime,'node_modules/@deepseek-ai/dsh/package.json'),'utf8')).version;
 if(!cohort.length||cohort.some(item=>item.version!==hostVersion||item.disk!==hostVersion))throw Error('Mixed DSH runtime; prepare one exact cohort first');
@@ -71,7 +76,7 @@ json(manifestPath,{caseName,agentCwd:requestedAgentCwd,hostVersion,cohortCount:c
 const environment={PATH:process.env.PATH,LANG:process.env.LANG??'en_US.UTF-8',HOME:join(report,'user-home'),DSH_TELEMETRY_DISABLED:'1',DSH_PERMISSION_MODE:'workspace-write',...process.env[credentialRef]?{[credentialRef]:process.env[credentialRef]}:{}};
 mkdirSync(environment.HOME,{recursive:true});
 async function command(argv,cwd,env,label,limit=timeoutMs+90000) {
-    const child=spawn(argv[0],argv.slice(1),{cwd,env,stdio:['ignore','pipe','pipe']});
+    const child=spawn(argv[0],argv.slice(1),{cwd,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
     let stdout='',stderr='',timedOut=false;
     child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
     const timer=setTimeout(()=>{timedOut=true;child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),5000).unref();},limit);
@@ -87,7 +92,7 @@ async function extract(artifact,label) {
     if(unpacked.code!==0)throw Error('Artifact extraction failed');
     const packageDir=join(target,'package'),pkg=JSON.parse(readFileSync(join(packageDir,'package.json'),'utf8'));
     if(pkg.name!=='@yogurtss/dsh-teamflow')throw Error('Wrong artifact identity');
-    symlinkSync(join(runtime,'node_modules'),join(packageDir,'node_modules'),'dir');
+    symlinkSync(join(runtime,'node_modules'),join(packageDir,'node_modules'),process.platform==='win32'?'junction':'dir');
     return {packageDir,artifactSha256:hash(artifact),pluginVersion:pkg.version};
 }
 async function run(label,phase,artifact,existing) {
@@ -98,7 +103,7 @@ async function run(label,phase,artifact,existing) {
         for(const [path,source] of Object.entries(sources)){mkdirSync(dirname(join(workspace,path)),{recursive:true});writeFileSync(join(workspace,path),source);}
         mkdirSync(join(workspace,'reports'),{recursive:true});
         mkdirSync(join(profile,'node_modules/@yogurtss'),{recursive:true});
-        symlinkSync(join(runtime,'node_modules/@deepseek-ai'),join(profile,'node_modules/@deepseek-ai'),'dir');
+        symlinkSync(join(runtime,'node_modules/@deepseek-ai'),join(profile,'node_modules/@deepseek-ai'),process.platform==='win32'?'junction':'dir');
     }
     const agentCwd=requestedAgentCwd??workspace;
     const artifactSnapshot=join(runDir,'artifact.tgz');
@@ -107,14 +112,14 @@ async function run(label,phase,artifact,existing) {
     const extracted={...await extract(artifactSnapshot,label),sourceArtifact:artifact.path};
     const pluginLink=join(profile,'node_modules/@yogurtss/dsh-teamflow');
     if(existsSync(pluginLink))rmSync(pluginLink);
-    symlinkSync(extracted.packageDir,pluginLink,'dir');
+    symlinkSync(extracted.packageDir,pluginLink,process.platform==='win32'?'junction':'dir');
     json(join(profile,'package.json'),{name:'agentteams-real-model-profile',version:'0.0.0',private:true,type:'module',dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@deepseek-ai/dsh-headless','@yogurtss/dsh-teamflow'],patchReload:'startup'}}});
     mkdirSync(join(runDir,'executed-fixtures'),{recursive:true});
     for(const [source,target] of [['fixtures/harness-model-driver.mjs','fixture-model-driver.mjs'],['fixtures/harness-benchmark-scope.mjs','fixture-benchmark-scope.mjs'],[caseFile,'fixture-model-case.mjs'],...caseName!=='review'?[['fixtures/harness-model-case.mjs','harness-model-case.mjs']]:[],...caseName==='complex'?[['fixtures/harness-complex-oracle.mjs','harness-complex-oracle.mjs']]:[]]) {
         writeFileSync(join(profile,target),testContents[source]);
         writeFileSync(join(runDir,'executed-fixtures',target),testContents[source]);
     }
-    const patch=[{id:'headless-startup',disabled:true},{id:'headless-runner',disabled:true},{id:'llm-pi-ai',disabled:true},{id:'session-title-llm',disabled:true},{id:'credentials',config:{path:credentialFile,watch:false}},{id:'llm-deepseek',config:adapter},{id:'agent-default-model',config:model},{id:'approval',config:{policy:'never'}},{id:'permission',config:{defaultPreset:'benchmark-workspace',presets:{'benchmark-workspace':{sandbox:'workspace-write',approval:'never'}}}},{insert:[{id:'agentteams-real-model-benchmark',name:'./fixture-model-driver.mjs'}]}];
+    const patch=[{id:'headless-startup',disabled:true},{id:'headless-runner',disabled:true},{id:'llm-pi-ai',disabled:true},{id:'session-title-llm',disabled:true},{id:'credentials',disabled:false,config:{path:credentialFile,watch:false}},...account?[{id:'authorization',disabled:false},{id:'deepseek-account',disabled:false}]:[],{id:account?'llm-deepseek-account':'llm-deepseek',config:adapter},{id:'agent-default-model',config:model},{id:'approval',config:{policy:'never'}},{id:'permission',config:{defaultPreset:'benchmark-workspace',presets:{'benchmark-workspace':{sandbox:'workspace-write',approval:'never'}}}},{insert:[{id:'agentteams-real-model-benchmark',name:'./fixture-model-driver.mjs'}]}];
     if(requestedAgentCwd) patch.push({id:'agent-teams',config:{stateDir:relative(agentCwd,join(workspace,'.agent-teams'))}});
     writeFileSync(join(profile,'cordis.patch.yml'),yaml.stringify(patch));
     const trace=join(runDir,'trace.jsonl'),resultPath=join(runDir,'result.json'),configPath=join(runDir,'driver-config.json');

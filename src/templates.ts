@@ -85,6 +85,7 @@ export function parseTemplate(value: unknown): TemplateDefinition {
       tasks: tasks.map(t => ({ ...t, assignee: t.assignee || undefined, status: 'pending', createdAt: 0, updatedAt: 0, checkpoint: t.checkpoint ? { round: 1, history: [] } : undefined })),
       workflow: { positions: {}, discussions: {}, history: [] } }
     check.workflow!.loops = loops.map(config => deriveLoop(check, config, config.gateId, 'template'))
+    for (const loop of check.workflow!.loops) check.tasks.find(task => task.id === loop.gateId)!.assignee = loop.mode === 'ai' ? loop.reviewer : undefined
     validateLoopGraph(check)
   }
   const positions:TemplateDefinition['positions']={}

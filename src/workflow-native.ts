@@ -131,14 +131,15 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       if(discussion.key==='adapt')return JSON.stringify({discussion:discussion.key,base:discussion.contextBase,goal:team.description,template:team.workflow?.templateDefinition,members:team.members,tasks:team.tasks,instructions:'结合模板的通用要求和用户目标讨论并生成每个节点完整的 description，包括具体交付物和验收标准。保留节点、负责人和依赖，一次提交全部节点的 update_task。缺少关键信息先问用户；无法适用时填写 adaptationIssue。不要引用通用层，不要返回 layers。最终由用户确认。'})
       if (discussion.key.startsWith('task:')) {
         const context = taskDiscussionContext(team, discussion.key.slice(5))
-        return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: {name:team.name,goal:team.description,phase:team.phase,halted:team.halted}, ...context,
+        const loop = team.workflow?.loops?.find(loop => loop.gateId === discussion.key.slice(5) || loop.bodyIds.includes(discussion.key.slice(5)))
+        return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: {name:team.name,goal:team.description,phase:team.phase,halted:team.halted}, ...context, loop,
           availableAssignees: team.members.filter(member => member.status !== 'removed').map(({name,summary,role}) => ({name,summary,role})), proposal: discussion.proposal,
-          instructions: '仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
+          instructions: loop ? '此任务属于门控循环。通过门控反馈和循环控制推进轮次，不可用 rerun_task 或普通任务控制绕过门控。循环启动后任务契约固定；结构变化需保存为模板并新建流程。' : '仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
       }
       const memberName = discussion.key.startsWith('member:') ? discussion.key.slice(7) : undefined
       const members = memberName ? team.members.filter(member => member.name === memberName).map(({ name, summary, role, executionPrompt, specificPrompt, provider, model }) => ({ name, summary, role, executionPrompt, specificPrompt, provider, model })) : team.members
       const tasks = memberName ? team.tasks.filter(task => task.assignee === memberName).map(({ id, subject, description, adaptationIssue, assignee, dependencies, status }) => ({ id, subject, description, adaptationIssue, assignee, dependencies, status })) : team.tasks
-      return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: { name: team.name, goal: team.description, phase: team.phase, members, tasks }, materials: discussion.materials,
+      return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: { name: team.name, goal: team.description, phase: team.phase, members, tasks, loops: team.workflow?.loops ?? [] }, materials: discussion.materials,
         proposal: discussion.proposal, instructions: '仅提出方案；用户可在讨论旁的 TeamFlow 面板或画布确认应用修改，验收决定仍由用户操作。' })
     }),
   }))

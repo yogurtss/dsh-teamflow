@@ -1,5 +1,5 @@
 import { drainMemberChildren } from './harness-compat.ts'
-import { decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopsOf, startLoop } from './workflow-loops.ts'
+import { configureLoop, decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopsOf, pauseLoop, startLoop } from './workflow-loops.ts'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
 /**
  * The `agent_teams_*` model-facing tools.
@@ -339,12 +339,12 @@ function isEmptyPlanMember(member: unknown): boolean {
  * @param plan - the materialized inline plan argument.
  * @returns whether the plan carries no member content and no task at all.
  */
-function isEmptyInlinePlan(plan: { readonly members?: unknown, readonly tasks?: unknown }): boolean {
+function isEmptyInlinePlan(plan: { readonly members?: unknown, readonly tasks?: unknown, readonly loops?: unknown }): boolean {
   const members = plan.members
   const tasks = plan.tasks
   const emptyMembers = !Array.isArray(members) || members.length === 0 || members.every(member => isEmptyPlanMember(member))
   const emptyTasks = !Array.isArray(tasks) || tasks.length === 0
-  return emptyMembers && emptyTasks
+  return emptyMembers && emptyTasks && (!Array.isArray(plan.loops) || plan.loops.length === 0)
 }
 
 /**
@@ -961,7 +961,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
       profile: { type: 'string', description: 'Optional configured profile name.' },
       plan: {
         type: 'object', additionalProperties: false,
-        description: 'Optional complete ordinary-work roster and DAG in one atomic call, instead of separate add_member/create_task rounds. Mutually exclusive with profile. For quality gates use create_task with the explicit quality contract.',
+        description: 'Complete roster, task DAG and optional gated loops in one atomic call. Mutually exclusive with profile. Loop back edges belong in loops, never in task dependencies.',
         properties: {
           members: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
             name: { type: 'string', required: true }, role: { type: 'string' },
@@ -973,6 +973,14 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             id: { type: 'string', required: true, description: 'Local reference used by dependencies in this plan; the result maps it to a durable task id.' },
             subject: { type: 'string', required: true }, description: { type: 'string' }, assignee: { type: 'string' },
             dependencies: { type: 'array', items: { type: 'string' } },
+            checkpoint: { type: 'boolean', description: 'True for a decision gate. Human gates have no assignee; an AI loop gate is assigned to its configured reviewer.' },
+          } } },
+          loops: { type: 'array', description: 'Optional disjoint gated loops. IDs reference tasks in this plan. Each body must exit only through its gate. Defaults: maxRounds=3, timeoutMinutes=30.', items: { type: 'object', additionalProperties: false, properties: {
+            gateId: { type: 'string', required: true }, entryId: { type: 'string', required: true },
+            mode: { type: 'string', enum: ['human', 'ai'], required: true },
+            reviewer: { type: 'string', description: 'AI mode requires an independent member who owns no task inside this loop.' },
+            maxRounds: { type: 'number', description: 'Finite total rounds including first, 1–20; exhaustion pauses for user action.' },
+            timeoutMinutes: { type: 'number', description: 'Execution/review timeout, 1–1440 minutes.' },
           } } },
         },
       },
@@ -2140,7 +2148,18 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         if (loop.lastDecisionId === args.decision_id) return { status: loop.status, round: loop.round }
         const gate = requireTask(fresh, loop.gateId)
         if (!gate.attemptId || gate.attemptId !== args.attempt_id || gate.assignee !== identity.name) throw new Error('审核执行令牌已过期')
-        if (loop.reviewArtifactEvidence !== await loopArtifactEvidence(workspace, fresh, loop)) throw new Error('审核文件已变化，请暂停循环并重新审核')
+        let evidence: string
+        try { evidence = await loopArtifactEvidence(workspace, fresh, loop) }
+        catch (error) {
+          pauseLoop(fresh, loop.id, false, `无法读取审核文件，已暂停：${error instanceof Error ? error.message : String(error)}`)
+          await writeTeam(root, fresh)
+          return { status: loop.status, round: loop.round }
+        }
+        if (loop.reviewArtifactEvidence !== evidence) {
+          pauseLoop(fresh, loop.id, false, '审核文件已变化，已暂停；请检查后继续以重新审核')
+          await writeTeam(root, fresh)
+          return { status: loop.status, round: loop.round }
+        }
         decideLoop(fresh, loop.id, { runId: args.run_id, round: args.round, fingerprint: args.fingerprint, decisionId: args.decision_id,
           decision: args.decision as 'pass' | 'revise' | 'blocked', note: args.note, taskIds: args.task_ids }, `ai:${identity.name}`)
         await writeTeam(root, fresh)
@@ -2473,6 +2492,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         team_name: team.name,
         description: team.description ?? '',
         phase: team.phase ?? 'running',
+        gated_loops: loopsOf(team).map(({ id, runId, gateId, entryId, bodyIds, mode, reviewer, status, round, maxRounds, reason, feedback, historyCount }) =>
+          ({ id, runId, gateId, entryId, bodyIds, mode, reviewer: reviewer ?? '', status, round, maxRounds, reason: reason ?? '', feedback: feedback?.slice(0, 2000) ?? '', historyCount })),
         halted: loop.halted,
         escalated: loop.escalated,
         loop_state: loop.state,
@@ -2648,7 +2669,10 @@ async function initializeProfileTeam(input: {
   teamName: string
   teamId: string
   profileName: string
-  inlinePlan?: import('./profiles.ts').TeamProfileConfig
+  inlinePlan?: Omit<import('./profiles.ts').TeamProfileConfig, 'tasks'> & {
+    tasks?: (import('./profiles.ts').TeamProfileTaskConfig & { checkpoint?: boolean })[]
+    loops?: { gateId: string; entryId: string; mode: string; reviewer?: string; maxRounds?: number; timeoutMinutes?: number }[]
+  }
   description?: string
   staged: boolean
 }): Promise<{ committed: true; state: TeamState }> {
@@ -2667,7 +2691,12 @@ async function initializeProfileTeam(input: {
       tool_policy: trimmedOptional(member.tool_policy),
     })),
   }
-  const profile = resolveTeamProfile(inlinePlan === undefined ? input.config.profiles : { [input.profileName]: inlinePlan }, input.profileName, input.config.maxMembers)
+  // Keep owner profiles strict. Workflow metadata is validated before commit.
+  const profilePlan = inlinePlan === undefined ? undefined : (({ loops: _loops, tasks, ...rest }) => ({
+    ...rest, tasks: tasks?.map(({ checkpoint, ...task }) => ({ ...task, assignee: checkpoint ? undefined : task.assignee })),
+  }))(inlinePlan)
+  const profile = resolveTeamProfile(profilePlan === undefined ? input.config.profiles : { [input.profileName]: profilePlan }, input.profileName, input.config.maxMembers,
+    new Set(input.inlinePlan?.tasks?.filter(task => task.checkpoint).map(task => task.id.trim())))
   const selections: Awaited<ReturnType<typeof resolveMemberLlmSelection>>[] = []
   for (const template of profile.members) {
     selections.push(await resolveMemberLlmSelection(input.ctx, input.captain, {
@@ -2737,6 +2766,20 @@ async function initializeProfileTeam(input: {
   // Roster creation is durable planning only. The scheduler starts each
   // member with its first actual task once its dependencies are satisfied.
   if (input.inlinePlan !== undefined) delete draft.profile
+  for (const template of input.inlinePlan?.tasks ?? []) if (template.checkpoint) {
+    const task = draft.tasks.find(task => task.id === seedToActual.get(template.id.trim()))!
+    task.checkpoint = { round: 1, history: [] }
+    delete task.assignee
+  }
+  for (const config of input.inlinePlan?.loops ?? []) {
+    configureLoop(draft, {
+      ...config, mode: config.mode as 'human' | 'ai',
+      gateId: seedToActual.get(config.gateId.trim()) ?? config.gateId,
+      entryId: seedToActual.get(config.entryId.trim()) ?? config.entryId,
+      maxRounds: config.maxRounds ?? 3, timeoutMinutes: config.timeoutMinutes ?? 30,
+    })
+  }
+  if (!input.staged) for (const loop of loopsOf(draft)) startLoop(draft, loop.id)
   await createTeamDir(input.stateRoot, draft)
   return { committed: true, state: draft }
 }
@@ -2913,6 +2956,7 @@ function renderStatus(value: JsonValue): string {
     description?: string
     profile?: { name: string; protocol?: string; task_planning?: string }
     viewer: string
+    gated_loops?: { id: string; gateId: string; entryId: string; mode: string; reviewer?: string; status: string; round: number; maxRounds: number; reason?: string; feedback?: string }[]
     members: {
       name: string
       role: string
@@ -2961,6 +3005,7 @@ function renderStatus(value: JsonValue): string {
       return `  - ${member.name} [${member.role}] ${member.status}/${member.activity}${route}${effort}${policy}${failure}`
     }),
     `Tasks (${team.tasks.length}):`,
+    ...(team.gated_loops ?? []).map(loop => `Gated loop ${loop.id}: ${loop.entryId} → ${loop.gateId}, ${loop.mode}${loop.reviewer ? ` (${loop.reviewer})` : ''}, ${loop.status}, round ${loop.round}/${loop.maxRounds}${loop.reason ? `; ${loop.reason}` : ''}${loop.feedback ? `; feedback: ${loop.feedback.slice(0, 2000)}` : ''}. Use loop controls in the workbench to pause/resume; never bypass with task reassignment.`),
     ...team.tasks.map((task) => {
       const deps = task.dependencies.length > 0 ? ` (deps: ${task.dependencies.join(',')})` : ''
       const output = task.output !== undefined ? `\n      output: ${task.output.slice(0, 300)}` : ''

@@ -15,6 +15,59 @@ import { Readable } from 'node:stream'
 import { workflowFingerprint } from '../lib/workflow.js'
 import { templateSeed, instantiateTemplate } from '../lib/templates.js'
 import { beginTaskAttempt, archiveTeamDir } from '../lib/state.js'
+import { taskControlState, flowControlState, flowControlVersion } from '../lib/client/task-control.js'
+
+test('loop controls preserve completed state, block node reruns, and distinguish AI from human review', () => {
+  const { team, loop } = fixture('ai', 1); startLoop(team, loop.id); finish(team)
+  const gate = team.tasks.find(t => t.id === 'gate'), completed = team.tasks[0]
+  assert.equal(taskControlState(team, gate).reviewReady, false)
+  assert.equal(taskControlState(team, completed).canRerun, false)
+  assert.equal(taskControlState(team, gate).disabled, true)
+  const version = flowControlVersion(team)
+  decideLoop(team, loop.id, decision(team, loop, 'revise', ['b']), 'ai:reviewer')
+  assert.equal(taskControlState(team, completed).label, 'task.status.completed')
+  assert.notEqual(flowControlVersion(team), version)
+  const region = { ...team, tasks: team.tasks.filter(t => t.id !== 'after') }
+  assert.equal(flowControlState(region).canStart, false)
+  assert.throws(() => startLoop(team, loop.id), /追加/)
+  startLoop(team, loop.id, 1)
+  assert.equal(loop.round, 2); assert.equal(team.tasks[0].status, 'completed')
+  assert.ok(team.tasks[1].workflowRerunContext.instructions)
+  const invalid = structuredClone(team); invalid.tasks.find(t => t.id === 'gate').assignee = 'worker'
+  assert.throws(() => validateWorkflowGraph(invalid), /审核成员一致/)
+})
+
+test('AI artifact drift pauses immediately and persists the reason without releasing downstream', async t => {
+  const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
+  const gate = team.tasks.find(t => t.id === 'gate'); beginTaskAttempt(gate, 'reviewer')
+  loop.reviewArtifactEvidence = 'old artifact digest'
+  const f = await routeFixture(t, team)
+  const input = decision(team, loop, 'pass', [])
+  const result = await f.tool('agent_teams_decide_loop', { loop_id: loop.id, run_id: loop.runId, round: loop.round, fingerprint: input.fingerprint,
+    attempt_id: gate.attemptId, decision_id: input.decisionId, decision: 'pass', note: input.note, task_ids: [] })
+  assert.equal(result.status, 'paused')
+  const saved = await f.read()
+  assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /文件已变化/)
+  assert.notEqual(saved.tasks.find(t => t.id === 'gate').status, 'completed')
+  assert.equal(saved.tasks.find(t => t.id === 'after').status, 'pending')
+})
+
+test('pausing live loop work revokes its attempt and resumes the same round with partial output retained', async t => {
+  const { team, loop } = fixture(); startLoop(team, loop.id)
+  const token = beginTaskAttempt(team.tasks[0], 'worker')
+  team.tasks[0].status = 'in_progress'; team.tasks[0].output = 'Saved partial draft'
+  const f = await routeFixture(t, team)
+  const result = await f.call('loop_pause', { loopId: loop.id, base: workflowFingerprint(team) })
+  assert.equal(result.code, 200, result.error)
+  const saved = await f.read(), work = saved.tasks[0], paused = saved.workflow.loops[0]
+  assert.equal(paused.status, 'paused'); assert.equal(work.status, 'pending'); assert.equal(work.attemptId, undefined)
+  assert.equal(work.workflowRerunContext.previousAttemptId, token)
+  assert.equal(work.workflowRerunContext.previousOutput, 'Saved partial draft')
+  assert.ok((await readLoopHistory(f.stateRoot, saved, loop.id)).records.some(r => r.tasks.some(t => t.attemptId === token && t.output === 'Saved partial draft')))
+  startLoop(saved, loop.id)
+  assert.equal(paused.status, 'running'); assert.equal(paused.round, 1); assert.equal(saved.tasks.length, 4)
+  assert.equal(work.workflowRerunContext.previousOutput, 'Saved partial draft')
+})
 
 test('artifact hashing stays off the host event loop and human decisions reject changed files', async t => {
   const { team, loop } = fixture(); startLoop(team, loop.id); finish(team)
@@ -184,6 +237,22 @@ test('actual scheduler dispatches the AI gate with a decision contract after fai
   assert.equal(sent.length, 1); assert.equal(sent[0][2], 'reviewer')
   assert.match(sent[0][3], /agent_teams_decide_loop/); assert.match(sent[0][3], /Validation failed/)
   assert.equal((await readTeam(join(root, '.agent-teams'), 'demo')).tasks[2].status, 'claimed')
+})
+
+test('unreadable AI review artifacts pause before claiming a review attempt', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'teamflow-loop-artifact-failure-')); t.after(() => rm(root, { recursive: true, force: true }))
+  const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
+  team.tasks[0].changedPaths = ['../outside-workspace.txt']
+  await createTeamDir(join(root, '.agent-teams'), team)
+  const sent = [], captain = { id: 'captain', status: 'idle', session: { header: { cwd: root } } }, effects = []
+  const ctx = { agents: { get: id => id === 'captain' ? captain : undefined }, effect: fn => effects.push(fn()), on() {}, logger: { warn() {} } }
+  t.after(() => effects.forEach(fn => fn?.()))
+  const scheduler = installTeamScheduler(ctx, { stateDir: '.agent-teams', dispatch: async (...args) => { sent.push(args); return true } })
+  await scheduler.kickTeam(root, 'demo', captain)
+  const saved = await readTeam(join(root, '.agent-teams'), 'demo')
+  assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /无法读取审核文件/)
+  assert.equal(sent.length, 0); assert.equal(saved.tasks[2].attemptId, undefined)
+  assert.equal(saved.tasks[3].status, 'pending')
 })
 
 test('human HTTP decisions preserve history, reject model bypasses and survive archive restoration', async t => {

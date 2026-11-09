@@ -51,10 +51,11 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
     const task = taskOf(team, id)
     if (task.status !== 'pending' || (task.attempt ?? 0) > 0 || task.checkpoint?.decision) throw new Error('请在首次执行前配置循环')
   }
-  const candidate = { ...team, workflow: { ...team.workflow ?? { positions: {}, discussions: {}, history: [] }, loops: [...loopsOf(team), loop] } }
+  const assignee = loop.mode === 'ai' ? loop.reviewer : undefined
+  const candidate = { ...team, tasks: team.tasks.map(task => task.id === gate.id ? { ...task, assignee } : task), workflow: { ...team.workflow ?? { positions: {}, discussions: {}, history: [] }, loops: [...loopsOf(team), loop] } }
   validateLoopGraph(candidate)
   team.workflow = candidate.workflow
-  gate.assignee = loop.mode === 'ai' ? loop.reviewer : undefined
+  gate.assignee = assignee
   for (const id of [...body, gate.id]) { const task = taskOf(team, id); task.workflowPaused = true; task.workflowAwaitingStart = true }
   return loop
 }
@@ -196,10 +197,10 @@ export function decideLoop(team: TeamState, id: string, input: { decisionId: str
     pause(team, loop, input.decision === 'revise' ? '已达轮次上限，等待人工追加轮数或结束' : '审核无法继续，等待人工处理', now)
   }
 }
-export function pauseLoop(team: TeamState, id: string, cancel = false): void {
+export function pauseLoop(team: TeamState, id: string, cancel = false, reason?: string): void {
   const loop = loopsOf(team).find(l => l.id === id)
   if (!loop || loop.status === 'passed' || loop.status === 'cancelled') throw new Error('循环已结束')
-  pause(team, loop, cancel ? '用户结束循环' : '用户暂停循环', Date.now())
+  pause(team, loop, reason ?? (cancel ? '用户结束循环' : '用户暂停循环'), Date.now())
   delete loop.queued
   if (cancel) loop.status = 'cancelled'
 }

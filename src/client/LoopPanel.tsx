@@ -16,9 +16,12 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const [note, setNote] = useState(''), [targets, setTargets] = useState<string[]>([]), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [materials, setMaterials] = useState<{ artifactEvidence: string; fingerprint: string; runId: string; round: number; tasks: TeamTask[] }>()
   const [history, setHistory] = useState<{ records: LoopHistoryRecord[]; next?: string }>(), [comparison, setComparison] = useState<LoopHistoryRecord>()
-  const scope = `${team.id}:${loop?.runId}:${loop?.round}:${task.id}`
+  const historyScope = `${team.id}:${loop?.runId}:${task.id}`
+  const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope
+  const scope = `${historyScope}:${loop?.round}`
   const scopeRef = useRef(scope); scopeRef.current = scope
-  useEffect(() => { setMaterials(undefined); setNote(''); setTargets([]); setError(''); setHistory(undefined); setComparison(undefined) }, [scope])
+  useEffect(() => { setMaterials(undefined); setNote(''); setTargets([]); setError(''); setLoading(false) }, [scope])
+  useEffect(() => { setHistory(undefined); setComparison(undefined) }, [historyScope])
   if (!loop && (!task.checkpoint || task.status !== 'pending' || (task.attempt ?? 0) > 0 || archived)) return null
   const ancestors = new Set<string>()
   const visit = (id: string) => { if (ancestors.has(id)) return; ancestors.add(id); team.tasks.find(t => t.id === id)?.dependencies.forEach(visit) }
@@ -27,12 +30,12 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const capped = exhausted && loop!.maxRounds >= 20
   const request = async (action: string, fields: Record<string, unknown> = {}) => {
     const result = await workflowRequest({ action, sessionId, teamId: team.id, loopId: loop?.id, archived, ...fields })
-    if (scopeRef.current !== scope) throw new Error(tr('轮次已变化，请重新读取', 'Round changed; reload the materials'))
+    if (action === 'loop_history' ? historyScopeRef.current !== historyScope : scopeRef.current !== scope) throw new Error(tr('轮次已变化，请重新读取', 'Round changed; reload the materials'))
     return result
   }
   const guarded = async (fn: () => Promise<unknown>) => {
     setLoading(true); setError('')
-    try { await fn() } catch (err) { setError(err instanceof Error ? err.message : String(err)) } finally { setLoading(false) }
+    try { await fn() } catch (err) { if (scopeRef.current === scope) setError(err instanceof Error ? err.message : String(err)) } finally { if (scopeRef.current === scope) setLoading(false) }
   }
   const blocked = busy || loading
   const statuses = { ready: tr('等待启动', 'Ready'), running: tr('执行中', 'Running'), reviewing: tr('审核中', 'Reviewing'), paused: tr('已暂停', 'Paused'), passed: tr('已通过', 'Passed'), cancelled: tr('已结束', 'Cancelled') }

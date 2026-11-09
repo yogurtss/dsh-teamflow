@@ -127,6 +127,6 @@ export declare function parseProfileInvocation(rawInput: string): AgentTeamsInvo
  * Normalize and pre-validate one named profile. Failures throw before any
  * caller should create a directory or spawn members.
  */
-export declare function resolveTeamProfile(profiles: Record<string, TeamProfileConfig>, profileName: string, maxMembers: number): NormalizedTeamProfile;
+export declare function resolveTeamProfile(profiles: Record<string, TeamProfileConfig>, profileName: string, maxMembers: number, checkpointIds?: ReadonlySet<string>): NormalizedTeamProfile;
 /** Public lookup used by activation text and status rendering. */
 export declare function resolveProfileTaskPlanning(config: TeamProfileConfig | undefined): 'captain' | 'seed';

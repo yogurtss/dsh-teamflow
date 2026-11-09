@@ -24,6 +24,6 @@ export declare function decideLoop(team: TeamState, id: string, input: {
     note: string;
     taskIds: string[];
 }, actor: string, now?: number): void;
-export declare function pauseLoop(team: TeamState, id: string, cancel?: boolean): void;
+export declare function pauseLoop(team: TeamState, id: string, cancel?: boolean, reason?: string): void;
 export declare function loopPrompt(team: TeamState, task: TeamTask): string | undefined;
 export declare function isWorkflowLoops(value: unknown): value is WorkflowLoop[];
