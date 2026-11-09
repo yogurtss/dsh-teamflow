@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import {syncBuiltinESMExports} from 'node:module'
 import {readArtifactScope,workspacePathExists,MAX_ARTIFACT_BYTES,MAX_SCOPE_BYTES,ARTIFACT_CACHE_TTL_MS} from '../lib/artifacts.js'
 
-test('100+ reviewed weights and oversized text are rejected before reading any content',async t=>{
+test('100+ reviewed weights and oversized text are listed as policy exclusions without reading content',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teamflow-weights-'));t.after(()=>rm(root,{recursive:true,force:true}))
  const paths=Array.from({length:110},(_,i)=>`model-${i}.safetensors`)
  for(const path of paths)fs.writeFileSync(join(root,path),'weights')
@@ -24,10 +24,10 @@ test('100+ reviewed weights and oversized text are rejected before reading any c
   for(const patterns of [paths,['.']]){
    const result=readArtifactScope(root,patterns)
    assert.equal(result.artifacts.length,111)
-   assert.ok(result.artifacts.every(a=>a.unreadable && !a.sha256))
+   assert.ok(result.artifacts.every(a=>a.skipped && a.present && !a.unreadable && !a.sha256))
   }
   const audit=auditTeamWorkspace(root,{tasks:[{reviewedArtifacts:paths.map(path=>({path}))}]})
-  assert.equal(audit.gaps.length,111)
+  assert.equal(audit.gaps,undefined)
   assert.equal(workspacePathExists(root,'model-0.safetensors'),true)
   assert.equal(reads,0)
  } finally {fs.readSync=original;syncBuiltinESMExports()}
@@ -56,8 +56,8 @@ test('scope byte budget caps aggregate reading even for allowed files and cache 
  for(let i=0;i<MAX_SCOPE_BYTES/MAX_ARTIFACT_BYTES+1;i++)fs.writeFileSync(join(root,`${i}.txt`),Buffer.alloc(MAX_ARTIFACT_BYTES,65))
  for(let i=0;i<2;i++){
   const result=readArtifactScope(root,['.'],{cache:true})
-  assert.equal(result.artifacts.filter(a=>a.unreadable).length,1)
-  assert.equal(result.artifacts.filter(a=>a.present).reduce((n,a)=>n+(a.size??0),0),MAX_SCOPE_BYTES)
+  assert.equal(result.artifacts.filter(a=>a.skipped === 'budget').length,1)
+  assert.equal(result.artifacts.filter(a=>a.sha256).reduce((n,a)=>n+(a.size??0),0),MAX_SCOPE_BYTES)
  }
 })
 
@@ -127,4 +127,46 @@ test('background audits retain exact byte checks, coalesce only in-flight work a
  await writeFile(join(root,'result.txt'),'changed')
  const changed=await auditor.audit(root,team);assert.notEqual(changed.artifacts[0].sha256,value.artifacts[0].sha256)
  await auditor.dispose();await assert.rejects(auditor.audit(root,team),/disposed/)
+})
+
+
+test('policy exclusions survive persistence and legacy evidence without masking actual failures',async t=>{
+ const {artifactDrift,isArtifactDigest}=await import('../lib/quality-gates.js')
+ const {artifactEvidence}=await import('../lib/artifact-policy.js')
+ const skipped={path:'model.safetensors',present:true,skipped:'type',size:10,mtimeMs:1,reason:'model.safetensors: unsupported artifact file type; content not audited'}
+ assert.equal(isArtifactDigest(skipped),true)
+ assert.equal(isArtifactDigest({...skipped,sha256:'a'.repeat(64)}),false)
+ const legacy={...skipped,present:false,unreadable:true};delete legacy.skipped
+ assert.deepEqual(artifactDrift([legacy],[skipped]),[])
+ assert.deepEqual(artifactDrift([skipped],[{...skipped,size:999,mtimeMs:2}]),[])
+ assert.deepEqual(artifactEvidence([skipped]),artifactEvidence([{...skipped,size:999,mtimeMs:2}]))
+ assert.equal(artifactDrift([skipped],[{path:skipped.path,present:false}]).length,1)
+ assert.equal(artifactDrift([skipped],[{path:skipped.path,present:false,unreadable:true,reason:'EACCES'}]).length,1)
+ assert.equal(artifactDrift([{path:'a.txt',present:true,sha256:'a'.repeat(64)}],[{path:'a.txt',present:true,sha256:'b'.repeat(64)}]).length,1)
+})
+
+test('checkpoint and loop evidence ignore skipped bytes and timestamps but detect audited edits',async t=>{
+ const {workflowMaterials}=await import('../lib/workflow-runtime.js')
+ const {loopArtifactEvidence}=await import('../lib/workflow-loop-evidence.js')
+ const root=await mkdtemp(join(tmpdir(),'teamflow-policy-evidence-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ fs.writeFileSync(join(root,'a.txt'),'one');fs.writeFileSync(join(root,'model.bin'),'one')
+ const paths=['a.txt','model.bin']
+ const team={tasks:[{id:'work',subject:'work',dependencies:[],status:'completed',changedPaths:paths},{id:'gate',subject:'gate',description:'Review',dependencies:['work'],checkpoint:{round:1,history:[]}}]}
+ const before=workflowMaterials(team,'gate',root)
+ const loopBefore=await loopArtifactEvidence(root,team,{bodyIds:['work']})
+ fs.utimesSync(join(root,'a.txt'),new Date(),new Date(Date.now()+5000));fs.writeFileSync(join(root,'model.bin'),'changed unreviewed model')
+ assert.equal(workflowMaterials(team,'gate',root).evidence,before.evidence)
+ assert.equal(await loopArtifactEvidence(root,team,{bodyIds:['work']}),loopBefore)
+ fs.writeFileSync(join(root,'a.txt'),'two')
+ assert.notEqual(workflowMaterials(team,'gate',root).evidence,before.evidence)
+ assert.notEqual(await loopArtifactEvidence(root,team,{bodyIds:['work']}),loopBefore)
+})
+
+test('directory aliases and duplicates do not consume extra file slots',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teamflow-scope-cap-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ fs.mkdirSync(join(root,'data'))
+ for(let i=0;i<200;i++)fs.writeFileSync(join(root,'data',i+'.txt'),'x')
+ for(const patterns of [['data'],['data/'],['data/', 'data/0.txt']]){
+  const read=readArtifactScope(root,patterns);assert.equal(read.artifacts.length,200);assert.deepEqual(read.gaps,[])
+ }
 })

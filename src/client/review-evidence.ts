@@ -10,7 +10,7 @@ export interface ReviewResult {
 export interface ReviewMaterial {
   check: { id: string; subject: string; description: string; round: number; acceptance?: string[] }
   results: ReviewResult[]
-  files: { path: string; present: boolean; unreadable?: boolean; sha256?: string; reason?: string; size?: number }[]
+  files: { path: string; present: boolean; unreadable?: boolean; skipped?: string; sha256?: string; reason?: string; size?: number }[]
   gaps: { pattern: string; reason: string }[]
   limitation: string
 }
@@ -29,7 +29,7 @@ export function parseReviewMaterial(raw?: string): ReviewMaterial | undefined {
         acceptanceResults: records(result.acceptanceResults).filter(r => typeof r.criterion === 'string' && (r.status === 'passed' || r.status === 'failed')).map(r => ({ criterion: r.criterion as string, status: r.status as 'passed' | 'failed', evidence: text(r.evidence) })),
         commandsRun: records(result.commandsRun).filter(r => typeof r.command === 'string' && (r.status === 'passed' || r.status === 'failed')).map(r => ({ command: r.command as string, status: r.status as 'passed' | 'failed', evidence: text(r.evidence), exitCode: typeof r.exitCode === 'number' ? r.exitCode : undefined })),
       })),
-      files: records(files.artifacts).filter(f => typeof f.path === 'string').map(f => ({ path: f.path as string, present: f.present === true, unreadable: f.unreadable === true, sha256: text(f.sha256), reason: text(f.reason), ...(typeof f.size === 'number' && Number.isFinite(f.size) && f.size >= 0 ? { size: f.size } : {}) })),
+      files: records(files.artifacts).filter(f => typeof f.path === 'string').map(f => ({ path: f.path as string, present: f.present === true, unreadable: f.unreadable === true, skipped: text(f.skipped), sha256: text(f.sha256), reason: text(f.reason), ...(typeof f.size === 'number' && Number.isFinite(f.size) && f.size >= 0 ? { size: f.size } : {}) })),
       gaps: records(files.gaps).map(g => ({ pattern: text(g.pattern), reason: text(g.reason) })), limitation: text(value.limitation),
     }
   } catch { return }

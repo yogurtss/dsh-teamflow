@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { TeamState, TeamTask } from '../types.ts'
+import type { TeamState, TeamTask, ArtifactDigest } from '../types.ts'
 import type { LoopHistoryRecord } from '../workflow-loop-types.ts'
 import { workflowRequest } from './workflow-request.ts'
 import { useWorkflowText } from './workflow-i18n.tsx'
@@ -14,7 +14,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const [entry, setEntry] = useState(''), [mode, setMode] = useState<'human' | 'ai'>('human'), [reviewer, setReviewer] = useState('')
   const [rounds, setRounds] = useState(3), [timeout, setTimeoutMinutes] = useState(30), [extra, setExtra] = useState(1)
   const [note, setNote] = useState(''), [targets, setTargets] = useState<string[]>([]), [error, setError] = useState(''), [loading, setLoading] = useState(false)
-  const [materials, setMaterials] = useState<{ artifactEvidence: string; fingerprint: string; runId: string; round: number; tasks: TeamTask[] }>()
+  const [materials, setMaterials] = useState<{ artifactEvidence: string; fingerprint: string; runId: string; round: number; tasks: TeamTask[]; files?: ArtifactDigest[] }>()
   const [history, setHistory] = useState<{ records: LoopHistoryRecord[]; next?: string }>(), [comparison, setComparison] = useState<LoopHistoryRecord>()
   const historyScope = `${team.id}:${loop?.runId}:${task.id}`
   const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope
@@ -66,6 +66,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
       {!archived && loop.status === 'reviewing' && loop.mode === 'human' && <>
         <button disabled={blocked} onClick={() => void guarded(async () => setMaterials(await request('loop_materials') as typeof materials))}>{tr('读取本轮审核材料', 'Read current review materials')}</button>
         {materials && <>
+          {materials.files?.map(file => <details key={file.path}><summary>{file.path} · {file.skipped ? tr('按策略跳过内容审计，请在本机检查', 'Content audit skipped by policy; check this file locally') : !file.present ? tr('文件不存在', 'File does not exist') : tr('已读取摘要', 'Digest recorded')}</summary>{file.size !== undefined && <p>{file.size.toLocaleString()} bytes</p>}{file.reason && <p>{file.reason}</p>}{file.sha256 && <code>{file.sha256}</code>}</details>)}
           {materials.tasks.map(t => <details key={t.id}><summary>{t.subject} · {t.status}</summary><pre>{t.output || tr('没有完成结果', 'No completed result')}</pre><pre>{JSON.stringify({ acceptance: t.acceptanceResults, verification: t.commandsRun }, null, 2)}</pre></details>)}
           <label>{tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')}<textarea rows={5} maxLength={16000} value={note} onChange={e => setNote(e.target.value)} /></label>
           <fieldset><legend>{tr('需要改进的任务（其下游也会重跑）', 'Tasks to revise (their descendants rerun too)')}</legend>{loop.bodyIds.map(id => <label key={id} className={css.check}><input type="checkbox" checked={targets.includes(id)} onChange={e => setTargets(value => e.target.checked ? [...value, id] : value.filter(v => v !== id))} />{team.tasks.find(t => t.id === id)?.subject}</label>)}</fieldset>

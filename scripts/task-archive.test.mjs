@@ -34,3 +34,18 @@ test('invalid scopes fail closed, system ownership is enforced, and template rou
 test('ordinary human review creates a full rework branch atomically and preserves reviewed evidence',()=>{
  const state=team();state.tasks.push({...task('gate',['b']),assignee:undefined,status:'pending',checkpoint:{round:1,history:[]}});const material=workflowMaterials(state,'gate');const result=branchCheckpoint(state,'gate',['a'],material.evidence,material.evidence,'Fix and rerun tests',material.text);assert.equal(state.tasks.length,3);assert.equal(result.tasks.length,5);assert.equal(result.tasks[2].checkpoint.round,2);assert.equal(result.tasks[2].checkpoint.history[0].decision,'branch');assert.equal(result.tasks[2].checkpoint.history[0].materials,material.text);assert.deepEqual(result.tasks[4].dependencies,[result.tasks[3].id]);assert.deepEqual(result.tasks[2].dependencies,[result.tasks[4].id]);assert.equal(result.tasks[0].output,'Evidence a');assert.throws(()=>branchCheckpoint(state,'gate',['missing'],material.evidence,material.evidence,'x',material.text));assert.equal(state.tasks[2].checkpoint.history.length,0)
 })
+
+
+test('copy archives list policy exclusions without copying weights or failing the task',async t=>{
+ const f=await fixture(t,true)
+ writeFileSync(join(f.workspace,'model.safetensors'),'large model metadata fixture')
+ f.state.tasks[1].changedPaths.push('model.safetensors');await writeTeam(f.root,f.state)
+ await runTaskArchives(f.root,f.workspace,'demo')
+ const state=await f.read(),archive=state.tasks.at(-1)
+ assert.equal(archive.status,'completed')
+ const record=archive.archiveRecords[0],manifest=await readTaskArchive(f.root,state,'archive',record.id)
+ const weight=manifest.files.find(f=>f.path==='model.safetensors')
+ assert.equal(weight.present,true);assert.equal(weight.skipped,'type');assert.equal(weight.copied,false);assert.equal(weight.sha256,undefined)
+ assert.equal(record.copiedCount,1)
+ assert.equal(existsSync(join(f.root,'demo','artifacts',record.id,'files/model.safetensors')),false)
+})

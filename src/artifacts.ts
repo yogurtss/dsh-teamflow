@@ -26,7 +26,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { type Stats, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { type Stats, closeSync, constants, fstatSync, lstatSync, openSync, opendirSync, readSync, realpathSync, statSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { isDefaultExcludedPath, normalizeWorkspacePath } from './quality-gates.ts'
 import type { ArtifactDigest, ArtifactScopeGap, ArtifactSnapshot } from './types.ts'
@@ -67,7 +67,7 @@ export function readOutcomePreview(workspace: string, path: string): OutcomePrev
     let offset = 0
     while (offset < buffer.length) { const n = readSync(handle, buffer, offset, buffer.length - offset, null); if (!n) break; offset += n }
     const after = fstatSync(handle)
-    if (offset !== buffer.length || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs || realpathSync(absolute) !== canonical) return { ...result, status: 'unreadable' }
+    if (offset !== buffer.length || statSignature(after) !== statSignature(stat) || statSignature(statSync(absolute)) !== statSignature(stat) || realpathSync(absolute) !== canonical) return { ...result, status: 'unreadable' }
     const sha256 = createHash('sha256').update(buffer).digest('hex')
     if (mime) {
       const signature = mime === 'image/png' ? buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : mime === 'image/jpeg' ? buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 : mime === 'image/gif' ? /^GIF8[79]a$/.test(buffer.subarray(0,6).toString('ascii')) : buffer.subarray(0,4).toString('ascii') === 'RIFF' && buffer.subarray(8,12).toString('ascii') === 'WEBP'
@@ -231,10 +231,10 @@ function inspectPath(workspaceRoot: string | undefined, workspace: string, norma
     const canonical = realpathSync(absolute)
     if (!insideRoot(workspaceRoot, canonical)) return { kind: 'unreadable', reason: `${normalized} resolves outside the workspace` }
     const supported = (path: string) => ARTIFACT_EXTENSIONS.has(extname(path).slice(1).toLowerCase()) || ARTIFACT_NAMES.has(basename(path).toLowerCase())
-    const refused = (reason: string): PathOutcome => ({ kind: 'unreadable', reason: `${normalized}: ${reason}`, size: stats.size, mtimeMs: stats.mtimeMs })
-    if (!supported(normalized) || !supported(canonical)) return refused('unsupported artifact file type; content not audited')
-    if (stats.size > MAX_ARTIFACT_BYTES) return refused(`exceeds the ${MAX_ARTIFACT_BYTES}-byte file limit; content not audited`)
-    if (stats.size > budget.remaining) return refused(`exceeds the ${MAX_SCOPE_BYTES}-byte scope budget; content not audited`)
+    const refused = (skipped: ArtifactDigest['skipped'], reason: string): PathOutcome => ({ kind: 'file', digest: { path: normalized, present: true, skipped, reason: `${normalized}: ${reason}`, size: stats.size, mtimeMs: stats.mtimeMs } })
+    if (!supported(normalized) || !supported(canonical)) return refused('type', 'unsupported artifact file type; content not audited')
+    if (stats.size > MAX_ARTIFACT_BYTES) return refused('size', `exceeds the ${MAX_ARTIFACT_BYTES}-byte file limit; content not audited`)
+    if (stats.size > budget.remaining) return refused('budget', `exceeds the ${MAX_SCOPE_BYTES}-byte scope budget; content not audited`)
     const { sha256, size } = hashFileConstantMemory(canonical, stats, budget)
     return {
       kind: 'file',
@@ -262,7 +262,8 @@ function walkDirectory(input: {
   prefix: string
   push: (path: string) => void
   gap: (reason: string) => void
-  full: () => boolean
+  full: (path?: string) => boolean
+  scan: { remaining: number }
 }): void {
   // The prefix itself must be inside the workspace before it is enumerated:
   // `escape/` may be a symlink to an outside directory, and readdir would
@@ -297,7 +298,24 @@ function walkDirectory(input: {
     const current = queue.shift() as string
     let entries: { name: string; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }[]
     try {
-      entries = readdirSync(join(input.workspace, current), { withFileTypes: true })
+      const absolute = join(input.workspace, current)
+      if (!input.workspaceRoot || !insideRoot(input.workspaceRoot, realpathSync(absolute))) {
+        input.gap(`${input.pattern}: directory no longer resolves inside the workspace`)
+        return
+      }
+      const directory = opendirSync(absolute)
+      entries = []
+      try {
+        for (;;) {
+          const entry = directory.readSync()
+          if (!entry) break
+          if (input.scan.remaining-- <= 0) {
+            input.gap(`${input.pattern}: directory scan limit reached; scope is only partially recorded`)
+            return
+          }
+          entries.push(entry)
+        }
+      } finally { directory.closeSync() }
     } catch (error) {
       input.gap(`${input.pattern}: cannot list ${current === '' ? '.' : current} (${errorCode(error)})`)
       continue
@@ -314,7 +332,7 @@ function walkDirectory(input: {
         continue
       }
       if (!entry.isFile()) continue
-      if (input.full()) {
+      if (input.full(relativePath)) {
         input.gap(`${input.pattern}: stopped at the ${MAX_EXPANDED_ARTIFACTS}-file cap, so its contents are only partially recorded`)
         return
       }
@@ -330,11 +348,12 @@ function walkDirectory(input: {
  */
 export function readArtifactScope(workspace: string, patterns: readonly string[], options: ArtifactReadOptions = {}): ArtifactScopeRead {
   const budget: ReadBudget = { remaining: MAX_SCOPE_BYTES, cache: options.cache === true }
+  const scan = { remaining: 10000 }
   const workspaceRoot = workspaceRootOf(workspace)
   const gaps: ArtifactScopeGap[] = []
   const concrete: string[] = []
   const seen = new Set<string>()
-  const full = (): boolean => concrete.length >= MAX_EXPANDED_ARTIFACTS
+  const full = (path?: string): boolean => concrete.length >= MAX_EXPANDED_ARTIFACTS && !(path && seen.has(path))
   const push = (path: string): void => {
     if (seen.has(path)) return
     seen.add(path)
@@ -361,7 +380,7 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
         gap(trimmed, 'empty path is not a file; use "." for the whole workspace')
         continue
       }
-      if (full()) {
+      if (full(normalized)) {
         gap(trimmed, `stopped at the ${MAX_EXPANDED_ARTIFACTS}-path cap, so the scope is only partially recorded`)
         continue
       }
@@ -378,7 +397,7 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
       gap(trimmed, `stopped at the ${MAX_EXPANDED_ARTIFACTS}-path cap, so its contents are only partially recorded`)
       continue
     }
-    walkDirectory({ workspace, workspaceRoot, pattern: trimmed, prefix: normalized, push, gap: (reason) => gap(trimmed, reason), full })
+    walkDirectory({ workspace, workspaceRoot, pattern: trimmed, prefix: normalized, push, gap: (reason) => gap(trimmed, reason), full, scan })
   }
   const artifacts: ArtifactDigest[] = []
   // Index-based: expanding an explicitly named directory appends its files to
@@ -393,7 +412,8 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
     if (outcome.kind === 'directory') {
       // An explicitly named directory is expanded instead of being reported as
       // unreadable: `src/lib` and `src/lib/` must behave the same.
-      walkDirectory({ workspace, workspaceRoot, pattern: normalized, prefix: normalized, push, gap: (reason) => gap(normalized, reason), full })
+      concrete.splice(index--, 1)
+      walkDirectory({ workspace, workspaceRoot, pattern: normalized, prefix: normalized, push, gap: (reason) => gap(normalized, reason), full, scan })
       continue
     }
     if (outcome.kind === 'absent') {

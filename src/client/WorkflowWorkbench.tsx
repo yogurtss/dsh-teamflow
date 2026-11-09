@@ -55,7 +55,7 @@ function ReviewMaterials({ text }: { text: string }) {
   const l = useWorkflowText()
 
   try {
-    const material = JSON.parse(text) as { check: { round: number }; results: Pick<TeamTask, 'id' | 'subject' | 'output' | 'commandsRun' | 'acceptanceResults'>[]; files?: { artifacts: { path: string; present: boolean; unreadable?: boolean }[] }; limitation?: string }
+    const material = JSON.parse(text) as { check: { round: number }; results: Pick<TeamTask, 'id' | 'subject' | 'output' | 'commandsRun' | 'acceptanceResults'>[]; files?: { artifacts: { path: string; present: boolean; unreadable?: boolean; skipped?: string }[] }; limitation?: string }
     if (!Array.isArray(material.results) || !material.check) return <pre>{text}</pre>
     return <div className={css.materials}><small>{l("第 ")}{material.check.round} {l(" 轮验收")}</small>
       {material.results.length === 0 && <p>{l("此检查点没有上游执行结果，请根据验收要求确认是否继续。")}</p>}
@@ -63,7 +63,7 @@ function ReviewMaterials({ text }: { text: string }) {
         {result.commandsRun?.map((command, i) => <p key={i}>{command.status === 'passed' ? l("通过") : l("未通过")} · {command.command}{command.evidence ? `\n${command.evidence}` : ''}</p>)}
         {result.acceptanceResults?.map((item, i) => <p key={i}>{item.status === 'passed' ? l("通过") : l("未通过")} · {item.criterion}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
       </section>)}
-      {!!material.files?.artifacts.length && <section><strong>{l("相关文件")}</strong>{material.files.artifacts.map(file => <p key={file.path}>{file.path}{file.unreadable ? l(" · 无法读取") : !file.present ? l(" · 文件不存在") : ''}</p>)}</section>}
+      {!!material.files?.artifacts.length && <section><strong>{l("相关文件")}</strong>{material.files.artifacts.map(file => <p key={file.path}>{file.path}{file.skipped ? l(" · 按策略跳过内容审计，请在本机检查") : file.unreadable ? l(" · 无法读取") : !file.present ? l(" · 文件不存在") : ''}</p>)}</section>}
       <p className={css.hint}>{workflowMessage(material.limitation ?? '', l)}</p><details><summary>{l("原始证据记录")}</summary><pre>{text}</pre></details>
     </div>
   } catch { return <pre>{text}</pre> }

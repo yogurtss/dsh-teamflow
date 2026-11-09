@@ -32,6 +32,7 @@ export interface ReviewMaterial {
         path: string;
         present: boolean;
         unreadable?: boolean;
+        skipped?: string;
         sha256?: string;
         reason?: string;
         size?: number;
@@ -67,6 +68,7 @@ export declare function reviewChanges(previous: ReviewMaterial, current: ReviewM
             path: string;
             present: boolean;
             unreadable?: boolean;
+            skipped?: string;
             sha256?: string;
             reason?: string;
             size?: number;
@@ -75,6 +77,7 @@ export declare function reviewChanges(previous: ReviewMaterial, current: ReviewM
             path: string;
             present: boolean;
             unreadable?: boolean;
+            skipped?: string;
             sha256?: string;
             reason?: string;
             size?: number;

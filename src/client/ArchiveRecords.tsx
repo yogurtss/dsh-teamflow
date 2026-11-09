@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { TeamState, TeamTask } from '../types.ts'
 import { workflowRequest } from './workflow-request.ts'
 import { useWorkflowText } from './workflow-i18n.tsx'
-interface Manifest {gitCommit?:string;tasks:TeamTask[];files:{path:string;present:boolean;copied:boolean;sha256?:string}[];loops:{id:string;round:number;historyCount:number}[]}
+interface Manifest {gitCommit?:string;tasks:TeamTask[];files:{path:string;present:boolean;copied:boolean;skipped?:string;reason?:string;size?:number;sha256?:string}[];loops:{id:string;round:number;historyCount:number}[]}
 
 export function ArchiveRecords({sessionId,team,task,archived}:{sessionId:string;team:TeamState;task:TeamTask;archived:boolean}){
   const l=useWorkflowText(),[busy,setBusy]=useState(''),[error,setError]=useState(''),[record,setRecord]=useState<{id:string;text:string;manifest:Manifest}>()
@@ -16,7 +16,7 @@ export function ArchiveRecords({sessionId,team,task,archived}:{sessionId:string;
     <button type="button" onClick={download}>{l('下载归档清单')}</button>
     {record.manifest.gitCommit&&<p style={{overflowWrap:'anywhere'}}>Git · <code>{record.manifest.gitCommit}</code></p>}
     <h4>{l('已保存的成果与证据')}</h4>{record.manifest.tasks.map(t=><details key={t.id}><summary>{t.subject} · {t.checkpoint?l('第 {0} 轮',t.checkpoint.round):`#${t.attempt??0}`}</summary><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{t.output||l('尚未提交结果说明')}</p>{t.checkpoint?.history.map((h,i)=><p key={i}>{l('第 {0} 轮',h.round)} · {h.decision==='approve'?l('通过'):h.decision==='branch'?l('创建返工分支'):l('退回')} · {h.note}</p>)}</details>)}
-    {!!record.manifest.files.length&&<><h4>{l('文件引用')}</h4>{record.manifest.files.map(f=><details key={f.path}><summary>{f.path} · {f.copied?l('文件副本'):f.present?l('文件引用'):l('文件不存在')}</summary><code style={{overflowWrap:'anywhere'}}>{f.sha256}</code></details>)}</>}
+    {!!record.manifest.files.length&&<><h4>{l('文件引用')}</h4>{record.manifest.files.map(f=><details key={f.path}><summary>{f.path} · {f.skipped?l('按策略跳过内容审计，请在本机检查'):f.copied?l('文件副本'):f.present?l('文件引用'):l('文件不存在')}</summary><code style={{overflowWrap:'anywhere'}}>{f.sha256}</code>{f.size!==undefined&&<p>{f.size.toLocaleString()} bytes</p>}{f.reason&&<p>{f.reason}</p>}</details>)}</>}
     {record.manifest.loops.map(loop=><p key={loop.id}>{l('第 {0} 轮',loop.round)} · {l('循环历史记录')} {loop.historyCount}</p>)}
     <details><summary>{l('完整归档清单')}</summary><pre style={{maxHeight:360,overflow:'auto',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{record.text}</pre></details>
   </>}</section>

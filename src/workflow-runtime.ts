@@ -1,10 +1,11 @@
 import { resumeTeamState } from './quality-gates.ts'
+import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import { readTaskArchive, cancelTaskArchive, archiveRunning } from './task-archive.ts'
 import { branchCheckpoint } from './workflow.ts'
 import { configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
 import { readLoopHistory } from './workflow-loop-history.ts'
 import { cp } from 'node:fs/promises'
-import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
+import { loopArtifactEvidence, loopArtifactMaterials } from './workflow-loop-evidence.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import { rerunPath, startWorkflowPath, resumeRerunPath } from './task-rerun.ts'
 import { localizeBuiltinTemplate } from './builtin-template-locales.ts'
@@ -62,7 +63,7 @@ export function workflowMaterials(team: TeamState, taskId: string, workspace: st
     files, limitation: '任务输出和命令结果由执行 Agent 提交；文件摘要由宿主读取。验收 Agent 未独立运行命令，也未读取全部文件内容。' }
   const text = JSON.stringify(material, null, 2)
   if (text.length > 180000) throw new Error('验收材料过大，请将检查点拆分为更小范围')
-  return { text, evidence: createHash('sha256').update(text).digest('hex') }
+  return { text, evidence: workflowMaterialEvidence(text) }
 }
 
 /** Authenticated human controls are separate from model tools. */
@@ -231,7 +232,8 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       if (action === 'loop_materials') {
         const team = await load(), loop = loopsOf(team).find(l => l.id === body['loopId'])
         if (!loop || loop.status !== 'reviewing') throw new Error('循环尚未进入审核')
-        reply(200, { artifactEvidence: await loopArtifactEvidence(workspace, team, loop), fingerprint: loopInputFingerprint(team, loop), runId: loop.runId, round: loop.round, tasks: loop.bodyIds.map(id => team.tasks.find(t => t.id === id)) }); return
+        const material = await loopArtifactMaterials(workspace, team, loop)
+        reply(200, { artifactEvidence: material.evidence, files: material.files, fingerprint: loopInputFingerprint(team, loop), runId: loop.runId, round: loop.round, tasks: loop.bodyIds.map(id => team.tasks.find(t => t.id === id)) }); return
       }
       if (action === 'state') await withTeamLock(lock, async () => { const team = await load(); if (reconcileLoops(team)) await writeTeam(root, team) })
       if (['start_path','resume_rerun_path','resume_task','continue_task','reopen_review'].includes(action) || action === 'set_task_enabled' && body['enabled'] === true) {

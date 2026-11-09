@@ -104,6 +104,8 @@ export interface ArtifactDigest {
    * unreadable bytes cannot be claimed as unchanged.
    */
   unreadable?: boolean
+  /** Intentionally excluded from content auditing; existence/metadata remain available. */
+  skipped?: 'type' | 'size' | 'budget'
   /** Why the path could not be read, when `unreadable` is set. */
   reason?: string
 }

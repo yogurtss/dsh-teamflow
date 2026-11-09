@@ -2,6 +2,7 @@ import { parseGalleryAccess } from "./gallery-access.ts"
 import { parseTaskArchive, validArchiveFields } from './task-archive-config.ts'
 /** Human workflow operations. Model output is a proposal, never execution authority. */
 import { createHash, randomUUID } from 'node:crypto'
+import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import type { TeamState, TeamTask } from './types.ts'
 import type { WorkflowOperation, WorkflowProposal, WorkflowState } from './workflow-types.ts'
 import { validateCreateTask } from './quality-gates.ts'
@@ -283,7 +284,7 @@ export function decideCheckpoint(team: TeamState, id: string, decision: 'approve
   const task = taskOf(team, id)
   if (!checkpointReady(team, task) || !task.checkpoint || task.checkpoint.decision) throw new Error('该检查点当前不能验收')
   if (!evidence || evidence !== current) throw new Error('验收材料已变化，请刷新材料后重新检查')
-  if (materials !== undefined && createHash('sha256').update(materials).digest('hex') !== evidence) throw new Error('验收材料已变化，请刷新材料后重新检查')
+  if (materials !== undefined && workflowMaterialEvidence(materials) !== evidence) throw new Error('验收材料已变化，请刷新材料后重新检查')
   const gate = task.checkpoint, at = Date.now()
   gate.decision = decision; gate.decidedAt = at; gate.note = note; gate.evidence = evidence
   gate.history.push({ round: gate.round, decision, at, note, evidence, ...(materials === undefined ? {} : { materials }) })

@@ -108,6 +108,7 @@ export interface DeliveryResult {
 export interface ScopeEntry {
     path: string;
     present: boolean;
+    skipped?: ArtifactDigest['skipped'];
 }
 export interface DeliveryAudit {
     /** Current bytes of the paths recorded by verdicts and work orders. */

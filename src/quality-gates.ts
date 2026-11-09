@@ -4,6 +4,7 @@
  * @module dsh-agent-teams/quality-gates
  */
 
+import { artifactSkip, normalizeArtifact } from './artifact-policy.ts'
 import {
   FINDING_SEVERITIES,
   REVIEW_VERDICTS,
@@ -157,6 +158,7 @@ export interface DeliveryResult {
 export interface ScopeEntry {
   path: string
   present: boolean
+  skipped?: ArtifactDigest['skipped']
 }
 
 export interface DeliveryAudit {
@@ -1103,9 +1105,9 @@ export function artifactDriftDetails(
   current: readonly ArtifactDigest[] | undefined,
 ): ArtifactDriftDetail[] {
   if (recorded === undefined || recorded.length === 0 || current === undefined) return []
-  const now = new Map(current.map((item) => [item.path, item]))
+  const now = new Map(current.map(normalizeArtifact).map((item) => [item.path, item]))
   const drift: ArtifactDriftDetail[] = []
-  for (const before of recorded) {
+  for (const before of recorded.map(normalizeArtifact)) {
     const after = now.get(before.path)
     if (after === undefined) {
       drift.push({ path: before.path, message: `${before.path} was not in the current workspace snapshot` })
@@ -1128,6 +1130,7 @@ export function artifactDriftDetails(
       })
       continue
     }
+    if (before.skipped || after.skipped) continue
     if (before.present && after.present && before.sha256 !== after.sha256) {
       drift.push({ path: before.path, message: `${before.path} changed (sha256 ${shortDigest(before.sha256)} -> ${shortDigest(after.sha256)})` })
     }
@@ -1356,7 +1359,7 @@ function verdictDrift(team: TeamState, item: TeamTask, audit: DeliveryAudit): Ar
   for (const pattern of item.reviewedScope ?? []) {
     if (!isDirectoryPattern(pattern)) continue
     for (const entry of audit.expandedScope ?? []) {
-      if (entry.present !== true || recordedPaths.has(entry.path)) continue
+      if (entry.present !== true || entry.skipped || recordedPaths.has(entry.path)) continue
       if (!pathMatchesScope(entry.path, pattern)) continue
       issues.push({ path: entry.path, message: `${entry.path} appeared under the reviewed scope ${pattern} after the verdict and was never reviewed` })
     }
@@ -1373,6 +1376,7 @@ function verdictDrift(team: TeamState, item: TeamTask, audit: DeliveryAudit): Ar
     if (normalized === undefined) continue
     const current = audit.artifacts?.find((artifact) => artifact.path === normalized)
     if (current === undefined) continue
+    if (artifactSkip(current)) continue
     if (current.unreadable === true) {
       issues.push({ path: normalized, message: `${normalized} cannot be read now (${current.reason ?? 'unknown error'}), so the verdict cannot be confirmed` })
       continue
@@ -1469,7 +1473,7 @@ export function verdictAuditNotes(team: TeamState, audit: DeliveryAudit = {}): V
     // gap: a narrower new review over path A must not clear an unreviewed
     // change to path B.
     const covering = sound.find((candidate) => (
-      supersedes(team, candidate, item) && coversDrift(team, candidate, item, found)
+      supersedes(team, candidate, item) && coversDrift(team, candidate, item, found, audit)
     ))
     if (covering !== undefined) {
       notes.push({ taskId: item.id, level: 'warning', message: `${detail} — superseded by ${covering.id}, which binds the current bytes` })
@@ -1514,14 +1518,17 @@ function coversDrift(
   candidate: TeamTask,
   prior: TeamTask,
   drifted: readonly ArtifactDriftDetail[],
+  audit: DeliveryAudit,
 ): boolean {
   if (drifted.length === 0) return false
-  const bound = new Set((candidate.reviewedArtifacts ?? []).map((artifact) => artifact.path))
+  const verified = (candidate.reviewedArtifacts ?? []).filter(artifact => !artifactSkip(artifact) && !artifactSkip(audit.artifacts?.find(current => current.path === artifact.path) ?? artifact))
+  const bound = new Set(verified.map(artifact => artifact.path))
   for (const issue of drifted) {
     if (issue.path !== undefined) {
       if (!bound.has(issue.path)) return false
       continue
     }
+    if (verified.length !== candidate.reviewedArtifacts?.length) return false
     const candidateTarget = reviewedTargetOf(team, candidate)
     const priorTarget = reviewedTargetOf(team, prior)
     if (candidateTarget === undefined || priorTarget === undefined || candidateTarget.id !== priorTarget.id) return false
@@ -1672,6 +1679,8 @@ export function canDeclareDelivery(team: TeamState, audit: DeliveryAudit = {}): 
   warnings.push(...binding.warnings)
   if (audit.artifacts !== undefined) {
     warnings.push(...workOrderWarnings(team, audit.artifacts).map((warning) => warning.message))
+    const excluded = audit.artifacts.filter(artifact => artifactSkip(artifact))
+    if (excluded.length) warnings.push(`Content audit skipped by policy for ${excluded.length} file(s): ${excluded.slice(0, 3).map(artifact => artifact.path).join(', ')}. Their contents are not verified; this is not evidence of changed or invalid bytes.`)
   }
   // An incomplete audit is not evidence: a scope that outgrew its cap, or a
   // path that cannot be read, must block instead of passing as a clean read.
@@ -1755,8 +1764,9 @@ export function isArtifactDigest(value: unknown): value is ArtifactDigest {
   if (value['size'] !== undefined && !(Number.isSafeInteger(value['size']) && (value['size'] as number) >= 0)) return false
   if (value['mtimeMs'] !== undefined && !(typeof value['mtimeMs'] === 'number' && Number.isFinite(value['mtimeMs']))) return false
   if (value['unreadable'] !== undefined && typeof value['unreadable'] !== 'boolean') return false
+  if (value['skipped'] !== undefined && (!['type', 'size', 'budget'].includes(value['skipped'] as string) || value['present'] !== true || value['unreadable'] === true || value['sha256'] !== undefined)) return false
   if (value['reason'] !== undefined && !nonemptyString(value['reason'])) return false
-  if (value['present'] === true && value['sha256'] === undefined) return false
+  if (value['present'] === true && value['sha256'] === undefined && value['skipped'] === undefined) return false
   return true
 }
 

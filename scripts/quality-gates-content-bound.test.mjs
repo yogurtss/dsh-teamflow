@@ -517,3 +517,27 @@ test('#161 review: a narrower new pass cannot clear drift on a path it never rev
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+
+test('policy-excluded weights are warnings, while audited changes still block delivery', async () => {
+ const {readArtifactScope}=await import('../lib/artifacts.js')
+ const {auditTeamWorkspace}=await import('../lib/workspace-audit.js')
+ const root=workspace()
+ try {
+  writeFileSync(join(root,'model.safetensors'),'weights')
+  const paths=[...REVIEWED_PATHS,'model.safetensors']
+  const reviewed=readArtifactScope(root,paths).artifacts
+  const state=team({reviewedArtifacts:reviewed,reviewedScope:['lib/','test/','model.safetensors','package.json'],reviewedAttempt:1})
+  state.tasks[0].changedPaths=paths;state.tasks[0].inScope=paths
+  let result=canDeclareDelivery(state,auditTeamWorkspace(root,state))
+  assert.equal(result.ok,true,JSON.stringify(result));assert.ok(result.warnings.some(w=>w.includes('skipped by policy')))
+  const legacy=state.tasks[1].reviewedArtifacts.find(a=>a.skipped)
+  delete legacy.skipped;legacy.present=false;legacy.unreadable=true
+  assert.equal(canDeclareDelivery(state,auditTeamWorkspace(root,state)).ok,true)
+  writeFileSync(join(root,'model.safetensors'),'updated unreviewed weights')
+  assert.equal(canDeclareDelivery(state,auditTeamWorkspace(root,state)).ok,true)
+  writeFileSync(join(root,'lib/stats.js'),STATS_V2)
+  result=canDeclareDelivery(state,auditTeamWorkspace(root,state))
+  assert.equal(result.ok,false);assert.ok(result.blockers.some(w=>w.includes('stats.js')))
+ } finally {rmSync(root,{recursive:true,force:true})}
+})

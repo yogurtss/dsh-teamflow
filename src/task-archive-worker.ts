@@ -17,7 +17,7 @@ try {
   let copiedCount=0,totalBytes=0
   const canonicalRoot=realpathSync(workspace)
   const files=scope.artifacts.map(file=>{
-    if(!source.config.copyFiles||!file.present)return {...file,copied:false}
+    if(!source.config.copyFiles||!file.present||file.skipped)return {...file,copied:false}
     totalBytes+=file.size??0
     if(totalBytes>100*1024*1024)throw new Error('文件副本超过 100 MiB，请缩小归档范围')
     let absolute=canonicalRoot
@@ -31,9 +31,10 @@ try {
       if(!before.isFile()||before.ino!==current.ino||before.dev!==current.dev||before.size!==file.size)throw new Error('归档文件已变化')
       const target=join(staging,'files',file.path);mkdirSync(dirname(target),{recursive:true});output=openSync(target,'wx')
       const chunk=Buffer.allocUnsafe(64*1024),hash=createHash('sha256');let bytes=0
-      for(;;){const n=readSync(input,chunk,0,chunk.length,null);if(!n)break;bytes+=n;if(bytes>100*1024*1024)throw new Error('归档文件过大');hash.update(chunk.subarray(0,n));let written=0;while(written<n)written+=writeSync(output,chunk,written,n-written)}
+      while(bytes<before.size){const n=readSync(input,chunk,0,Math.min(chunk.length,before.size-bytes),null);if(!n)break;bytes+=n;hash.update(chunk.subarray(0,n));let written=0;while(written<n)written+=writeSync(output,chunk,written,n-written)}
       const after=fstatSync(input)
-      if(hash.digest('hex')!==file.sha256||bytes!==before.size||after.mtimeMs!==before.mtimeMs||realpathSync(absolute)!==canonical)throw new Error('归档期间文件发生变化，请重试')
+      const currentAfter=statSync(canonical)
+      if(hash.digest('hex')!==file.sha256||bytes!==before.size||after.size!==before.size||after.mtimeMs!==before.mtimeMs||after.ctimeMs!==before.ctimeMs||currentAfter.ino!==before.ino||currentAfter.dev!==before.dev||realpathSync(absolute)!==canonical)throw new Error('归档期间文件发生变化，请重试')
     }finally{closeSync(input);if(output!==undefined)closeSync(output)}
     copiedCount++;return {...file,copied:true,copyPath:'files/'+file.path}
   })

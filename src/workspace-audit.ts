@@ -48,7 +48,7 @@ export function auditTeamWorkspace(workspace: string, team: TeamState, options: 
   }
   return {
     artifacts: pathRead.artifacts,
-    expandedScope: scopeRead.artifacts.map((artifact) => ({ path: artifact.path, present: artifact.present })),
+    expandedScope: scopeRead.artifacts.map((artifact) => ({ path: artifact.path, present: artifact.present, ...(artifact.skipped ? { skipped: artifact.skipped } : {}) })),
     ...gaps.length === 0 ? {} : { gaps },
   }
 }
