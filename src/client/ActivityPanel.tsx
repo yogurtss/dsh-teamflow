@@ -188,7 +188,7 @@ function WorkGlyph({ active }: { readonly active: boolean }) {
   )
 }
 
-/** Collapsed badge: an always-visible corner pill while any team exists. */
+/** Workflow status card remains visible in the corner while any team exists. */
 function CollapsedBadge({ count, busy, onClick, t, team, archived }: {
   readonly count: number
   readonly team?: ActivityTeam
@@ -203,9 +203,16 @@ function CollapsedBadge({ count, busy, onClick, t, team, archived }: {
   const title=[team?.name,label,status.total?status.percent+'%':undefined,detail,t('activity.badgeAria',{count})].filter(Boolean).join(' · ')
   return <button type="button" className={css.badge} data-agent-teams-collapsed data-busy={busy} data-status={status.state} onClick={onClick} aria-label={title} title={title}>
     <span className={css.statusRing} aria-hidden><svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="7.5" className={css.ringTrack}/><circle cx="10" cy="10" r="7.5" className={css.ringValue} pathLength="100" strokeDasharray={status.percent+' 100'}/></svg>{status.state==='completed'?<i>✓</i>:status.state==='paused'?<i>Ⅱ</i>:status.attention>0?<i>·</i>:null}</span>
-    <span className={css.statusLabel}>{label}</span>
-    {status.total>0&&status.state!=='completed'&&<span className={css.statusPercent}>{status.percent}<small>%</small></span>}
-    {status.attention>0&&<span className={css.statusCount} aria-hidden>{status.attention>99?'99+':status.attention}</span>}
+    <span className={css.statusBody}>
+      <span className={css.statusHeading}><span>Workflow</span><span aria-hidden>↗</span></span>
+      {team?.name && <strong className={css.statusTeam}>{team.name}</strong>}
+      <span className={css.statusLine}>
+        <span className={css.statusLabel}>{label}</span>
+        {status.total>0&&<span className={css.statusPercent}>{status.percent}<small>%</small></span>}
+        {status.attention>0&&<span className={css.statusCount} aria-hidden>{status.attention>99?'99+':status.attention}</span>}
+      </span>
+      {status.total>0&&<span className={css.statusDetail}>{detail}</span>}
+    </span>
   </button>
 }
 
