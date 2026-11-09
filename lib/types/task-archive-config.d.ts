@@ -11,13 +11,14 @@ export interface TaskArchiveRecord {
     fileCount: number;
     copiedCount: number;
 }
+export declare const MAX_ARCHIVE_MANIFEST_BYTES: number;
 export declare const taskArchiveParameter: {
     readonly type: "object";
     readonly additionalProperties: false;
     readonly properties: {
         readonly copyFiles: {
             readonly type: "boolean";
-            readonly description: "Copy declared files (up to 100 MiB). Default false: record hashes and evidence references only.";
+            readonly description: "Copy supported, auditable files (2 MiB per file, 32 MiB total). Policy-excluded files retain metadata only. Default false: record hashes and evidence references only.";
         };
         readonly paths: {
             readonly type: "array";

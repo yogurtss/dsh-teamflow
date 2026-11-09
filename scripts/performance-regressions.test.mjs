@@ -170,3 +170,33 @@ test('directory aliases and duplicates do not consume extra file slots',async t=
   const read=readArtifactScope(root,patterns);assert.equal(read.artifacts.length,200);assert.deepEqual(read.gaps,[])
  }
 })
+
+
+test('scope byte-budget selection is independent of declaration order and directory spelling',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teamflow-stable-scope-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ fs.mkdirSync(join(root,'data'))
+ const paths=Array.from({length:17},(_,i)=>'data/'+i+'.txt')
+ for(const path of paths)fs.writeFileSync(join(root,path),Buffer.alloc(MAX_ARTIFACT_BYTES,65))
+ const baseline=readArtifactScope(root,paths)
+ for(const patterns of [[...paths].reverse(),['data'],['data/'],['data/',...paths]])assert.deepEqual(readArtifactScope(root,patterns),baseline)
+})
+
+test('overlapping directory scopes at the exact cap do not fabricate a gap',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teamflow-overlap-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ fs.mkdirSync(join(root,'data'));fs.mkdirSync(join(root,'data/sub'))
+ for(let i=0;i<200;i++)fs.writeFileSync(join(root,'data/sub',i+'.txt'),'x')
+ const result=readArtifactScope(root,['data/','data/sub/','data','data/'])
+ assert.equal(result.artifacts.length,200);assert.deepEqual(result.gaps,[])
+})
+
+test('previews run off-thread, coalesce in-flight reads and preserve truncation and path policy',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teamflow-preview-worker-')),reader=createWorkspaceAuditor()
+ t.after(async()=>{await reader.dispose();await rm(root,{recursive:true,force:true})})
+ fs.writeFileSync(join(root,'huge.txt'),Buffer.alloc(MAX_ARTIFACT_BYTES+1,65))
+ let tick=false;const timer=setTimeout(()=>{tick=true},0)
+ const first=reader.preview(root,'huge.txt');assert.equal(reader.preview(root,'huge.txt'),first)
+ const preview=await first;clearTimeout(timer)
+ assert.equal(tick,true);assert.equal(preview.truncated,true);assert.equal(preview.previewBytes,256*1024);assert.equal(preview.sha256,undefined)
+ assert.equal((await reader.preview(root,'../outside.txt')).status,'blocked')
+ await reader.dispose();await assert.rejects(reader.preview(root,'huge.txt'),/disposed/)
+})

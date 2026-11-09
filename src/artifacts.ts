@@ -353,6 +353,7 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
   const gaps: ArtifactScopeGap[] = []
   const concrete: string[] = []
   const seen = new Set<string>()
+  const scopes = new Set<string>()
   const full = (path?: string): boolean => concrete.length >= MAX_EXPANDED_ARTIFACTS && !(path && seen.has(path))
   const push = (path: string): void => {
     if (seen.has(path)) return
@@ -363,11 +364,11 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
     if (gaps.some((item) => item.pattern === pattern && item.reason === reason)) return
     gaps.push({ pattern, reason })
   }
-  for (const raw of patterns) {
+  for (const raw of [...new Set(patterns)].sort()) {
     if (typeof raw !== 'string') continue
     const trimmed = raw.trim()
     const posix = trimmed.replaceAll('\\', '/')
-    const directory = posix.endsWith('/') || posix === '.'
+    let directory = posix.endsWith('/') || posix === '.'
     const normalized = normalizeWorkspacePath(raw)
     if (normalized === undefined) {
       // Absolute paths, `..`, `~`, drive letters: illegal, and never a reason
@@ -375,6 +376,14 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
       gap(trimmed, 'not a workspace-relative path (absolute paths and ".." can never match scope)')
       continue
     }
+    // Resolve bare directory declarations before spending the content budget.
+    // Failures still go through inspectPath below for precise error reporting.
+    if (!directory && normalized) {
+      try { directory = statSync(join(workspace, normalized)).isDirectory() } catch { /* inspect below */ }
+    }
+    const scopeKey = `${directory ? 'directory' : 'file'}:${normalized}`
+    if (scopes.has(scopeKey)) continue
+    scopes.add(scopeKey)
     if (!directory) {
       if (normalized === '') {
         gap(trimmed, 'empty path is not a file; use "." for the whole workspace')
@@ -393,27 +402,18 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
       gap(trimmed, 'unresolved directory pattern; use "./" explicitly for the workspace root')
       continue
     }
-    if (full()) {
-      gap(trimmed, `stopped at the ${MAX_EXPANDED_ARTIFACTS}-path cap, so its contents are only partially recorded`)
-      continue
-    }
     walkDirectory({ workspace, workspaceRoot, pattern: trimmed, prefix: normalized, push, gap: (reason) => gap(trimmed, reason), full, scan })
   }
   const artifacts: ArtifactDigest[] = []
-  // Index-based: expanding an explicitly named directory appends its files to
-  // `concrete`, and those must be digested in the same pass.
-  for (let index = 0; index < concrete.length; index += 1) {
-    const normalized = concrete[index] as string
+  // The same declared file set must bind the same bytes regardless of input order.
+  for (const normalized of concrete.sort()) {
     const outcome = inspectPath(workspaceRoot, workspace, normalized, budget)
     if (outcome.kind === 'file') {
       artifacts.push(outcome.digest)
       continue
     }
     if (outcome.kind === 'directory') {
-      // An explicitly named directory is expanded instead of being reported as
-      // unreadable: `src/lib` and `src/lib/` must behave the same.
-      concrete.splice(index--, 1)
-      walkDirectory({ workspace, workspaceRoot, pattern: normalized, prefix: normalized, push, gap: (reason) => gap(normalized, reason), full, scan })
+      gap(normalized, 'path became a directory during the audit; refresh the scope')
       continue
     }
     if (outcome.kind === 'absent') {

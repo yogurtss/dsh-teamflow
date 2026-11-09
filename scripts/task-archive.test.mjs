@@ -49,3 +49,13 @@ test('copy archives list policy exclusions without copying weights or failing th
  assert.equal(record.copiedCount,1)
  assert.equal(existsSync(join(f.root,'demo','artifacts',record.id,'files/model.safetensors')),false)
 })
+
+
+test('oversized archive manifests are rejected before content loading, and tampered small manifests still fail hashes',async t=>{
+ const f=await fixture(t);await runTaskArchives(f.root,f.workspace,'demo')
+ const state=await f.read(),record=state.tasks.at(-1).archiveRecords[0],path=join(f.root,'demo','artifacts',record.id,'manifest.json')
+ const {openSync,ftruncateSync,closeSync}=await import('node:fs')
+ const handle=openSync(path,'w');try{ftruncateSync(handle,21*1024*1024)}finally{closeSync(handle)}
+ await assert.rejects(readTaskArchive(f.root,state,'archive',record.id),/20 MiB/)
+ writeFileSync(path,'{}');await assert.rejects(readTaskArchive(f.root,state,'archive',record.id),/校验失败/)
+})

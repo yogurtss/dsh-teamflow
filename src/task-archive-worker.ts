@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { readArtifactScope } from './artifacts.ts'
 import type { TeamTask } from './types.ts'
-import type { TaskArchiveConfig } from './task-archive-config.ts'
+import { MAX_ARCHIVE_MANIFEST_BYTES, type TaskArchiveConfig } from './task-archive-config.ts'
 
 try {
   const {root,workspace,teamId,taskId,subject,id,createdAt,source,sourceFingerprint}=workerData as {root:string;workspace:string;teamId:string;taskId:string;subject:string;id:string;createdAt:number;source:{tasks:TeamTask[];loops:unknown[];config:TaskArchiveConfig};sourceFingerprint:string}
@@ -42,7 +42,7 @@ try {
   try{const value=execFileSync('git',['rev-parse','HEAD'],{cwd:workspace,encoding:'utf8',timeout:2000,windowsHide:true,stdio:['ignore','pipe','ignore']}).trim();if(/^[a-f0-9]{40,64}$/.test(value))gitCommit=value}catch{/* Non-Git workspaces still have attempt IDs and content hashes. */}
   const manifest={version:1,id,teamId,taskId,subject,createdAt,sourceFingerprint,gitCommit,gitNote:'HEAD is a reference only; file hashes identify the archived working-tree bytes.',config:source.config,tasks:source.tasks,loops:source.loops,files}
   const raw=JSON.stringify(manifest,null,2)+'\n'
-  if(Buffer.byteLength(raw)>20*1024*1024)throw new Error('归档清单超过 20 MiB，请缩小上游范围')
+  if(Buffer.byteLength(raw)>MAX_ARCHIVE_MANIFEST_BYTES)throw new Error('归档清单超过 20 MiB，请缩小上游范围')
   writeFileSync(join(staging,'manifest.json'),raw,{flag:'wx'});renameSync(staging,destination)
   parentPort?.postMessage({record:{id,createdAt,manifestPath:'artifacts/'+id+'/manifest.json',sha256:createHash('sha256').update(raw).digest('hex'),fileCount:files.length,copiedCount}})
 }catch(error){parentPort?.postMessage({error:error instanceof Error?error.message:'归档失败'})}

@@ -1,5 +1,6 @@
 /** Read-only presentation of persisted review evidence. No inferred verdicts or fuzzy matches. */
 import type { TeamTask } from '../types.ts'
+import { normalizeArtifact } from '../artifact-policy.ts'
 
 export interface ReviewReport { criterion: string; status: 'passed' | 'failed'; evidence?: string }
 export interface ReviewResult {
@@ -29,7 +30,7 @@ export function parseReviewMaterial(raw?: string): ReviewMaterial | undefined {
         acceptanceResults: records(result.acceptanceResults).filter(r => typeof r.criterion === 'string' && (r.status === 'passed' || r.status === 'failed')).map(r => ({ criterion: r.criterion as string, status: r.status as 'passed' | 'failed', evidence: text(r.evidence) })),
         commandsRun: records(result.commandsRun).filter(r => typeof r.command === 'string' && (r.status === 'passed' || r.status === 'failed')).map(r => ({ command: r.command as string, status: r.status as 'passed' | 'failed', evidence: text(r.evidence), exitCode: typeof r.exitCode === 'number' ? r.exitCode : undefined })),
       })),
-      files: records(files.artifacts).filter(f => typeof f.path === 'string').map(f => ({ path: f.path as string, present: f.present === true, unreadable: f.unreadable === true, skipped: text(f.skipped), sha256: text(f.sha256), reason: text(f.reason), ...(typeof f.size === 'number' && Number.isFinite(f.size) && f.size >= 0 ? { size: f.size } : {}) })),
+      files: records(files.artifacts).filter(f => typeof f.path === 'string').map(f => normalizeArtifact({ path: f.path as string, present: f.present === true, unreadable: f.unreadable === true, ...(f.present === true && f.unreadable !== true && !f.sha256 && ['type','size','budget'].includes(text(f.skipped)) ? { skipped: f.skipped as 'type' | 'size' | 'budget' } : {}), sha256: text(f.sha256), reason: text(f.reason), ...(typeof f.size === 'number' && Number.isFinite(f.size) && f.size >= 0 ? { size: f.size } : {}) })),
       gaps: records(files.gaps).map(g => ({ pattern: text(g.pattern), reason: text(g.reason) })), limitation: text(value.limitation),
     }
   } catch { return }

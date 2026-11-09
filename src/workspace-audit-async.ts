@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import type { TeamState } from './types.ts'
 import type { DeliveryAudit } from './quality-gates.ts'
 import type { ArtifactScopeRead } from './artifacts.ts'
+import type { OutcomePreview } from './outcomes.ts'
 import { deliveryArtifactPaths, deliveryScopePatterns } from './quality-gates.ts'
 
 export const WORKSPACE_AUDIT_TIMEOUT_MS = 3_000
@@ -30,7 +31,7 @@ export function createWorkspaceAuditor(options: { timeoutMs?: number } = {}) {
     current.on('exit', code => { if(worker===current){worker=undefined;fail(new Error(`Workspace audit worker exited (${code})`))} })
     return current
   }
-  function request<T>(payload: { workspace: string; team?: TeamState; paths?: readonly string[]; cache?: boolean }): Promise<T> {
+  function request<T>(payload: { workspace: string; team?: TeamState; paths?: readonly string[]; previewPath?: string; cache?: boolean }): Promise<T> {
     if (closed) return Promise.reject(new Error('Workspace auditor disposed'))
     const key = createHash('sha256').update(JSON.stringify(payload)).digest('hex')
     const existing = shared.get(key)
@@ -58,6 +59,9 @@ export function createWorkspaceAuditor(options: { timeoutMs?: number } = {}) {
     },
     readScope(workspace: string, paths: readonly string[], cache = false): Promise<ArtifactScopeRead> {
       return request({workspace,paths,cache})
+    },
+    preview(workspace: string, path: string): Promise<OutcomePreview> {
+      return request({workspace,previewPath:path})
     },
     async dispose() { closed=true;fail(new Error('Workspace auditor disposed'));const active=worker;worker=undefined;if(active)await active.terminate() },
   }

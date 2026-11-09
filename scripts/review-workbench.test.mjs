@@ -66,3 +66,14 @@ test('returned review offers reconsideration and repair; archives do not mutate'
  const archive=render({...props,archived:true});assert.doesNotMatch(archive,/Save instructions and rerun task|Review current results again/);
  const empty=render({...props,task:{...returned,dependencies:[]},team:{...team,tasks:[{...returned,dependencies:[]}]}});assert.match(empty,/No upstream task can be rerun/);assert.match(empty,/Review current results again/);
 });
+
+
+test('legacy policy exclusions render as unverified metadata rather than missing or unreadable evidence',()=>{
+ const raw=JSON.stringify({check:{id:'gate',round:1},results:[],files:{artifacts:[
+  {path:'model.bin',present:false,unreadable:true,size:10,reason:'model.bin: unsupported artifact file type; content not audited'},
+  {path:'secret.txt',present:false,unreadable:true,size:10,reason:'secret.txt: EACCES'}
+ ]}})
+ const material=parseReviewMaterial(raw)
+ assert.equal(material.files[0].skipped,'type');assert.equal(material.files[0].present,true);assert.equal(material.files[0].unreadable,undefined)
+ assert.equal(material.files[1].unreadable,true);assert.equal(material.files[1].skipped,undefined)
+})

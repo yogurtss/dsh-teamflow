@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile, rm } from 'node:fs/promises'
+import { open, rm } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import type { TeamState, TeamTask } from './types.ts'
 import { readTeam, withTeamLock, writeTeam } from './state.ts'
 import { checkpointInputs } from './workflow.ts'
 import { taskNeedsConfiguration } from './task-description.ts'
-import { parseTaskArchive, type TaskArchiveRecord } from './task-archive-config.ts'
+import { MAX_ARCHIVE_MANIFEST_BYTES, parseTaskArchive, type TaskArchiveRecord } from './task-archive-config.ts'
 
 const running = new Map<string, Promise<void>>()
 const workers = new Map<string, {worker:Worker;taskId:string}>()
@@ -75,7 +76,19 @@ export function archiveRunning(root:string,teamId:string):boolean{return running
 export async function readTaskArchive(root:string,team:TeamState,taskId:string,id:string):Promise<unknown>{
   const record=team.tasks.find(t=>t.id===taskId)?.archiveRecords?.find(r=>r.id===id)
   if(!record)throw new Error('归档记录不存在')
-  const raw=await readFile(join(root,team.id,'artifacts',record.id,'manifest.json'),'utf8')
+  const handle=await open(join(root,team.id,'artifacts',record.id,'manifest.json'),constants.O_RDONLY|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0))
+  let raw:string
+  try {
+    const before=await handle.stat()
+    if(!before.isFile()||before.size>MAX_ARCHIVE_MANIFEST_BYTES)throw new Error('归档清单不是普通文件或超过 20 MiB')
+    // Read at most the initial size plus one byte; growth cannot trigger an unbounded readFile.
+    const buffer=Buffer.alloc(before.size+1)
+    let bytes=0
+    while(bytes<buffer.length){const result=await handle.read(buffer,bytes,buffer.length-bytes,null);if(!result.bytesRead)break;bytes+=result.bytesRead}
+    const after=await handle.stat()
+    if(bytes!==before.size||after.size!==before.size||after.mtimeMs!==before.mtimeMs||after.ctimeMs!==before.ctimeMs)throw new Error('归档清单读取期间发生变化')
+    raw=buffer.subarray(0,bytes).toString('utf8')
+  } finally {await handle.close()}
   if(fingerprintText(raw)!==record.sha256)throw new Error('归档清单校验失败')
   return JSON.parse(raw)
 }

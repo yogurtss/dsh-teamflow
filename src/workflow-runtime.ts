@@ -27,7 +27,7 @@ import { assembleTeamSnapshot } from './snapshot.ts'
 import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren, sessionOwnEvents } from './harness-compat.ts'
-import { readArtifactScope, readOutcomePreview, type ArtifactScopeRead } from './artifacts.ts'
+import { readArtifactScope, type ArtifactScopeRead } from './artifacts.ts'
 import { createWorkspaceAuditor } from './workspace-audit-async.ts'
 import { outcomeFiles } from './outcomes.ts'
 import { applyWorkflowProposal, checkpointInputs, checkpointReady, decideCheckpoint, parseWorkflowOperations, proposeWorkflow, workflowFingerprint, workflowState } from './workflow.ts'
@@ -200,7 +200,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         if (address || !source || !(await sessionLeadsTeamAsync(ctx, source, captain.id))) throw new Error('当前会话不能查看此团队成果')
         const task = source.tasks.find(t => t.id === body['taskId'] && !t.checkpoint)
         if (!task || typeof body['path'] !== 'string' || !outcomeFiles(task).some(f => f.path === body['path'])) throw new Error('文件未在此任务的交付或变更记录中声明')
-        reply(200, { preview: readOutcomePreview(workspace, body['path']) }); return
+        reply(200, { preview: await fileReader.preview(workspace, body['path']) }); return
       }
       if(action==='archive_state') {
         const archived=await readArchivedTeam(root,teamId)
