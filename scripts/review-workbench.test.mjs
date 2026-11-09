@@ -45,7 +45,7 @@ test('workbench renders escaped, localized evidence and no automatic approval', 
   const html=render()
   assert.match(html,/&lt;script&gt;unsafe/);assert.doesNotMatch(html,/<script>/)
   assert.doesNotMatch(html,/\p{Script=Han}/u)
-  assert.match(html,/Human checkpoint/);assert.match(html,/Return for changes/)
+  assert.match(html,/Human checkpoint/);assert.match(html,/Create rework branch/)
   assert.doesNotMatch(html,/Confirm approval<\/button>/)
 })
 test('archive and decided legacy rounds are read-only and never show current evidence as historical', () => {

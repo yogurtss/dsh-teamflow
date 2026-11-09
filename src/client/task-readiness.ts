@@ -27,7 +27,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
   if (team.halted) return result(l("团队已停止"), l("团队停止期间不会派发此任务。"))
   if (control.stopping || execution==='stopping') return result(l(zh[control.label]), l("已禁止再次调度，正在等待执行会话停止；失败时可重试停止。"),[],'stop')
   if (execution==='interrupted' && ['in_progress','claimed'].includes(task.status)) return result(l('执行已中断'),l('任务尚未提交完成，但宿主已无运行中的执行会话。继续会封存旧尝试并重新派发，已完成的其他任务保留。'),[],'continue')
-  if (task.status === 'in_progress' || task.status === 'claimed') return result(l(zh[control.label]), task.status === 'claimed' ? l(zh['task.control.claimedHint']) : l("执行 Agent 正在处理任务。"))
+  if (task.status === 'in_progress' || task.status === 'claimed') return result(l(zh[control.label]), task.status === 'claimed' ? l(zh['task.control.claimedHint']) : task.kind==='archive'?l('系统正在生成成果归档。'):l("执行 Agent 正在处理任务。"))
   const blocked = task.dependencies.filter(id => !team.tasks.some(t => t.id === id && t.status === 'completed'))
   const upstream = blocked.map(id => {
     const item = team.tasks.find(t => t.id === id)
@@ -39,6 +39,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
   if (team.phase === 'staged') return result(l(zh[control.label]), l("团队方案尚未确认启动。"))
   if (blocked.length) return result(l(zh[control.label]), l("等待：{0}", upstream), blocked, 'path')
   if (task.checkpoint) return result(l(zh[control.label]), l("上游已完成，打开材料并作出验收决定。"),[],'review')
+  if (task.kind === 'archive') return result(l('等待归档'),l('上游已完成，系统将自动生成成果清单。'))
   if (task.assignee === 'captain') return result(l("等待队长"), l("依赖已满足，等待队长领取。"))
   const candidates = team.members.filter(m => m.status !== 'removed' && (!task.assignee || m.name === task.assignee))
   if (!candidates.length) return result(l("缺少执行 Agent"), task.assignee ? l("执行成员 {0} 不可用，请调整负责人。", task.assignee) : l("请创建或恢复至少一个执行 Agent。"),[],'member')

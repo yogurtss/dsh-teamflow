@@ -135,6 +135,7 @@ class WebApprovalAdapter extends LlmAdapter {
         const reportNotice = reports.find(message => !handledControlMessages.has(message.id));
         let chunks;
         if (isMember) {
+            const assignedTaskId=[...userText.matchAll(/^Task: ([^\s]+)/gm)].at(-1)?.[1]??'t1';
             if (userText.includes('AgentTeams automatic task assignment') && userText.includes('Implement operator B according to confirmed specifications')) {
               assert.ok(!userText.includes('通用任务：'), 'Executor must not receive the generic layer');
               assert.ok(userText.includes('Independent B correctness checks'), 'Executor must receive concretized acceptance');
@@ -144,11 +145,11 @@ class WebApprovalAdapter extends LlmAdapter {
             await memberGate;
             options.signal?.throwIfAborted();
             if (!userText.includes('AgentTeams automatic task assignment')) chunks = textChunks('WEB_MEMBER_READY');
-            else if (!names.includes('agent_teams_claim_task')) chunks = call('agent_teams_claim_task', { task_id: 't1' });
+            else if (!names.includes('agent_teams_claim_task')) chunks = call('agent_teams_claim_task', { task_id: assignedTaskId });
             else if (calls.filter(block => block.name === 'agent_teams_update_task').length < 2) {
                 const attempt = toolText.match(/attempt_id ([^,\s)]+)/)?.[1];
                 assert.ok(attempt, 'Claim result must expose the real task attempt');
-                chunks = call('agent_teams_update_task', { task_id: 't1', status: names.includes('agent_teams_update_task') ? 'completed' : 'in_progress', output: 'WEB_MEMBER_TASK_DONE', changedPaths: ['outcome-report.md'], attempt_id: attempt });
+                chunks = call('agent_teams_update_task', { task_id: assignedTaskId, status: names.includes('agent_teams_update_task') ? 'completed' : 'in_progress', output: 'WEB_MEMBER_TASK_DONE', changedPaths: ['outcome-report.md'], attempt_id: attempt });
             }
             else if (!names.includes('agent_teams_send_message')) chunks = call('agent_teams_send_message', { to: 'captain', content: 'WEB_MEMBER_REPORT_OK' });
             else chunks = textChunks('WEB_MEMBER_DONE');

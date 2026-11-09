@@ -18,3 +18,7 @@ export declare function draftGalleryAccess(draft: Record<string, string>): Galle
 export declare function propertyOperation(team: TeamState, target: EditorTarget, entry: EditorDraft): WorkflowOperation;
 /** Editing a composer while its old message sends must never lose the new text. */
 export declare const remainingMessage: (current: string, submitted: string) => string;
+export declare const archiveDraft: (draft: Record<string, string>) => {
+    copyFiles: boolean;
+    paths: string[];
+};

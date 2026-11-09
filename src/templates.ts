@@ -1,4 +1,5 @@
 import { parseGalleryAccess, type GalleryAccess } from "./gallery-access.ts"
+import { parseTaskArchive, taskArchiveParameter, type TaskArchiveConfig } from './task-archive-config.ts'
 /** Runtime-independent template format. Only explicitly portable fields are exported. */
 import type { TeamState } from './types.ts'
 import type { WorkflowOperation } from './workflow-types.ts'
@@ -7,7 +8,7 @@ import { deriveLoop, parseLoopConfig, validateLoopGraph } from './workflow-loop-
 import type { LoopConfig } from './workflow-loop-types.ts'
 
 export interface TemplateMember extends GalleryAccess { name: string; summary: string; role: string; executionPrompt: string }
-export interface TemplateTask { id: string; subject: string; assignee: string; dependencies: string[]; checkpoint: boolean; general: TaskBrief }
+export interface TemplateTask { id: string; subject: string; assignee: string; dependencies: string[]; checkpoint: boolean; general: TaskBrief; kind?: 'archive'; archive?: TaskArchiveConfig }
 export interface TemplateDefinition {
   loops?: LoopConfig[]
   name: string; description: string; tags: string[]; inputs: string
@@ -31,6 +32,7 @@ export const templateDefinitionParameter = {
     tasks: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
       id: requiredText, subject: requiredText, assignee: { ...requiredText, description: 'Exact member name, or empty string for a human checkpoint. Never null.' },
       dependencies: { type: 'array', required: true, items: { type: 'string' } }, checkpoint: { type: 'boolean', required: true },
+      kind: {type:'string',enum:['work','archive']}, archive:taskArchiveParameter,
       general: { type: 'object', required: true, additionalProperties: false, properties: {
         requirements: requiredText, deliverables: requiredText, acceptance: requiredText,
       } },
@@ -66,8 +68,10 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   const tasks = array(v['tasks'], 32).map(raw => {
     const t = object(raw), id = text(t['id'],true,80)
     if (!/^[a-zA-Z0-9_-]+$/u.test(id) || typeof t['checkpoint'] !== 'boolean') throw new Error('模板节点 ID 或类型无效')
+    if(t['kind']!==undefined&&!['work','archive'].includes(String(t['kind'])))throw new Error('模板任务类型无效')
+    if(t['kind']==='archive'&&(t['checkpoint']||t['assignee']))throw new Error('归档节点不能设置负责人或门控')
     if(/^t\d+$/.test(id) && (!Number.isSafeInteger(Number(id.slice(1))) || Number(id.slice(1))>=Number.MAX_SAFE_INTEGER))throw new Error('模板节点序号超出范围')
-    return {id, subject:text(t['subject'],true,200), assignee:text(t['assignee']), dependencies:array(t['dependencies'],32).map(d=>text(d,true,80)), checkpoint:t['checkpoint'], general:parseBrief(t['general'])}
+    return {...t['kind']==='archive'?{kind:'archive' as const,archive:parseTaskArchive(t['archive'])}:{},id, subject:text(t['subject'],true,200), assignee:text(t['assignee']), dependencies:array(t['dependencies'],32).map(d=>text(d,true,80)), checkpoint:t['checkpoint'], general:parseBrief(t['general'])}
   })
   if (!tasks.length || new Set(tasks.map(t=>t.id)).size !== tasks.length) throw new Error('模板需要 1–32 个不同的节点')
   const ids = new Set(tasks.map(t=>t.id)), names = new Set(members.map(m=>m.name))
@@ -101,11 +105,11 @@ export function templateSeed(team: TeamState): TemplateDefinition {
   return parseTemplate({name:team.name,description:'',inputs:'',tags:[],
     loops: team.workflow?.loops?.map(({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes }) => ({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes })),
     members:team.members.filter(m=>m.status!=='removed'||team.tasks.some(t=>t.assignee===m.name)).map(m=>({name:m.name,summary:m.summary??'',role:m.role??'',executionPrompt:m.executionPrompt??'', ...parseGalleryAccess({...m})})),
-    tasks:team.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.checkpoint?'':t.assignee??'',dependencies:t.dependencies,checkpoint:!!t.checkpoint,general:emptyBrief()})),
+    tasks:team.tasks.map(t=>({...t.kind==='archive'?{kind:'archive',archive:parseTaskArchive(t.archive)}:{},id:t.id,subject:t.subject,assignee:t.checkpoint?'':t.assignee??'',dependencies:t.dependencies,checkpoint:!!t.checkpoint,general:emptyBrief()})),
     positions:Object.fromEntries(Object.entries(team.workflow?.positions??{}).filter(([key])=>team.tasks.some(t=>key===`task:${t.id}`)))})
 }
 export function templateTopology(value: Pick<TemplateDefinition,'members'|'tasks'>): string {
-  return JSON.stringify({members:value.members.map(m=>m.name).sort(),tasks:value.tasks.map(t=>({id:t.id,assignee:t.assignee,checkpoint:t.checkpoint,dependencies:[...t.dependencies].sort()})).sort((a,b)=>a.id.localeCompare(b.id))})
+  return JSON.stringify({members:value.members.map(m=>m.name).sort(),tasks:value.tasks.map(t=>({id:t.id,kind:t.kind,archive:t.archive,assignee:t.assignee,checkpoint:t.checkpoint,dependencies:[...t.dependencies].sort()})).sort((a,b)=>a.id.localeCompare(b.id))})
 }
 export function extractedTemplate(team:TeamState, value:unknown):TemplateDefinition {
   const result=parseTemplate(value)
@@ -122,7 +126,7 @@ export function instantiateTemplate(template:TemplateVersion, id:string, captain
   const clean=parseTemplate(template)
   const team: TeamState = {id,name:name.trim()||clean.name,description:goal.trim(),captainSessionId,createdAt:now,phase:'staged',planReviewState:'awaiting_review',
     members:clean.members.map(m=>({...m,id:'',status:'idle',joinedAt:now,specificPrompt:''})),
-    tasks:clean.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.assignee||undefined,dependencies:[...t.dependencies],kind:'work',status:'pending',attempt:0,createdAt:now,updatedAt:now,
+    tasks:clean.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.assignee||undefined,dependencies:[...t.dependencies],kind:t.kind??'work',...t.kind==='archive'?{archive:parseTaskArchive(t.archive)}:{},status:'pending',attempt:0,createdAt:now,updatedAt:now,
       description:'',workflowConfigPending:true,workflowPaused:true,...t.checkpoint?{checkpoint:{round:1,history:[]}}:{}})),
     taskSeq:Math.max(0,...clean.tasks.map(t=>/^t\d+$/.test(t.id)?Number(t.id.slice(1)):0)),
     workflow:{explicitQuality:true,templateDefinition:structuredClone(clean),positions:structuredClone(clean.positions),discussions:{},history:[],templateSource:{id:template.id,version:template.version,name:template.name}}}

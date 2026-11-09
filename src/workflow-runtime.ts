@@ -1,4 +1,6 @@
 import { resumeTeamState } from './quality-gates.ts'
+import { readTaskArchive, cancelTaskArchive, archiveRunning } from './task-archive.ts'
+import { branchCheckpoint } from './workflow.ts'
 import { configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
 import { readLoopHistory } from './workflow-loop-history.ts'
 import { cp } from 'node:fs/promises'
@@ -148,7 +150,8 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const copy=instantiateTemplate(template,teamId,captain.id,name,string(body['description'],'本次需求'))
             const selection=await resolveMemberLlmSelection(ctx,captain,{})
             for(const member of copy.members){member.provider=selection.provider;member.model=selection.model;member.reasoningEffort=selection.reasoningEffort}
-            await createTeamDir(root,copy)
+            if(copy.tasks.some(t=>t.archiveRecords?.length))await cp(join(root,'archive',teamId,'artifacts'),join(root,teamId,'artifacts'),{recursive:true,errorOnExist:true,force:false})
+          await createTeamDir(root,copy)
             nameTemplateCaptain(ctx, captain, name, true)
             // A blank captain is omitted from the host Session list until its
             // first real turn. Record the user's template action through the
@@ -176,6 +179,11 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         if(!source||!(await sessionLeadsTeamAsync(ctx,source,captain.id)))throw new Error('当前会话不能读取此流程')
         reply(200,{definition:templateSeed(source),base:workflowFingerprint(source)});return
       }
+      if (action === 'task_archive') {
+        const archived=body['archived']===true,source=archived?await readArchivedTeam(root,teamId):await readTeam(root,teamId)
+        if(address||!source||!(await sessionLeadsTeamAsync(ctx,source,captain.id)))throw new Error('当前会话不能查看成果归档')
+        reply(200,{manifest:await readTaskArchive(archived?join(root,'archive'):root,source,string(body['taskId'],'taskId'),string(body['recordId'],'recordId'))});return
+      }
       if (action === 'outcome_preview') {
         const source = body['archived'] === true ? await readArchivedTeam(root, teamId) : await readTeam(root, teamId)
         if (address || !source || !(await sessionLeadsTeamAsync(ctx, source, captain.id))) throw new Error('当前会话不能查看此团队成果')
@@ -197,6 +205,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           if(await readTeam(root,teamId) || await findTeamByCaptain(root,captain.id,await leadIdentityOfAsync(ctx,captain.session))) throw new Error('当前对话已有可编辑团队，请先查看当前团队')
           const copy=prepareArchivedWorkflow(archived)
           if (copy.workflow?.loops?.some(loop => loop.historyHead)) await cp(join(root, 'archive', teamId, 'loop-history'), join(root, teamId, 'loop-history'), { recursive: true, errorOnExist: true, force: false })
+          if(copy.tasks.some(t=>t.archiveRecords?.length))await cp(join(root,'archive',teamId,'artifacts'),join(root,teamId,'artifacts'),{recursive:true,errorOnExist:true,force:false})
           await createTeamDir(root,copy)
           return copy
         }))
@@ -237,6 +246,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const team = await load(), task = team.tasks.find(t => t.id === taskId)
             if (!bulk) checkToggle(team, task)
             if(onlyInterrupted&&task){
+              if(task.kind==='archive'&&archiveRunning(root,teamId))return
               const owner=task.assignee==='captain'?captain:ctx.agents.get(team.members.find(m=>m.name===task.assignee)?.id as SessionId)
               if(owner?.status==='running'||task.workflowPaused||task.reassigning||taskNeedsConfiguration(task)||task.workflowRerunRequired)return
             }
@@ -274,6 +284,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             }
             await writeTeam(root, team)
           })
+          if((await load()).tasks.find(t=>t.id===taskId)?.kind==='archive')await cancelTaskArchive(root,teamId,String(taskId))
           if (child) {
             await drainMemberChildren(ctx.subagents, await parentOf(ctx, captain, await load()), [child as SessionId])
             await withTeamLock(lock, async () => {
@@ -509,11 +520,15 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             if(discussion.native)delete discussion.native.reviewEvidence
           } else if (action === 'review') {
             const id = string(body['taskId'], 'taskId'), decision = body['decision']
-            if (decision !== 'approve' && decision !== 'reject') throw new Error('无效验收决定')
+            if (decision !== 'approve' && decision !== 'reject' && decision !== 'branch') throw new Error('无效验收决定')
             const discussion = discussionOf(team, `check:${id}`)
             if (typeof body['evidence'] !== 'string' || body['evidence'] !== discussion.evidence) throw new Error('请先打开并阅读当前验收材料')
             const material = workflowMaterials(team, id, workspace)
-            decideCheckpoint(team, id, decision, body['evidence'], material.evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '', material.text)
+            const note=typeof body['note'] === 'string' ? body['note'].slice(0,16000) : ''
+            if(decision==='branch'){
+              const ids=body['taskIds'];if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))throw new Error('请选择返工起点')
+              team=branchCheckpoint(team,id,ids,body['evidence'],material.evidence,note,material.text)
+            }else decideCheckpoint(team,id,decision,body['evidence'],material.evidence,note,material.text)
           } else if (action === 'start_path') {
             if(body['base'] !== workflowFingerprint(team))throw new Error('团队已变化，请刷新节点后重新确认')
             startWorkflowPath(team,string(body['taskId'],'taskId'))
@@ -547,7 +562,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       reply(200, { team, base: workflowFingerprint(team), execution:Object.fromEntries(team.tasks.filter(t=>!t.checkpoint).map(task=>{
         const member=team.members.find(m=>m.name===task.assignee&&m.status!=='removed')
         const live=task.assignee==='captain'?captain:member?.id?ctx.agents.get(member.id as SessionId):undefined
-        const state=task.reassigning||(member?.stopping&&['claimed','in_progress'].includes(task.status))?'stopping':['claimed','in_progress'].includes(task.status)?live?.status==='running'?'active':'interrupted':'unknown'
+        const state=task.reassigning||(member?.stopping&&['claimed','in_progress'].includes(task.status))?'stopping':['claimed','in_progress'].includes(task.status)?(task.kind==='archive'?archiveRunning(root,teamId):live?.status==='running')?'active':'interrupted':'unknown'
         return [task.id,state]
       })), ...(['loop_configure','loop_start','loop_pause','loop_cancel','loop_decide','create','template_apply','state','resume_team','continue_task','open_discussion','review','reopen_review','edit','apply','start_path','resume_rerun_path','resume_task','stop_task','start','set_flow_enabled'].includes(action) || toggling ? {activity:await assembleTeamSnapshot(ctx,root,'',team)}:{}), ready: team.tasks.filter(t => checkpointReady(team, t) && !t.checkpoint?.decision).map(t => t.id),
         openedSessionId, currentDiscussion, busy: Object.values(team.workflow?.discussions ?? {}).filter(d => d.native?.sessionId && ctx.agents.get(d.native.sessionId as SessionId)?.status === 'running').map(d => d.key) })

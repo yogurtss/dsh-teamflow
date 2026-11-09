@@ -1,3 +1,5 @@
+import { cancelTaskArchive } from './task-archive.ts'
+import { parseTaskArchive, taskArchiveParameter } from './task-archive-config.ts'
 import { drainMemberChildren } from './harness-compat.ts'
 import { configureLoop, decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopsOf, pauseLoop, startLoop } from './workflow-loops.ts'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
@@ -303,6 +305,7 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
   if (task === undefined) {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
+  if (task.kind === 'archive') throw new Error('Archive nodes are system-owned. Configure them through workflow operations; the scheduler creates their manifest automatically.')
   if (task.checkpoint && loopForTask(team, task.id)?.mode !== 'ai') throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
   if (taskNeedsConfiguration(task)) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
   if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
@@ -929,6 +932,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
       })
       // A staged plan owns no child sessions. Archiving releases the captain
       // immediately while retaining the rejected graph for later inspection.
+      await cancelTaskArchive(stateRoot,fresh.id)
       await archiveTeamDir(stateRoot, fresh.id)
       return { teamId: fresh.id, teamName: fresh.name }
     })
@@ -973,6 +977,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             id: { type: 'string', required: true, description: 'Local reference used by dependencies in this plan; the result maps it to a durable task id.' },
             subject: { type: 'string', required: true }, description: { type: 'string' }, assignee: { type: 'string' },
             dependencies: { type: 'array', items: { type: 'string' } },
+            kind: {type:'string',enum:['work','archive'],description:'archive is an automatic system-owned node after upstream review, outside loop bodies; no assignee.'}, archive:taskArchiveParameter,
             checkpoint: { type: 'boolean', description: 'True for a decision gate. Human gates have no assignee; an AI loop gate is assigned to its configured reviewer.' },
           } } },
           loops: { type: 'array', description: 'Optional disjoint gated loops. IDs reference tasks in this plan. Each body must exit only through its gate. Defaults: maxRounds=3, timeoutMinutes=30.', items: { type: 'object', additionalProperties: false, properties: {
@@ -2636,7 +2641,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         })
         // Archive, not delete: tasks (with their dependency graph) and the
         // mailboxes stay on disk for later review and dependency rebuilds.
-        await archiveTeamDir(stateRoot, fresh.id)
+        await cancelTaskArchive(stateRoot,fresh.id)
+      await archiveTeamDir(stateRoot, fresh.id)
       })
       return { deleted: true, team_name: team.name }
     },
@@ -2670,7 +2676,7 @@ async function initializeProfileTeam(input: {
   teamId: string
   profileName: string
   inlinePlan?: Omit<import('./profiles.ts').TeamProfileConfig, 'tasks'> & {
-    tasks?: (import('./profiles.ts').TeamProfileTaskConfig & { checkpoint?: boolean })[]
+    tasks?: (import('./profiles.ts').TeamProfileTaskConfig & { checkpoint?: boolean; kind?: string; archive?: unknown })[]
     loops?: { gateId: string; entryId: string; mode: string; reviewer?: string; maxRounds?: number; timeoutMinutes?: number }[]
   }
   description?: string
@@ -2693,10 +2699,10 @@ async function initializeProfileTeam(input: {
   }
   // Keep owner profiles strict. Workflow metadata is validated before commit.
   const profilePlan = inlinePlan === undefined ? undefined : (({ loops: _loops, tasks, ...rest }) => ({
-    ...rest, tasks: tasks?.map(({ checkpoint, ...task }) => ({ ...task, assignee: checkpoint ? undefined : task.assignee })),
+    ...rest, tasks: tasks?.map(({ checkpoint, kind, archive, ...task }) => {if(kind&&kind!=='work'&&kind!=='archive')throw new Error('Invalid workflow task kind');if(kind==='archive'&&(checkpoint||task.assignee?.trim()))throw new Error('Archive nodes cannot have checkpoints or assignees');return { ...task, assignee: checkpoint||kind==='archive' ? undefined : task.assignee }}),
   }))(inlinePlan)
   const profile = resolveTeamProfile(profilePlan === undefined ? input.config.profiles : { [input.profileName]: profilePlan }, input.profileName, input.config.maxMembers,
-    new Set(input.inlinePlan?.tasks?.filter(task => task.checkpoint).map(task => task.id.trim())))
+    new Set(input.inlinePlan?.tasks?.filter(task => task.checkpoint||task.kind==='archive').map(task => task.id.trim())))
   const selections: Awaited<ReturnType<typeof resolveMemberLlmSelection>>[] = []
   for (const template of profile.members) {
     selections.push(await resolveMemberLlmSelection(input.ctx, input.captain, {
@@ -2771,6 +2777,7 @@ async function initializeProfileTeam(input: {
     task.checkpoint = { round: 1, history: [] }
     delete task.assignee
   }
+  for(const template of input.inlinePlan?.tasks??[])if(template.kind==='archive'){const task=draft.tasks.find(t=>t.id===seedToActual.get(template.id.trim()))!;task.kind='archive';task.archive=parseTaskArchive(template.archive);delete task.assignee}
   for (const config of input.inlinePlan?.loops ?? []) {
     configureLoop(draft, {
       ...config, mode: config.mode as 'human' | 'ai',

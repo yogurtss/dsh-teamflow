@@ -8,7 +8,7 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
+import { archiveTeamDir, cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
 import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
 import { registerAgentTeamsTools } from '../lib/tools.js'
 import { installWorkflowConversations, workflowDiscussion } from '../lib/workflow-native.js'
@@ -46,6 +46,16 @@ async function lifecycleFixture(t, source, options = {}) {
   }
   return {workspace:root,read,call,dispatched,save:state=>writeTeam(stateRoot,state),kick:()=>scheduler.kickTeam(root,source.id,captain)}
 }
+
+test('system archive executes without a member claim and survives team archival and restore',async t=>{
+ const source=team();source.workflow={positions:{},discussions:{},history:[]};source.tasks[0].status='completed';source.tasks[0].output='Saved result'
+ const state=applyWorkflowOperations(source,[{action:'add_task',id:'archive',kind:'archive',subject:'Archive',dependencies:['t1'],archive:{copyFiles:false,paths:[]}}]);const f=await lifecycleFixture(t,state);await f.kick()
+ let current;for(let i=0;i<200;i++){current=await f.read();if(current.tasks.at(-1).status==='completed')break;await new Promise(r=>setTimeout(r,5))}
+ const archived=current.tasks.at(-1);assert.equal(archived.status,'completed');assert.equal(f.dispatched.length,0);const recordId=archived.archiveRecords[0].id
+ const before=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(before.code,200);assert.equal(before.manifest.tasks[0].output,'Saved result')
+ await archiveTeamDir(join(f.workspace,'.agent-teams'),'demo');const historical=await f.call('task_archive',{taskId:'archive',recordId,archived:true});assert.equal(historical.code,200);assert.deepEqual(historical.manifest,before.manifest)
+ const restore=await f.call('restore_archive');assert.equal(restore.code,200,JSON.stringify(restore));const restored=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(restored.code,200);assert.deepEqual(restored.manifest,before.manifest)
+})
 
 test('conditional state omits unchanged large payloads but updates for live execution and edits',async t=>{
  const liveAgents=new Map(),source=team();source.members[0].id='worker-session';source.tasks[0].status='claimed'

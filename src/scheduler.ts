@@ -1,3 +1,4 @@
+import { archiveRunning, runTaskArchives } from './task-archive.ts'
 /**
  * Event-driven shared task scheduler.
  *
@@ -207,7 +208,7 @@ function ownedOpenTask(tasks: readonly TeamTask[], memberName: string): TeamTask
 }
 
 function nextReadyTask(team: TeamState, memberName: string): TeamTask | undefined {
-  const ready = team.tasks.filter(task => task.status === 'pending'
+  const ready = team.tasks.filter(task => task.status === 'pending' && task.kind !== 'archive'
     && loopCanExecute(team, task) && task.workflowPaused !== true && !taskNeedsConfiguration(task)
     && task.reassigning !== true && task.workflowRerunRequired !== true
     && loopDependenciesSatisfied(team, task))
@@ -373,6 +374,9 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
       if (loopsOf(team).some(l => ['running', 'reviewing'].includes(l.status))) watchedLoops.set(`${stateRoot}:${teamId}`, { workspace, teamId })
       const captain = liveCaptain(ctx, team.captainSessionId, suppliedCaptain)
       if (captain === undefined) return
+      if (!archiveRunning(stateRoot,teamId) && team.tasks.some(t=>t.kind==='archive'&&!t.reassigning&&!t.workflowPaused&&!t.workflowRerunRequired&&!taskNeedsConfiguration(t)&&['pending','in_progress'].includes(t.status)&&t.dependencies.every(id=>team.tasks.some(up=>up.id===id&&up.status==='completed')))) {
+        void runTaskArchives(stateRoot,workspace,teamId).then(()=>runtime.kickTeam(workspace,teamId,captain)).catch(error=>ctx.logger.warn(`agent-teams: archive failed: ${String(error)}`))
+      }
       for (const member of team.members) {
         if (member.status === 'removed') continue
         await runtime.kickMember(workspace, teamId, member.name, captain)

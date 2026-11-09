@@ -55,6 +55,7 @@ export function validateLoopGraph(team: TeamState): void {
     }
     for (const id of body) {
       const task = taskOf(team, id)
+      if (task.kind === 'archive') throw new Error('成果归档节点应放在循环门控的 PASS 路径之后')
       if (!task.assignee || !team.members.some(m => m.name === task.assignee && (m.status !== 'removed' || ['paused','passed','cancelled'].includes(loop.status)))) throw new Error('请先为循环内任务指定有效负责人')
       if (task.checkpoint || !reaches(loop.entryId, id) || !reaches(id, gate.id)) throw new Error('循环区域必须从入口可达并汇合到唯一门控')
       if (team.tasks.some(t => !body.has(t.id) && t.id !== gate.id && t.dependencies.includes(id))) throw new Error('循环内的输出必须经过门控才能连接环外')

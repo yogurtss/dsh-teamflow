@@ -35,6 +35,8 @@ export type WorkflowOperation = ({
     dependencies: string[];
     checkpoint?: boolean;
     configurationPending?: boolean;
+    kind?: 'work' | 'archive';
+    archive?: import('./task-archive-config.ts').TaskArchiveConfig;
 } | {
     action: 'update_task';
     id: string;
@@ -44,6 +46,7 @@ export type WorkflowOperation = ({
     assignee?: string;
     dependencies?: string[];
     confirmConfiguration?: boolean;
+    archive?: import('./task-archive-config.ts').TaskArchiveConfig;
 } | {
     action: 'remove_task';
     id: string;
@@ -55,6 +58,7 @@ export type WorkflowOperation = ({
     description?: string;
     adaptationIssue?: string;
     assignee?: string;
+    archive?: import('./task-archive-config.ts').TaskArchiveConfig;
 } | {
     action: 'rework';
     id: string;

@@ -5,10 +5,10 @@ export type WorkflowOperation =
   | (GalleryAccess & { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | (GalleryAccess & { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | { action: 'remove_member'; name: string }
-  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean }
-  | { action: 'update_task'; id: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean; kind?: 'work'|'archive'; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
+  | { action: 'update_task'; id: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'remove_task'; id: string }
-  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string }
+  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
 
 export interface Checkpoint {
