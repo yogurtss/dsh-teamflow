@@ -30,3 +30,15 @@ test('retry replaces provisional text and late old frames cannot damage the new 
  streams.accept(agent,{type:'end',attemptId:'new',revision:5,outcome:{kind:'abandoned'}})
  assert.equal(streams.read(agent),undefined)
 })
+
+
+test('duplicate and delayed start frames cannot erase an active reply',()=>{
+ const stream=new DiscussionStreams(),agent={id:'discussion'}
+ stream.accept(agent,{type:'start',attemptId:'old',revision:1})
+ stream.accept(agent,{type:'start',attemptId:'new',revision:3})
+ stream.accept(agent,{type:'chunk',attemptId:'new',revision:4,index:0,chunk:{type:'text-delta',index:0,text:'Current reply'}})
+ stream.accept(agent,{type:'start',attemptId:'new',revision:3})
+ assert.equal(stream.read(agent)?.text,'Current reply')
+ stream.accept(agent,{type:'start',attemptId:'old',revision:1})
+ assert.equal(stream.read(agent)?.text,'Current reply')
+})

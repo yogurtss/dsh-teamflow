@@ -203,7 +203,6 @@ export function resolveTeamProfile(
   profiles: Record<string, TeamProfileConfig>,
   profileName: string,
   maxMembers: number,
-  checkpointIds: ReadonlySet<string> = new Set(),
 ): NormalizedTeamProfile {
   const listed = listConfiguredProfiles(profiles)
   const name = profileName.trim()
@@ -216,7 +215,7 @@ export function resolveTeamProfile(
     const shown = available.length === 0 ? '(none)' : available.join(', ')
     throw new Error(`unknown AgentTeams profile "${name}" — configured profiles: ${shown}`)
   }
-  return normalizeListedProfile(match, maxMembers, checkpointIds)
+  return normalizeListedProfile(match, maxMembers)
 }
 
 function formatProfileListingLine(entry: ListedTeamProfile): string {
@@ -297,7 +296,6 @@ function stripOneQuotePair(value: string): string {
 function normalizeListedProfile(
   listed: ListedTeamProfile,
   maxMembers: number,
-  checkpointIds: ReadonlySet<string>,
 ): NormalizedTeamProfile {
   const path = `profiles.${listed.name}`
   const raw = asRecord(listed.config, path)
@@ -372,7 +370,6 @@ function normalizeListedProfile(
       memberByName,
       memberByKey,
       requireAssignee,
-      checkpointIds,
     )
     const collidingId = taskById.get(task.id)
     if (collidingId !== undefined) {
@@ -495,7 +492,6 @@ function normalizeTask(
   memberByName: Map<string, NormalizedProfileMember>,
   memberByKey: Map<string, NormalizedProfileMember>,
   requireAssignee: boolean,
-  checkpointIds: ReadonlySet<string>,
 ): NormalizedProfileTask {
   const raw = asRecord(value, path)
   assertAllowedKeys(raw, TASK_KEYS, path)
@@ -515,7 +511,7 @@ function normalizeTask(
     raw['assignee'],
     `${path}.assignee`,
     id,
-    requireAssignee && !checkpointIds.has(id),
+    requireAssignee,
     memberByName,
     memberByKey,
   )

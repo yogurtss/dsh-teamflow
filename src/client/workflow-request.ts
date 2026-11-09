@@ -17,7 +17,7 @@ async function transport<T>(payload: Record<string,unknown>, fetcher: typeof fet
 
 // Share only explicit reads, never settled authority or mutations. A mutation
 // fences earlier reads, including when its server-side outcome is unknown.
-const reads = new Set(['state','archive_state','conversation_state','template_list','template_seed','launcher_context','outcome_preview','task_archive'])
+const reads = new Set(['state','archive_state','conversation_state','template_list','template_seed','launcher_context','outcome_preview'])
 type Pending = { controller: AbortController; promise: Promise<unknown>; consumers: number }
 const requests = new WeakMap<typeof fetch, Map<string, Pending>>()
 let generation = 0

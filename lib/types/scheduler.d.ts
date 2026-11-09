@@ -37,7 +37,6 @@ export interface DependencyOutput {
     readonly output?: string;
 }
 export interface DispatchTicket {
-    readonly loopReviewPrompt?: string;
     readonly taskId: string;
     readonly memberName: string;
     readonly memberId: string;

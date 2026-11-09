@@ -59,10 +59,8 @@ export function propertyOperation(team: TeamState, target: EditorTarget, entry: 
   }
   const task = team.tasks.find(item => item.id === target.id)
   if (!task || task.status !== 'pending') throw new Error('已开始或已结束任务的草稿需单独处理；保存全部不会自动重跑。')
-  return {action:'update_task',id:task.id,subject:value['subject'],description:value['description'],adaptationIssue:value['adaptationIssue']??'',assignee:target.type === 'check' || task.kind==='archive' ? undefined : value['assignee'],...task.kind==='archive'?{archive:archiveDraft(value)}:{}}
+  return {action:'update_task',id:task.id,subject:value['subject'],description:value['description'],adaptationIssue:value['adaptationIssue']??'',assignee:target.type === 'check' ? undefined : value['assignee']}
 }
 
 /** Editing a composer while its old message sends must never lose the new text. */
 export const remainingMessage = (current: string, submitted: string): string => current === submitted ? '' : current
-
-export const archiveDraft=(draft:Record<string,string>)=>({copyFiles:draft['copyFiles']==='true',paths:(draft['archivePaths']??'').split('\n').map(p=>p.trim()).filter(Boolean)})

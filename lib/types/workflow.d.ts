@@ -14,5 +14,3 @@ export declare function proposeWorkflow(team: TeamState, title: string, raw: unk
 export declare function applyWorkflowProposal(team: TeamState, proposal: WorkflowProposal, maxMembers?: number): TeamState;
 /** Only the authenticated human route calls this; no model tool can decide a gate. */
 export declare function decideCheckpoint(team: TeamState, id: string, decision: 'approve' | 'reject', evidence: string, current: string, note: string, materials?: string): void;
-/** One atomic human action: preserve reviewed evidence and create the complete rework branch. */
-export declare function branchCheckpoint(team: TeamState, id: string, taskIds: string[], evidence: string, current: string, note: string, materials: string): TeamState;

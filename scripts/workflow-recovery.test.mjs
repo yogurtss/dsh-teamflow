@@ -34,3 +34,16 @@ test('unmount cancellation aborts an in-flight read without waiting for its dead
  const pending=workflowRequest({action:'conversation_state'},async(url,init)=>{signal=init.signal;return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}))},10000,controller.signal);
  controller.abort();await assert.rejects(pending,{name:'AbortError'});assert.equal(signal.aborted,true);
 });
+
+
+test('archive restore keeps deliberately removed members removed and clears archival metadata',async()=>{
+ const {prepareArchivedWorkflow}=await import('../lib/workflow-lifecycle.js')
+ const source={workflow:{positions:{},discussions:{},history:[]},tasks:[],members:[
+  {name:'active',id:'old-active',status:'removed',restoreOnUnarchive:true},
+  {name:'removed',id:'old-removed',status:'removed',restoreOnUnarchive:false}
+ ]}
+ const restored=prepareArchivedWorkflow(source)
+ assert.equal(restored.members[0].status,'idle');assert.equal(restored.members[1].status,'removed')
+ assert.equal(restored.members[0].restoreOnUnarchive,undefined);assert.equal(restored.members[1].restoreOnUnarchive,undefined)
+ assert.equal(source.members[0].restoreOnUnarchive,true)
+})

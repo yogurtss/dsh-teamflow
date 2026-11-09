@@ -58,7 +58,7 @@ export function startWorkflowPath(team:TeamState,targetId:string,now=Date.now())
     if(['failed','cancelled'].includes(task.status)||task.checkpoint?.decision==='reject')throw new Error(`请先处理路径中的失败或退回节点：${task.subject}`)
     if(task.workflowRerunRequired && task.status!=='pending')throw new Error(`路径节点状态已变化，请刷新：${task.subject}`)
     if(task.workflowPaused && ['claimed','in_progress'].includes(task.status))throw new Error(`路径节点正在停止，请稍后重试：${task.subject}`)
-    if(task.kind!=='archive' && !task.checkpoint && task.assignee!=='captain' && !team.members.some(m=>m.status!=='removed'&&(!task.assignee||m.name===task.assignee)))throw new Error(`路径节点缺少执行成员：${task.subject}`)
+    if(!task.checkpoint && task.assignee!=='captain' && !team.members.some(m=>m.status!=='removed'&&(!task.assignee||m.name===task.assignee)))throw new Error(`路径节点缺少执行成员：${task.subject}`)
   }
   const beyond=rerunImpact(team.tasks,targetId)
   if(beyond.active.length)throw new Error('目标之后仍有任务运行，请先暂停这些任务再限定执行范围')

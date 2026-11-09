@@ -9,7 +9,6 @@ const labels: Record<string, string> = { name: '成员名称', id: '任务 ID', 
 export type ReviewField = { key: string; label: string; before: string; after: string; array: boolean; editable: boolean }
 const show = (value: unknown): string => Array.isArray(value) ? value.join('\n') : typeof value === 'string' || typeof value === 'boolean' ? String(value) : ''
 export function reviewFields(team: TeamState, operation: WorkflowOperation, l: WorkflowText = sourceText): { title: string; fields: ReviewField[] } {
-  if (operation.action === 'configure_loop') return { title: l.language === 'en' ? 'Configure gated loop' : '配置门控循环', fields: ['entryId','gateId','mode','reviewer','maxRounds','timeoutMinutes'].map(key => ({ key, label: key, before: '', after: String((operation as unknown as Record<string, unknown>)[key] ?? ''), array: false, editable: false })) }
   const op = operation as unknown as Record<string, unknown>
   const isMember = operation.action.endsWith('member')
   const removed = operation.action.startsWith('remove_')

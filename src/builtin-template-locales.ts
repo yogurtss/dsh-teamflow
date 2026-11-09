@@ -1,5 +1,4 @@
 import type { TemplateVersion } from './templates.ts'
-import { builtinLoopTemplates, BUILTIN_LOOP_IDS } from './builtin-loop-templates.ts'
 /** Only versioned built-in content is translated; personal templates and saved tasks are content. */
 const english: Record<string,string> = {
   "功能开发": "Feature development",
@@ -108,10 +107,6 @@ Object.assign(english, {
 const chinese = Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]))
 export function builtinText(text:string, language:'zh'|'en'):string { return (language==='en'?english:chinese)[text] ?? text }
 export function localizeBuiltinTemplate(template:TemplateVersion, language:'zh'|'en'):TemplateVersion {
-  if (template.version === 1 && BUILTIN_LOOP_IDS.some(id => id === template.id)) {
-    const loopTemplate = builtinLoopTemplates(language).find(item => item.id === template.id)
-    if (loopTemplate) return loopTemplate
-  }
   if(!['builtin-feature','builtin-bugfix','builtin-operator'].includes(template.id)||!(template.version===1||template.id==='builtin-feature'&&template.version===2))return template
   const visit=(value:unknown):unknown=>typeof value==='string'?builtinText(value,language):Array.isArray(value)?value.map(visit):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[key,visit(item)])):value
   return visit(template) as TemplateVersion

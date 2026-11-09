@@ -18,7 +18,6 @@ import { memberPersona } from '../lib/members.js'
 import { reviewedOperations, reviewFields, setReviewField } from '../lib/client/proposal-review.js'
 import { initialEditorDraft } from '../lib/client/workbench-selection.js'
 import { propertyOperation } from '../lib/client/workbench-drafts.js'
-import { startLoop, reconcileLoops, decideLoop, loopInputFingerprint } from '../lib/workflow-loops.js'
 
 const general={requirements:'按已确认规格实现目标算子',deliverables:'实现与说明',acceptance:'通过独立验证'}
 const definition=()=>({name:'算子流程',description:'适合算子开发',tags:['开发'],inputs:'参考实现与精度目标',members:[{name:'worker',summary:'实现',role:'开发',executionPrompt:'遵循项目约定'}],tasks:[{id:'t1',subject:'实现',assignee:'worker',dependencies:[],checkpoint:false,general:{...general}},{id:'gate',subject:'人工验收',assignee:'',dependencies:['t1'],checkpoint:true,general:{...general,requirements:'检查提交证据'}}],positions:{'task:t1':{x:20,y:20}}})
@@ -74,7 +73,7 @@ test('authenticated workflow handler applies templates once and leaves the sourc
   const ctx={get:key=>key==='sessionTitle'?{get:()=>title,rename:(_session,name)=>{renames.push(name);title={title:name,source:{kind:'user'}}}}:undefined,agents:{get:id=>id==='captain'?captain:undefined},llm:{resolveCallConfig:async v=>v},effect:fn=>fn()};let route
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',templateDirectory:library,maxMembers:8},{},{register:r=>{route=r;return()=>{}}})
   async function call(action,fields={}){const req=Readable.from([JSON.stringify({sessionId:'captain',action,...fields})]);req.method='POST';let status,value;await route.handler(req,{writeHead:s=>{status=s},end:v=>{value=JSON.parse(v)}});return {status,...value}}
-  assert.equal((await call('template_list')).templates.length,6)
+  assert.equal((await call('template_list')).templates.length,4)
   assert.equal(messages.length,0,'Browsing must leave the captain blank')
   assert.equal((await call('template_apply',{templateId:template.id,version:999,name:'Invalid',description:'B'})).status,409)
   assert.equal(messages.length,0,'Rejected template use must not start a conversation')
@@ -99,7 +98,7 @@ test('authenticated workflow handler applies templates once and leaves the sourc
 
 test('built-in starter workflows are complete, immutable and copy into personal templates',async t=>{
  const root=await mkdtemp(join(tmpdir(),'builtin-copy-'));t.after(()=>rm(root,{recursive:true,force:true}))
- const catalog=builtinTemplates();assert.equal(catalog.length,5)
+ const catalog=builtinTemplates();assert.equal(catalog.length,3)
  for(const item of catalog){
   assert.deepEqual(parseTemplate(item).tasks,item.tasks)
   assert.ok(item.tasks.every(task=>Object.values(task.general).every(text=>text.trim())))
@@ -115,7 +114,7 @@ test('built-in starter workflows are complete, immutable and copy into personal 
  }
  catalog[0].tasks[0].general.requirements='mutated'
  assert.notEqual(getBuiltinTemplate(catalog[0].id).tasks[0].general.requirements,'mutated')
- assert.equal((await listTemplates(root)).templates.length,5)
+ assert.equal((await listTemplates(root)).templates.length,3)
 })
 
 test('feature template v2 preserves classic v1 and leaves other built-ins unchanged',()=>{
@@ -124,32 +123,6 @@ test('feature template v2 preserves classic v1 and leaves other built-ins unchan
  assert.equal(getBuiltinTemplate('builtin-feature').version,2)
  assert.equal(getBuiltinTemplate('builtin-feature').tasks.length,9)
  for(const id of ['builtin-bugfix','builtin-operator'])assert.deepEqual(getBuiltinTemplate(id),previous.find(item=>item.id===id))
-})
-
-test('iterative built-ins preserve one-off setup and delivery while feedback reruns the original loop body', () => {
- for (const [id, entry, body, rounds] of [
-  ['builtin-operator-loop', 'optimize', ['optimize','correctness','performance'], 5],
-  ['builtin-bugfix-loop', 'fix', ['fix','regression'], 3],
- ]) {
-  const template = getBuiltinTemplate(id, 1)
-  let current = instantiateTemplate(template, id, 'captain', template.name, 'Concrete task')
-  current = applyWorkflowOperations(current, adaptation(current)); current.phase = 'running'
-  const loop = current.workflow.loops[0], ids = current.tasks.map(task => task.id)
-  assert.equal(loop.entryId, entry); assert.deepEqual(loop.bodyIds, body); assert.equal(loop.maxRounds, rounds)
-  assert.equal(loop.mode, 'ai'); assert.equal(current.tasks.find(t => t.id === loop.gateId).assignee, 'reviewer')
-  for (const task of current.tasks.filter(t => !body.includes(t.id) && t.id !== loop.gateId && t.id !== 'delivery')) {
-   task.status = 'completed'; task.output = 'Frozen setup evidence'
-   if (task.checkpoint) task.checkpoint.decision = 'approve'
-  }
-  startLoop(current, loop.id)
-  for (const task of current.tasks.filter(t => body.includes(t.id))) { task.status = 'completed'; task.output = 'Round 1 evidence'; task.attempt = 1 }
-  reconcileLoops(current); assert.equal(loop.status, 'reviewing')
-  decideLoop(current, loop.id, { runId: loop.runId, round: 1, decisionId: 'revision-1', fingerprint: loopInputFingerprint(current, loop), decision: 'revise', note: 'Fix the measured defect and rerun all checks', taskIds: [entry] }, 'ai:reviewer')
-  assert.equal(loop.round, 2); assert.deepEqual(current.tasks.map(t => t.id), ids)
-  assert.ok(current.tasks.filter(t => body.includes(t.id)).every(t => t.status === 'pending' && t.workflowRerunContext.instructions.includes('measured defect')))
-  assert.equal(current.tasks.find(t => t.id === 'scope-review').status, 'completed')
-  assert.equal(current.tasks.find(t => t.id === 'delivery').status, 'pending')
- }
 })
 
 

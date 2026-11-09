@@ -1,8 +1,6 @@
 /** Validate saved workflow data before native recovery or browser rendering. */
 import { isTaskLayers } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
-import { isWorkflowLoops } from './workflow-loops.ts'
-import { parseLoopConfig } from './workflow-loop-config.ts'
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const string = (value: unknown): value is string => typeof value === 'string'
 const optionalString = (value: unknown) => value === undefined || string(value)
@@ -18,7 +16,6 @@ function operation(value: unknown): boolean {
   if (value['dependencies'] !== undefined && !strings(value['dependencies'])) return false
   if (['configurationPending', 'confirmConfiguration'].some(key => value[key] !== undefined && typeof value[key] !== 'boolean')) return false
   switch (value['action']) {
-    case 'configure_loop': try { parseLoopConfig(value); return true } catch { return false }
     case 'add_member': return string(value['name']) && string(value['summary'])
     case 'update_member': case 'remove_member': return string(value['name'])
     case 'add_task': return string(value['subject']) && strings(value['dependencies']) && (value['checkpoint'] === undefined || typeof value['checkpoint'] === 'boolean')
@@ -50,9 +47,6 @@ function discussion(value: unknown): boolean {
     && Array.isArray(value['calls']) && value['calls'].every(item => record(item) && ['system', 'input', 'provider', 'model'].every(key => string(item[key])) && optionalString(item['output']) && optionalString(item['error']) && number(item['at']))
 }
 export function isWorkflowState(value: unknown): boolean {
-  if(record(value) && value['explicitQuality'] !== undefined && typeof value['explicitQuality'] !== 'boolean') return false
-  if(record(value) && value['loops'] !== undefined && !isWorkflowLoops(value['loops'])) return false
-  if(record(value) && value['loopRevision'] !== undefined && (!number(value['loopRevision']) || !Number.isSafeInteger(value['loopRevision']) || value['loopRevision'] < 0)) return false
   if(record(value) && value['templateDefinition']!==undefined){try{parseTemplate(value['templateDefinition'])}catch{return false}}
   if(record(value) && value['templateSource']!==undefined){const s=value['templateSource'];if(!record(s)||!string(s['id'])||!string(s['name'])||!positive(s['version']))return false}
   return record(value) && [undefined, 'manual', 'assisted'].includes(value['mode'] as string | undefined)
@@ -64,7 +58,7 @@ export function isCheckpoint(value: unknown): boolean {
   return record(value) && positive(value['round']) && [undefined, 'approve', 'reject'].includes(value['decision'] as string | undefined)
     && optionalString(value['note']) && optionalString(value['evidence']) && (value['decidedAt'] === undefined || number(value['decidedAt']))
     && Array.isArray(value['history']) && value['history'].every(item => record(item) && positive(item['round'])
-      && ['approve', 'reject', 'branch'].includes(item['decision'] as string) && number(item['at']) && string(item['note']) && string(item['evidence']) && optionalString(item['materials']))
+      && ['approve', 'reject'].includes(item['decision'] as string) && number(item['at']) && string(item['note']) && string(item['evidence']) && optionalString(item['materials']))
 }
 export function isStoppedAttempts(value: unknown): boolean {
   return Array.isArray(value) && value.every(item => record(item) && optionalString(item['attemptId']) && optionalString(item['output']) && number(item['at']))

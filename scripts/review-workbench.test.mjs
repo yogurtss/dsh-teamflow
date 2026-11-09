@@ -45,7 +45,7 @@ test('workbench renders escaped, localized evidence and no automatic approval', 
   const html=render()
   assert.match(html,/&lt;script&gt;unsafe/);assert.doesNotMatch(html,/<script>/)
   assert.doesNotMatch(html,/\p{Script=Han}/u)
-  assert.match(html,/Human checkpoint/);assert.match(html,/Create rework branch/)
+  assert.match(html,/Human checkpoint/);assert.match(html,/Return for changes/)
   assert.doesNotMatch(html,/Confirm approval<\/button>/)
 })
 test('archive and decided legacy rounds are read-only and never show current evidence as historical', () => {
@@ -66,7 +66,6 @@ test('returned review offers reconsideration and repair; archives do not mutate'
  const archive=render({...props,archived:true});assert.doesNotMatch(archive,/Save instructions and rerun task|Review current results again/);
  const empty=render({...props,task:{...returned,dependencies:[]},team:{...team,tasks:[{...returned,dependencies:[]}]}});assert.match(empty,/No upstream task can be rerun/);assert.match(empty,/Review current results again/);
 });
-
 
 test('legacy policy exclusions render as unverified metadata rather than missing or unreadable evidence',()=>{
  const raw=JSON.stringify({check:{id:'gate',round:1},results:[],files:{artifacts:[

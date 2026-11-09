@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import type { TeamState, TeamTask } from '../types.ts';
 import type { WorkflowDiscussion } from '../workflow-types.ts';
-export declare function ReviewWorkbench({ team, task, conversation, ready, archived, busy, note, onNote, onRefresh, onDecision, onBranch, onDiscuss, onRestart, discussionBusy, discussion, proposal, onBack, onRerun, onReopen, continuation, reworkBlocked }: {
+export declare function ReviewWorkbench({ team, task, conversation, ready, archived, busy, note, onNote, onRefresh, onDecision, onDiscuss, onRestart, discussionBusy, discussion, proposal, onBack, onRerun, onReopen, continuation, reworkBlocked }: {
     team: TeamState;
     task: TeamTask;
     conversation?: WorkflowDiscussion;
@@ -12,7 +12,6 @@ export declare function ReviewWorkbench({ team, task, conversation, ready, archi
     onNote: (value: string) => void;
     onRefresh: () => void;
     onDecision: (decision: 'approve' | 'reject', evidence: string, note: string) => Promise<boolean>;
-    onBranch: (taskIds: string[], evidence: string, note: string) => Promise<boolean>;
     onDiscuss: () => void;
     discussion?: ReactNode;
     proposal?: ReactNode;

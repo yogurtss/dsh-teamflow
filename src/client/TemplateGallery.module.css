@@ -26,7 +26,3 @@
 
 label.galleryPermission { flex-direction: row; align-items: center; gap: 8px; }
 label.galleryPermission input[type="checkbox"] { width: auto; }
-.flowViewport { max-width:100%; overflow:auto; border-radius:14px; margin:14px 0; }
-.flowViewport .flowLarge { display:block; margin:0; }
-.flowViews { display:flex; flex-wrap:wrap; gap:8px; }
-.flowViews button[aria-pressed='true'] { border-color:var(--teamflow-brand); background:color-mix(in srgb,var(--teamflow-brand) 8%,var(--wb-bg)); }

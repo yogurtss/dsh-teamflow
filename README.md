@@ -21,7 +21,7 @@ Built on [AgentTeams](https://github.com/NanmiCoder/dsh-agent-teams), TeamFlow n
 
 **Continue and rerun**: Start all resumes unfinished, paused, or interrupted work and preserves completed results. Run through a node resumes its required ancestors and pauses later descendants; human checkpoints still require approval. Continuing needs no new input. An explicit rerun requires a reason in the card editor. Reconnection reads current state without replaying mutations. Blockers and recovery explains configuration, dependencies, review, and execution issues with next actions.
 
-This README describes stable version **`0.2.10`** on `main`. See the [release notes](./release-notes/v0.2.10.md); ongoing development remains on `dev`. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
+This README describes stable version **`0.2.11`** on `main`. See the [release notes](./release-notes/v0.2.11.md); ongoing development remains on `dev`. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
 
 | Channel | Git source | Purpose |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ This release accepts DSH `0.2.1-rc.5`; the repository's development dependencies
 
 **Use a template:** open **Workflow** in the sidebar, browse the Gallery, and enter what you want to accomplish. You can browse before choosing a project. When applying the template, select an existing workspace or use **Add workspace** to choose or create a folder. From a chat, you can also open **Teamflow → Gallery**.
 
-The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. For work that needs repeated improvement, choose **Iterative operator optimization** (5 rounds) or **Fix and regression loop** (3 rounds): independent AI gates return feedback to the same tasks, and exhausted budgets pause for user action. Setup and delivery remain one-off tasks. Built-in templates are read-only; save a personal copy to customize one.
+The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. Built-in templates are read-only; save a personal copy to customize one.
 
 **Start from a goal:** send a request in a project conversation:
 

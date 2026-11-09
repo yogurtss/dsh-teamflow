@@ -38,7 +38,7 @@ test('policy resolution trims, de-duplicates, and keeps declaration order', () =
   assert.ok(filter.deny.includes('web_search'))
 })
 
-test('an allow-list policy injects coordination and loop decision tools', () => {
+test('an allow-list policy injects the four required coordination tools', () => {
   const filter = resolveMemberToolFilter({ allow: ['read'] })
   for (const name of MEMBER_TOOL_NAMES) {
     assert.ok(filter.allow?.includes(name), `${name} stays available through an allow list`)
@@ -49,7 +49,6 @@ test('an allow-list policy injects coordination and loop decision tools', () => 
     'agent_teams_update_task',
     'agent_teams_send_message',
     'agent_teams_status',
-    'agent_teams_decide_loop',
   ])
 })
 

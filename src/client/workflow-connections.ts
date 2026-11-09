@@ -1,13 +1,11 @@
 import { sourceText, type WorkflowText } from './workflow-text.ts'
 import type { TeamTask } from '../types.ts'
 
-export const WORKFLOW_GATE_PATH = 'M112.5 2 C116.5 2 119 5 124 8 L215 67 C222 71 225 72 225 75 C225 78 222 79 215 83 L124 142 C119 145 116.5 148 112.5 148 C108.5 148 106 145 101 142 L10 83 C3 79 0 78 0 75 C0 72 3 71 10 67 L101 8 C106 5 108.5 2 112.5 2 Z'
 export const WORKFLOW_NODE_WIDTH = 225
 export const WORKFLOW_PORT_Y = 55
-export const WORKFLOW_GATE_PORT_Y = 75
 /** Anchors use the node's outer border box, shared by paths, snapping and CSS. */
-export function connectionPort(point: {x:number;y:number}, side: 'input'|'output', checkpoint = false) {
-  return {x:point.x + (side === 'output' ? WORKFLOW_NODE_WIDTH : 0),y:point.y + (checkpoint ? WORKFLOW_GATE_PORT_Y : WORKFLOW_PORT_Y)}
+export function connectionPort(point: {x:number;y:number}, side: 'input'|'output') {
+  return {x:point.x + (side === 'output' ? WORKFLOW_NODE_WIDTH : 0),y:point.y + WORKFLOW_PORT_Y}
 }
 export function connectionPath(start: {x:number;y:number}, end: {x:number;y:number}) {
   return `M${start.x},${start.y} C${start.x+35},${start.y} ${end.x-35},${end.y} ${end.x},${end.y}`
@@ -32,7 +30,7 @@ export function connectionIssue(tasks: TeamTask[], from: string, to: string, l: 
 
 export function connectionTarget(tasks: TeamTask[], position: (id: string) => { x: number; y: number }, point: { x: number; y: number }, from: string) {
   return tasks.filter(t => t.id !== from).map(task => {
-    const p = position(task.id), anchor = connectionPort(p,'input', !!task.checkpoint), dx = point.x - anchor.x, dy = point.y - anchor.y
+    const p = position(task.id), anchor = connectionPort(p,'input'), dx = point.x - anchor.x, dy = point.y - anchor.y
     const distance = Math.hypot(dx, dy)
     return { task, p, distance, inside: point.x >= p.x - 18 && point.x <= p.x + 243 && point.y >= p.y - 12 && point.y <= p.y + 138 }
   }).filter(candidate => candidate.distance <= 40 || candidate.inside).sort((a, b) => a.distance - b.distance)[0]?.task

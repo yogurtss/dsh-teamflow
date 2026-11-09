@@ -4,6 +4,8 @@ import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 export class DiscussionStreams {
   private entries = new Map<string, { attempt: string; revision: number; index: number; blocks: Map<number, {text:string; closed:boolean}> }>()
   accept(agent: {id:string}, frame: AssistantStreamFrame): void {
+    const current = this.entries.get(agent.id)
+    if (current && frame.revision <= current.revision) return
     if (frame.type === 'start') {
       this.entries.set(agent.id, {attempt:frame.attemptId,revision:frame.revision,index:-1,blocks:new Map()})
       return

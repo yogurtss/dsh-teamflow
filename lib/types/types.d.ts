@@ -14,7 +14,7 @@ export type TaskStatus = 'pending' | 'claimed' | 'in_progress' | 'completed' | '
 /** Statuses after which a task can no longer be claimed or worked on. */
 export declare const TERMINAL_TASK_STATUSES: readonly TaskStatus[];
 /** Structured quality-gate kind. Absent / unknown values are treated as `work`. */
-export type TaskKind = 'requirements' | 'implementation' | 'verification' | 'review' | 'repair' | 'integration' | 'work' | 'archive';
+export type TaskKind = 'requirements' | 'implementation' | 'verification' | 'review' | 'repair' | 'integration' | 'work';
 export declare const TASK_KINDS: readonly TaskKind[];
 /** Review / requirements conclusion. Only `pass` may complete those kinds. */
 export type ReviewVerdict = 'pass' | 'needs_revision' | 'reject';
@@ -67,9 +67,8 @@ export interface ArtifactDigest {
      * symlink escaping the workspace, I/O error). Never conflated with "absent":
      * unreadable bytes cannot be claimed as unchanged.
      */
-    unreadable?: boolean;
-    /** Intentionally excluded from content auditing; existence/metadata remain available. */
     skipped?: 'type' | 'size' | 'budget';
+    unreadable?: boolean;
     /** Why the path could not be read, when `unreadable` is set. */
     reason?: string;
 }
@@ -176,8 +175,6 @@ export interface TeamTask {
     reassigning?: boolean;
     /** Quality-gate kind. Missing values are treated as `work`. */
     kind?: TaskKind;
-    archive?: import('./task-archive-config.ts').TaskArchiveConfig;
-    archiveRecords?: import('./task-archive-config.ts').TaskArchiveRecord[];
     /** Review / requirements / repair loop index, 1-based when present. */
     round?: number;
     verdict?: ReviewVerdict;
@@ -294,6 +291,7 @@ export interface TeamMember extends GalleryAccess {
         toolFilter: MemberToolFilter;
     } & GalleryAccess;
     joinedAt: number;
+    restoreOnUnarchive?: boolean;
     status: MemberStatus;
     /** Execution admission is closed while a failed/pending handoff is drained. */
     stopping?: boolean;
