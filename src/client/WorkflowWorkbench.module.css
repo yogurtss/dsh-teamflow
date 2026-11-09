@@ -428,3 +428,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .gateBody>[data-lifecycle] { align-self: center; max-width: 112px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gateCaption { position: absolute; top: 153px; width: 100%; text-align: center; color: var(--gate-color); font-size: 10px; line-height: 16px; pointer-events: none; }
 .gateNode[data-loop-gate='true'] .gateCaption { left: 137px; top: 145px; width: 88px; text-align: left; }
+.edges { --loop-pass:light-dark(#15803d,#86efac); --loop-reject:light-dark(#9333ea,#d8b4fe); }
+.loopRegion rect { fill:color-mix(in srgb,var(--loop-reject) 4%,transparent); stroke:color-mix(in srgb,var(--loop-reject) 35%,transparent); stroke-dasharray:8 6; }
+.loopRegion text { fill:var(--loop-reject); }
+.edge[data-flow-branch='pass']>path:first-child { stroke:var(--loop-pass); stroke-width:2.5; }
+.edge[data-flow-branch='pass'] text { fill:var(--loop-pass); }
+.edge[data-flow-branch='reject']>path:first-child { stroke:var(--loop-reject); stroke-width:2.5; }
+.edge[data-flow-branch='reject'] text { fill:var(--loop-reject); }

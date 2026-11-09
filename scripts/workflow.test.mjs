@@ -17,7 +17,7 @@ import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/ses
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
-import { arrangeTasks, fitGraph } from '../lib/client/workflow-layout.js'
+import { arrangeTasks, arrangeWorkflow, loopBodyIds, loopRegion, fitGraph } from '../lib/client/workflow-layout.js'
 import { flowControlVersion, flowControlState, taskControlState } from '../lib/client/task-control.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
@@ -726,6 +726,19 @@ test('canvas layout separates branching cards and fits tall as well as wide grap
   assert.ok(fitGraph(800, 400, 600, 1200) * 1200 <= 368)
   assert.ok(fitGraph(400, 800, 1200, 600) * 1200 <= 368)
   assert.equal(fitGraph(1200, 800, 600, 400), 1)
+})
+
+test('loop layout keeps multiple steps and parallel joins inside distinct regions with visible exits', () => {
+  const tasks = [task('prepare'), task('a',['prepare']), task('b',['a']), task('c',['a']), task('join',['b','c']), task('gate',['join']), task('next',['gate']), task('gate2',['next']), task('deliver',['gate2'])]
+  const loops = [{ entryId:'a', gateId:'gate' }, { entryId:'next', gateId:'gate2' }]
+  const before = structuredClone(tasks), points = arrangeWorkflow(tasks, loops)
+  assert.deepEqual(loopBodyIds(tasks, loops[0]), ['a','b','c','join'])
+  assert.ok(points.gate.y > points.join.y && points.gate.y > points.c.y)
+  assert.ok(points.next.x > points.gate.x && points.deliver.x > points.gate2.x)
+  for (const a of tasks) for (const b of tasks) if (a.id !== b.id) assert.ok(Math.abs(points[a.id].x-points[b.id].x)>=225 || Math.abs(points[a.id].y-points[b.id].y)>=150, `${a.id}/${b.id} overlap`)
+  for (const loop of loops) { const region=loopRegion(tasks,loop,id=>points[id]); assert.ok(region.bottom>points[loop.gateId].y+150); assert.match(region.returnPath,/ H/); }
+  assert.deepEqual(tasks, before, 'Layout must never add backward dependencies')
+  assert.deepEqual(arrangeWorkflow(tasks),arrangeTasks(tasks))
 })
 
 test('opening a new review round refreshes the native conversation once', async t => {

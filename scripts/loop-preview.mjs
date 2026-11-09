@@ -8,6 +8,8 @@ import { createTeamDir, readTeam, withTeamLock, writeTeam } from '../lib/state.j
 import { installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { installTeamScheduler } from '../lib/scheduler.js'
 import { decideLoop, loopInputFingerprint } from '../lib/workflow-loops.js'
+import { getBuiltinTemplate } from '../lib/builtin-templates.js'
+import { instantiateTemplate } from '../lib/templates.js'
 
 const port = Number(process.env.TEAMFLOW_LOOP_PORT ?? 8384)
 const bundle = resolve('node_modules/loop-ui')
@@ -19,7 +21,7 @@ writeFileSync(join(bundle, 'config.mjs'), `import base from '../../tsdown.config
 await build({ config: join(bundle, 'config.mjs') })
 const task = (id, subject, dependencies = [], checkpoint = false) => ({ id, subject, description: `完成并验证：${subject}`, dependencies, assignee: checkpoint ? undefined : 'worker', kind: 'work', status: 'pending', attempt: 0, createdAt: 1, updatedAt: 1,
   workflowPaused: true, workflowAwaitingStart: true, ...(checkpoint ? { checkpoint: { round: 1, history: [] } } : {}) })
-await createTeamDir(root, { id: 'demo', name: '门控循环验证', description: '保留原节点，多轮改进并审核', captainSessionId: 'captain', phase: 'running', createdAt: 1, taskSeq: 4,
+await createTeamDir(root, process.env.TEAMFLOW_PREVIEW_TEMPLATE ? instantiateTemplate(getBuiltinTemplate(process.env.TEAMFLOW_PREVIEW_TEMPLATE), 'demo', 'captain', '循环模板布局验证', '检查多步骤循环与两条门控路径') : { id: 'demo', name: '门控循环验证', description: '保留原节点，多轮改进并审核', captainSessionId: 'captain', phase: 'running', createdAt: 1, taskSeq: 4,
   members: ['worker','reviewer'].map(name => ({ name, id: name, summary: name === 'worker' ? '实现与验证' : '独立审核', status: 'idle', joinedAt: 1 })),
   tasks: [task('a','方案'),task('b','实现与验证',['a']),task('gate',process.env.TEAMFLOW_GATE_TITLE ?? '交付门控',['b'],true),task('after','最终交付',['gate'])], workflow: { explicitQuality: true, positions: {}, discussions: {}, history: [] } })
 const live = new Map(['captain','worker','reviewer'].map(id => [id,{id,status:'idle',session:{header:{id,cwd:workspace},ownEvents:()=>[]}}]))
