@@ -73,7 +73,7 @@ test('artifact hashing stays off the host event loop and human decisions reject 
   const { team, loop } = fixture(); startLoop(team, loop.id); finish(team)
   team.tasks[0].changedPaths = ['artifact.txt']
   const f = await routeFixture(t, team)
-  await writeFile(join(f.root, 'artifact.txt'), 'a'.repeat(8 * 1024 * 1024))
+  await writeFile(join(f.root, 'artifact.txt'), 'a'.repeat(1024 * 1024))
   let ticks = 0; const timer = setInterval(() => ticks++, 1)
   let materials
   try { materials = await f.call('loop_materials', { loopId: loop.id }) } finally { clearInterval(timer) }

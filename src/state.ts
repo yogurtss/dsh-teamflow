@@ -253,6 +253,7 @@ export async function createTeamDir(stateRoot: string, state: TeamState): Promis
  * @param teamId - the team's sanitized id.
  */
 export async function readTeam(stateRoot: string, teamId: string): Promise<TeamState | undefined> {
+  for (let attempt = 0; ; attempt++) {
   try {
     const raw = await readFile(join(stateRoot, teamId, 'team.json'), 'utf8')
     const value: unknown = JSON.parse(stripLeadingBom(raw))
@@ -262,10 +263,18 @@ export async function readTeam(stateRoot: string, teamId: string): Promise<TeamS
     }
     return team
   } catch (error: unknown) {
+    // Windows may require an in-place write after rename retries. A reader
+    // can briefly observe its truncated JSON; retry without treating it as
+    // deletion or accepting persistently corrupt state.
+    if (error instanceof SyntaxError && attempt < 3) {
+      await sleep(50)
+      continue
+    }
     if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined
     }
     throw error
+  }
   }
 }
 

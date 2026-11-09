@@ -11,13 +11,19 @@ export function ownSessionEvents(session) {
 /** Runs against the packaged plugin, real authentication, scheduler and LLM service. */
 export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, record, ctx, events }) {
   let activeSession = captain.id, activeTeam = 'runtime-lab';
-  const post = async (action, fields = {}, expected = 200) => {
-    if(action==='resume_task'&&fields.base===undefined)fields={...fields,base:(await post('state')).base};
+  const post = async (action, fields = {}, expected = 200, retry = 0) => {
+    const refreshBase = action === 'resume_task' && fields.base === undefined;
+    if(refreshBase)fields={...fields,base:(await post('state')).base};
     const response = await fetch(baseUrl + '/plugins/dsh-agent-teams/workflow', {
       method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl, cookie },
       body: JSON.stringify({ sessionId: activeSession, teamId: activeTeam, action, ...fields }), signal: AbortSignal.timeout(25000),
     });
     const result = await response.json();
+    // Live member settlement can update the team between the read and resume.
+    // Retry only an explicitly rejected stale token, never an unknown outcome.
+    if (refreshBase && expected === 200 && response.status === 409 && result.error === '团队已变化，请刷新节点后重新确认' && retry < 3) {
+      return post(action, { ...fields, base: undefined }, expected, retry + 1);
+    }
     assert.equal(response.status, expected, JSON.stringify(result)); return result;
   };
   const nativeDiscussion = async (key) => {
