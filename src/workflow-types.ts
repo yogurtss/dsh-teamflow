@@ -5,19 +5,21 @@ export type WorkflowOperation =
   | (GalleryAccess & { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | (GalleryAccess & { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | { action: 'remove_member'; name: string }
-  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean; kind?: 'work'|'archive'; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; checkpointKind?: 'gate'|'acceptance'; configurationPending?: boolean; kind?: 'work'|'archive'; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'update_task'; id: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'remove_task'; id: string }
   | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
 
 export interface Checkpoint {
+  /** Legacy checkpoints are acceptance nodes unless referenced by a loop. */
+  kind?: 'gate' | 'acceptance'
   decision?: 'approve' | 'reject'
   decidedAt?: number
   note?: string
   evidence?: string
   round: number
-  history: { round: number; decision: string; at: number; note: string; evidence: string; /** Exact approved/rejected snapshot; absent in legacy records. */ materials?: string }[]
+  history: { round: number; decision: string; at: number; note: string; evidence: string; /** Historical inputs, not scheduling dependencies. */ inputIds?: string[]; /** Exact approved/rejected snapshot; absent in legacy records. */ materials?: string }[]
 }
 export interface WorkflowProposal {
   id: string

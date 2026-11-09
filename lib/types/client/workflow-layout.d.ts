@@ -4,6 +4,11 @@ export interface CanvasPoint {
     y: number;
 }
 type LayoutTask = Pick<TeamTask, 'id' | 'dependencies'>;
+/** Historical review links are display-only and never enter the dependency graph. */
+export declare function reviewHistoryEdges(tasks: readonly Pick<TeamTask, 'id' | 'dependencies' | 'checkpoint'>[]): {
+    from: string;
+    to: string;
+}[];
 export interface LayoutLoop {
     gateId: string;
     entryId: string;

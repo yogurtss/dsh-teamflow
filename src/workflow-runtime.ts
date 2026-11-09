@@ -525,7 +525,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             if(body['base'] !== workflowFingerprint(team))throw new Error('团队已变化，请刷新节点后重新确认')
             const task=team.tasks.find(t=>t.id===body['taskId'])
             if(!task?.checkpoint || task.checkpoint.decision!=='reject' || task.status!=='pending')throw new Error('只能重新验收已退回的检查点')
-            task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
+            task.checkpoint={kind:task.checkpoint.kind,round:task.checkpoint.round+1,history:task.checkpoint.history}
             if(!checkpointReady(team,task))throw new Error('请先完成上游任务并启用检查点，再重新验收')
             task.updatedAt=Date.now()
             const discussion=discussionOf(team, 'check:'+task.id),material=await materials(team,task.id,workspace)

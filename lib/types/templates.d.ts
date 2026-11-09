@@ -17,6 +17,7 @@ export interface TemplateTask {
     assignee: string;
     dependencies: string[];
     checkpoint: boolean;
+    checkpointKind?: 'gate' | 'acceptance';
     general: TaskBrief;
     kind?: 'archive';
     archive?: TaskArchiveConfig;
@@ -126,6 +127,10 @@ export declare const templateDefinitionParameter: {
                     readonly checkpoint: {
                         readonly type: "boolean";
                         readonly required: true;
+                    };
+                    readonly checkpointKind: {
+                        readonly type: "string";
+                        readonly enum: readonly ["gate", "acceptance"];
                     };
                     readonly kind: {
                         readonly type: "string";

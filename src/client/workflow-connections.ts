@@ -30,9 +30,9 @@ export function connectionIssue(tasks: TeamTask[], from: string, to: string, l: 
   if (reaches(from)) return l("这条连接会形成循环")
 }
 
-export function connectionTarget(tasks: TeamTask[], position: (id: string) => { x: number; y: number }, point: { x: number; y: number }, from: string) {
+export function connectionTarget(tasks: TeamTask[], position: (id: string) => { x: number; y: number }, point: { x: number; y: number }, from: string, isGate: (task: TeamTask) => boolean = task => task.checkpoint?.kind === 'gate') {
   return tasks.filter(t => t.id !== from).map(task => {
-    const p = position(task.id), anchor = connectionPort(p,'input', !!task.checkpoint), dx = point.x - anchor.x, dy = point.y - anchor.y
+    const p = position(task.id), anchor = connectionPort(p,'input', isGate(task)), dx = point.x - anchor.x, dy = point.y - anchor.y
     const distance = Math.hypot(dx, dy)
     return { task, p, distance, inside: point.x >= p.x - 18 && point.x <= p.x + 243 && point.y >= p.y - 12 && point.y <= p.y + 138 }
   }).filter(candidate => candidate.distance <= 40 || candidate.inside).sort((a, b) => a.distance - b.distance)[0]?.task

@@ -19,6 +19,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
     if (loop.gateId === task.id && loop.status === 'reviewing') return result(en ? `Reviewing · ${round}` : `本轮审核中 · ${round}`, loop.mode === 'human' ? en ? 'Read the materials and decide in the loop panel.' : '在循环面板阅读材料并提交意见。' : en ? 'The designated AI reviewer is evaluating this round.' : '指定 AI 审核成员正在评审本轮结果。')
     if (task.status === 'failed') return result(en ? 'Failed; included in gate review' : '执行失败，提交门控评审', en ? 'The loop gate decides which existing tasks need revision.' : '由循环门控决定哪些原节点需要改进。')
   }
+  if (task.checkpoint?.kind === 'gate' && !loop) return result(l('待连接返回线'), l('门控节点必须连接返回线形成环路，才能运行。'), [], 'edit')
   if (task.checkpoint?.decision === 'reject') return result(l("已退回"), task.checkpoint.note || l("等待调整方案并返工。"),[],'review')
   if (task.status === 'completed') return result(task.checkpoint ? l("验收通过") : l("已完成"))
   if (task.status === 'failed') return result(l("执行失败"), l("查看执行记录中的失败原因，再决定是否修改并重跑。"),[],'rerun')

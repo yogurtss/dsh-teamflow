@@ -21,7 +21,7 @@ function operation(value: unknown): boolean {
     case 'configure_loop': try { parseLoopConfig(value); return true } catch { return false }
     case 'add_member': return string(value['name']) && string(value['summary'])
     case 'update_member': case 'remove_member': return string(value['name'])
-    case 'add_task': return string(value['subject']) && strings(value['dependencies']) && (value['checkpoint'] === undefined || typeof value['checkpoint'] === 'boolean')
+    case 'add_task': if (value['checkpointKind'] !== undefined && (value['checkpoint'] !== true || !['gate','acceptance'].includes(String(value['checkpointKind'])))) return false; return string(value['subject']) && strings(value['dependencies']) && (value['checkpoint'] === undefined || typeof value['checkpoint'] === 'boolean')
     case 'update_task': case 'remove_task': return string(value['id'])
     case 'rerun_task': return string(value['id'])
     case 'rework': return string(value['id']) && strings(value['taskIds']) && string(value['instructions'])
@@ -61,10 +61,10 @@ export function isWorkflowState(value: unknown): boolean {
     && Array.isArray(value['history']) && value['history'].every(proposal)
 }
 export function isCheckpoint(value: unknown): boolean {
-  return record(value) && positive(value['round']) && [undefined, 'approve', 'reject'].includes(value['decision'] as string | undefined)
+  return record(value) && [undefined,'gate','acceptance'].includes(value['kind'] as string | undefined) && positive(value['round']) && [undefined, 'approve', 'reject'].includes(value['decision'] as string | undefined)
     && optionalString(value['note']) && optionalString(value['evidence']) && (value['decidedAt'] === undefined || number(value['decidedAt']))
     && Array.isArray(value['history']) && value['history'].every(item => record(item) && positive(item['round'])
-      && ['approve', 'reject', 'branch'].includes(item['decision'] as string) && number(item['at']) && string(item['note']) && string(item['evidence']) && optionalString(item['materials']))
+      && ['approve', 'reject', 'branch'].includes(item['decision'] as string) && number(item['at']) && string(item['note']) && string(item['evidence']) && optionalString(item['materials']) && (item['inputIds'] === undefined || strings(item['inputIds'])))
 }
 export function isStoppedAttempts(value: unknown): boolean {
   return Array.isArray(value) && value.every(item => record(item) && optionalString(item['attemptId']) && optionalString(item['output']) && number(item['at']))

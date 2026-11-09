@@ -45,6 +45,7 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
   if (team.halted) throw new Error('请先恢复团队')
   if (loopForTask(team, config.gateId)) throw new Error('门控已经属于一个循环')
   const gate = taskOf(team, config.gateId)
+  if (gate.checkpoint?.kind === 'acceptance') throw new Error('验收节点通过新建路径返工；请添加门控节点配置返回环路')
   const loop = deriveLoop(team, parseLoopConfig(config), randomUUID(), randomUUID())
   const body = loop.bodyIds
   for (const id of [...body, gate.id]) {
@@ -56,6 +57,8 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
   validateLoopGraph(candidate)
   team.workflow = candidate.workflow
   gate.assignee = assignee
+  gate.checkpoint!.kind = 'gate'
+  if (gate.description?.trim() && !gate.adaptationIssue?.trim()) gate.workflowConfigPending = false
   for (const id of [...body, gate.id]) { const task = taskOf(team, id); task.workflowPaused = true; task.workflowAwaitingStart = true }
   return loop
 }
@@ -189,7 +192,7 @@ export function decideLoop(team: TeamState, id: string, input: { decisionId: str
   loop.lastDecisionId = input.decisionId; loop.lastDecision = input.decision; loop.feedback = input.note.trim(); loop.requestedTaskIds = [...new Set(input.taskIds)]
   gate.output = input.note.trim(); gate.updatedAt = now
   if (input.decision === 'pass') {
-    loop.status = 'passed'; gate.status = 'completed'; gate.checkpoint = { round: loop.round, decision: 'approve', note: input.note, history: [] }
+    loop.status = 'passed'; gate.status = 'completed'; gate.checkpoint = { kind: 'gate', round: loop.round, decision: 'approve', note: input.note, history: [] }
   } else if (input.decision === 'revise' && loop.round < loop.maxRounds) nextRound(team, loop, input.taskIds, input.note.trim(), now)
   else {
     // Revoke the review attempt without making its output satisfy dependencies.

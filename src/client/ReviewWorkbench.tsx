@@ -80,7 +80,7 @@ export function ReviewWorkbench({ team, task, conversation, ready, archived, bus
     {result.acceptanceResults.length > 0 && <details><summary>{l('上游提交条目')} · {result.acceptanceResults.length}</summary>{result.acceptanceResults.map((r, i) => <p key={i}>{r.criterion} · {r.status === 'passed' ? l('报告通过') : l('报告失败')}{'\n'}{r.evidence || l('未提交证据说明')}</p>)}</details>}
   </section>
   return <aside ref={panel} className={css.workbench} aria-label={l('验收工作台')} data-review-workbench>
-    <header className={css.header}><div><small>{l('人工检查点')} · {l('第 {0} 轮', checkpoint.round)}</small><h3 data-review-heading tabIndex={-1}>{task.subject}</h3></div><button type="button" onClick={onBack}>{l('返回节点')}</button></header>
+    <header className={css.header}><div><small>{l('验收节点')} · {l('第 {0} 轮', checkpoint.round)}</small><h3 data-review-heading tabIndex={-1}>{task.subject}</h3></div><button type="button" onClick={onBack}>{l('返回节点')}</button></header>
     <div className={css.status}><span>{checkpoint.decision === 'approve' ? l('已通过') : checkpoint.decision === 'reject' ? l('已退回') : ready ? l('等待人工决定') : taskReadiness(team, task, l).label}</span><label>{l('验收轮次')}<select aria-label={l('验收轮次')} value={round} onChange={e => changeRound(e.target.value)}><option value="current">{l('当前轮次')} · {checkpoint.round}</option>{history.map((h, i) => <option key={i} value={String(i)}>{l('第 {0} 轮', h.round)} · {h.decision === 'approve' ? l('通过') : h.decision === 'branch' ? l('创建返工分支') : l('退回')}</option>)}</select></label></div>
     <p className={css.hint}>{l('提交记录不等于人工验收通过；没有证据的内容不视为已验证。')}</p>
     {!historical && !archived && continuation}
@@ -115,7 +115,7 @@ export function ReviewWorkbench({ team, task, conversation, ready, archived, bus
       <label>{l('返工起点')}<select aria-label={l('返工起点')} value={branchStart} onChange={e=>setBranchStart(e.target.value)}>{!candidates.length&&<option value="">{l('无可用上游任务')}</option>}{candidates.map(t=><option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
       <p className={css.hint}>{l('创建返工分支会保留原结果，并复制所选任务及依赖它的后续步骤；新结果仍需人工验收。')}{branchTasks.map(id=>team.tasks.find(t=>t.id===id)?.subject).join(' → ')}</p>
       {reworkBlocked&&<p className={css.notice}>{reworkBlocked}</p>}
-      <div className={css.actions}><button disabled={busy || !canDecide || !!reworkBlocked || !candidates.length || !note.trim()} onClick={() => void branch()}>{l('创建返工分支')}</button><button className={css.primary} disabled={busy || !canDecide} onClick={() => setConfirm({ evidence: conversation!.evidence!, round: checkpoint.round })}>{l('通过验收')}</button></div>
+      <div className={css.actions}><button disabled={busy || !canDecide || !!reworkBlocked || !candidates.length || !note.trim()} onClick={() => void branch()}>{l('不通过并新建路径')}</button><button className={css.primary} disabled={busy || !canDecide} onClick={() => setConfirm({ evidence: conversation!.evidence!, round: checkpoint.round })}>{l('通过验收')}</button></div>
       {confirm && canDecide && confirm.evidence === conversation?.evidence && <div className={css.confirmation} role="group" aria-label={l('确认本轮验收')}><strong>{l('确认通过第 {0} 轮验收？', checkpoint.round)}</strong><p>{l('请确认已核对要求与证据。Agent 报告通过不代表人工已验证。')}</p><div className={css.actions}><button disabled={busy} onClick={() => setConfirm(undefined)}>{l('继续检查')}</button><button className={css.primary} disabled={busy} onClick={() => void decide('approve')}>{l('确认通过')}</button></div></div>}
     </footer>}
   </aside>

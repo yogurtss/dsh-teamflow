@@ -22,7 +22,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const scopeRef = useRef(scope); scopeRef.current = scope
   useEffect(() => { setMaterials(undefined); setNote(''); setTargets([]); setError(''); setLoading(false) }, [scope])
   useEffect(() => { setHistory(undefined); setComparison(undefined) }, [historyScope])
-  if (!loop && (!task.checkpoint || task.status !== 'pending' || (task.attempt ?? 0) > 0 || archived)) return null
+  if (!loop && (task.checkpoint?.kind !== 'gate' || task.status !== 'pending' || (task.attempt ?? 0) > 0 || archived)) return null
   const ancestors = new Set<string>()
   const visit = (id: string) => { if (ancestors.has(id)) return; ancestors.add(id); team.tasks.find(t => t.id === id)?.dependencies.forEach(visit) }
   task.dependencies.forEach(visit)
@@ -39,17 +39,17 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   }
   const blocked = busy || loading
   const statuses = { ready: tr('等待启动', 'Ready'), running: tr('执行中', 'Running'), reviewing: tr('审核中', 'Reviewing'), paused: tr('已暂停', 'Paused'), passed: tr('已通过', 'Passed'), cancelled: tr('已结束', 'Cancelled') }
-  return <section className={css.panel} aria-label={tr('门控循环', 'Gated loop')}>
-    <h3>{tr('门控循环', 'Gated loop')}</h3>
+  return <section className={css.panel} aria-label={tr('门控节点', 'Gate node')}>
+    <h3>{tr('门控节点', 'Gate node')}</h3>
     {error && <p role="alert">{error}</p>}
     {!loop ? <>
-      <p>{tr('选择回退入口。退回时原节点按意见重跑，历史另行保存。', 'Choose the return entry. Revisions rerun existing nodes and preserve their history.')}</p>
-      <label>{tr('回退入口', 'Return entry')}<select aria-label={tr('回退入口', 'Return entry')} value={entry} onChange={e => setEntry(e.target.value)}><option value="">{tr('选择上游任务', 'Select an upstream task')}</option>{team.tasks.filter(t => !t.checkpoint && ancestors.has(t.id)).map(t => <option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
-      <label>{tr('审核方式', 'Review mode')}<select aria-label={tr('审核方式', 'Review mode')} value={mode} onChange={e => setMode(e.target.value as 'human' | 'ai')}><option value="human">{tr('人工门控', 'Human review')}</option><option value="ai">{tr('AI 自动审核', 'Automatic AI review')}</option></select></label>
+      <p>{tr('必须连接返回线形成环路才能运行。退回时重跑原节点，保留历轮结果；不会新建返工路径。', 'A return edge forming a loop is required. Revisions rerun existing nodes and preserve round history without creating a new path.')}</p>
+      <label>{tr('返回连线目标（必选）', 'Return target (required)')}<select aria-label={tr('返回连线目标（必选）', 'Return target (required)')} value={entry} onChange={e => setEntry(e.target.value)}><option value="">{tr('选择上游任务', 'Select an upstream task')}</option>{team.tasks.filter(t => !t.checkpoint && ancestors.has(t.id)).map(t => <option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
+      <label>{tr('审核方式', 'Review mode')}<select aria-label={tr('审核方式', 'Review mode')} value={mode} onChange={e => setMode(e.target.value as 'human' | 'ai')}><option value="human">{tr('人工审核', 'Human review')}</option><option value="ai">{tr('AI 自动审核', 'Automatic AI review')}</option></select></label>
       {mode === 'ai' && <label>{tr('独立审核成员', 'Independent reviewer')}<select aria-label={tr('独立审核成员', 'Independent reviewer')} value={reviewer} onChange={e => setReviewer(e.target.value)}><option value="">{tr('选择审核成员', 'Choose reviewer')}</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
       <label>{tr('轮次上限（包含首次）', 'Round limit (including first)')}<input aria-label={tr('轮次上限（包含首次）', 'Round limit (including first)')} type="number" min={1} max={20} value={rounds} onChange={e => setRounds(Number(e.target.value))} /></label>
       <label>{tr('每轮超时（分钟）', 'Round timeout (minutes)')}<input aria-label={tr('每轮超时（分钟）', 'Round timeout (minutes)')} type="number" min={1} max={1440} value={timeout} onChange={e => setTimeoutMinutes(Number(e.target.value))} /></label>
-      <button disabled={blocked || !entry || mode === 'ai' && !reviewer} onClick={() => void guarded(() => perform('loop_configure', { base, config: { gateId: task.id, entryId: entry, mode, reviewer, maxRounds: rounds, timeoutMinutes: timeout } }))}>{tr('创建循环', 'Create loop')}</button>
+      <button disabled={blocked || !entry || mode === 'ai' && !reviewer} onClick={() => void guarded(() => perform('loop_configure', { base, config: { gateId: task.id, entryId: entry, mode, reviewer, maxRounds: rounds, timeoutMinutes: timeout } }))}>{tr('连接返回线并创建环路', 'Connect return edge and create loop')}</button>
     </> : <>
       <strong>{statuses[loop.status]} · {tr('第', 'Round')} {loop.round}/{loop.maxRounds} · {loop.mode === 'ai' ? `AI · ${loop.reviewer}` : tr('人工审核', 'Human review')}</strong>
       <p>{loop.reason || tr('通过门控后才会继续执行环外任务。', 'Downstream tasks wait until this gate passes.')}</p>

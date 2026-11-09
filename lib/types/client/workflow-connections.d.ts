@@ -27,4 +27,4 @@ export declare function connectionTarget(tasks: TeamTask[], position: (id: strin
 }, point: {
     x: number;
     y: number;
-}, from: string): TeamTask | undefined;
+}, from: string, isGate?: (task: TeamTask) => boolean): TeamTask | undefined;

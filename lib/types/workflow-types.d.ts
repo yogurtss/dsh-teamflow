@@ -34,6 +34,7 @@ export type WorkflowOperation = ({
     assignee?: string;
     dependencies: string[];
     checkpoint?: boolean;
+    checkpointKind?: 'gate' | 'acceptance';
     configurationPending?: boolean;
     kind?: 'work' | 'archive';
     archive?: import('./task-archive-config.ts').TaskArchiveConfig;
@@ -66,6 +67,8 @@ export type WorkflowOperation = ({
     instructions: string;
 };
 export interface Checkpoint {
+    /** Legacy checkpoints are acceptance nodes unless referenced by a loop. */
+    kind?: 'gate' | 'acceptance';
     decision?: 'approve' | 'reject';
     decidedAt?: number;
     note?: string;
@@ -76,7 +79,8 @@ export interface Checkpoint {
         decision: string;
         at: number;
         note: string;
-        evidence: string; /** Exact approved/rejected snapshot; absent in legacy records. */
+        evidence: string; /** Historical inputs, not scheduling dependencies. */
+        inputIds?: string[]; /** Exact approved/rejected snapshot; absent in legacy records. */
         materials?: string;
     }[];
 }

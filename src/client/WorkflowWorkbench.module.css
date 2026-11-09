@@ -444,3 +444,7 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .adaptationSpinner { display:inline-flex; animation:adaptationTurn 1.6s linear infinite; }
 @keyframes adaptationTurn { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .adaptationSpinner { animation:none; } }
+
+.historyEdge { opacity: .45; pointer-events: none; }
+.historyEdge path { stroke: var(--wb-muted); stroke-dasharray: 5 5; fill: none; }
+.historyEdge text { fill: var(--wb-muted); }

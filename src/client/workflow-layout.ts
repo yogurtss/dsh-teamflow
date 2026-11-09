@@ -2,6 +2,12 @@ import type { TeamTask } from '../types.ts'
 
 export interface CanvasPoint { x: number; y: number }
 type LayoutTask = Pick<TeamTask, 'id' | 'dependencies'>
+/** Historical review links are display-only and never enter the dependency graph. */
+export function reviewHistoryEdges(tasks: readonly Pick<TeamTask, 'id'|'dependencies'|'checkpoint'>[]): { from: string; to: string }[] {
+  const ids = new Set(tasks.map(task => task.id))
+  return tasks.flatMap(task => [...new Set(task.checkpoint?.history.flatMap(entry => entry.inputIds ?? []) ?? [])]
+    .filter(id => ids.has(id) && !task.dependencies.includes(id)).map(from => ({ from, to: task.id })))
+}
 export interface LayoutLoop { gateId: string; entryId: string; bodyIds?: readonly string[] }
 
 /** Template configs carry entry/gate IDs; runtime loops also carry the derived body. */

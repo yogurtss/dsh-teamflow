@@ -48,12 +48,13 @@ export function parseWorkflowOperations(value: unknown): WorkflowOperation[] {
       case 'update_member': return { action, ...parseGalleryAccess(op), name: text(op['name'], 'name', true)!, ...fields(['summary', 'role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort']) }
       case 'remove_member': return { action, name: text(op['name'], 'name', true)! }
       case 'add_task': {
+        if (op['checkpointKind'] !== undefined && (!op['checkpoint'] || !['gate','acceptance'].includes(String(op['checkpointKind'])))) throw new Error('审核节点类型必须为 gate 或 acceptance，并设置 checkpoint')
         if (op['kind'] !== undefined && !['work','archive'].includes(String(op['kind']))) throw new Error('流程任务类型必须为 work 或 archive')
         if (op['archive'] !== undefined && op['kind'] !== 'archive') throw new Error('仅归档节点可以配置归档')
         if (op['kind'] === 'archive' && (op['checkpoint'] || op['assignee'])) throw new Error('归档节点由系统执行，不设置成员或门控')
         if (op['checkpoint'] !== undefined && typeof op['checkpoint'] !== 'boolean') throw new Error('checkpoint 必须是布尔值')
         return { action, ...op['kind'] === 'archive' ? {kind:'archive' as const,archive:parseTaskArchive(op['archive'])} : {}, subject: text(op['subject'], 'subject', true)!, ...fields(['id', 'description', 'assignee', 'adaptationIssue']),
-          dependencies: strings(op['dependencies'], 'dependencies'), checkpoint: op['checkpoint'] === true, ...op['configurationPending'] === true ? { configurationPending: true } : {} }
+          dependencies: strings(op['dependencies'], 'dependencies'), checkpoint: op['checkpoint'] === true, ...op['checkpointKind'] ? {checkpointKind: op['checkpointKind'] as 'gate'|'acceptance'} : {}, ...op['configurationPending'] === true ? { configurationPending: true } : {} }
       }
       case 'update_task': return { action, id: text(op['id'], 'id', true)!, ...fields(['subject', 'description', 'assignee', 'adaptationIssue']),
         ...op['archive'] === undefined ? {} : {archive:parseTaskArchive(op['archive'])},
@@ -96,6 +97,7 @@ export function validateWorkflowGraph(team: TeamState): void {
     if (done.has(task.id)) return
     visiting.add(task.id)
     if (!task.subject.trim()) throw new Error('任务名称不能为空')
+    if (task.checkpoint?.kind === 'gate' && !loopForTask(team, task.id) && (!task.workflowConfigPending || task.status !== 'pending' || task.checkpoint.decision || (task.attempt ?? 0) > 0)) throw new Error('门控节点必须连接返回线构成环路，才能完成配置或运行')
     if (!validArchiveFields(task as unknown as Record<string,unknown>)) throw new Error('归档节点配置无效或设置了执行成员')
     if (!task.checkpoint && !['completed', 'failed', 'cancelled'].includes(task.status) && task.assignee !== undefined && !members.has(task.assignee) && task.assignee !== 'captain') throw new Error(`执行成员不存在：${task.assignee}`)
     if (task.checkpoint && task.assignee && loopForTask(team, task.id)?.mode !== 'ai') throw new Error('人工检查不能分配给执行成员')
@@ -111,7 +113,7 @@ export function validateWorkflowGraph(team: TeamState): void {
 export function checkpointReady(team: TeamState, task: TeamTask): boolean {
   const loop = loopForTask(team, task.id)
   if (loop?.gateId === task.id) return loop.mode === 'human' && loop.status === 'reviewing' && !team.halted && team.phase !== 'staged'
-  return !!task.checkpoint && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !taskNeedsConfiguration(task) && !task.workflowRerunRequired && !task.checkpoint.decision
+  return !!task.checkpoint && task.checkpoint.kind !== 'gate' && team.phase !== 'staged' && !team.halted && task.status === 'pending' && !task.workflowPaused && !taskNeedsConfiguration(task) && !task.workflowRerunRequired && !task.checkpoint.decision
     && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 }
 /** All transitive upstream results, in dependency order. */
@@ -172,8 +174,8 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       }
       team.tasks.push({ id, subject: op.subject, description: op.description, adaptationIssue: op.adaptationIssue, assignee: op.checkpoint ? undefined : op.assignee || undefined,
         dependencies: op.dependencies, kind: op.kind ?? 'work', ...op.kind === 'archive' ? {archive:parseTaskArchive(op.archive)} : {}, status: 'pending', attempt: 0, createdAt: now, updatedAt: now,
-        ...op.configurationPending || !!op.adaptationIssue?.trim() ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
-        ...op.checkpoint ? { checkpoint: { round: 1, history: [] } } : {} })
+        ...op.configurationPending || op.checkpointKind === 'gate' || !!op.adaptationIssue?.trim() ? { workflowConfigPending: true, workflowPaused: true, workflowAwaitingStart: true } : {},
+        ...op.checkpoint ? { checkpoint: { kind: op.checkpointKind, round: 1, history: [] } } : {} })
     } else if (op.action === 'update_task') {
       const task = taskOf(team, op.id)
       // Connecting new upstream work is the manual equivalent of a rework round.
@@ -192,12 +194,12 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (op.confirmConfiguration && task.workflowConfigPending) {
         if(task.adaptationIssue?.trim())throw new Error(`任务「${task.subject}」仍有需要确认的问题：${task.adaptationIssue}。请补充任务要求，并在问题解决后清除问题说明。`)
         if (!task.subject.trim() || !task.description?.trim()) throw new Error(`请填写 ${task.subject} 的名称与任务／验收要求，再完成配置`)
-        task.workflowConfigPending = false
-        if (team.phase === 'staged') task.workflowPaused = false
+        task.workflowConfigPending = task.checkpoint?.kind === 'gate' && !loopForTask(team, task.id)
+        if (team.phase === 'staged' && !task.workflowConfigPending) task.workflowPaused = false
       }
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
-      if (reconnectRejected && task.checkpoint) task.checkpoint = { round: task.checkpoint.round + 1, history: task.checkpoint.history }
+      if (reconnectRejected && task.checkpoint) task.checkpoint = { kind: task.checkpoint.kind, round: task.checkpoint.round + 1, history: task.checkpoint.history }
       task.updatedAt = now
     } else if (op.action === 'remove_task') {
       const task = taskOf(team, op.id); editable(task)
@@ -259,7 +261,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
           status: 'pending', attempt: 0, createdAt: now, updatedAt: now })
       }
       gate.dependencies = gate.dependencies.map(id => mapping.get(id) ?? id)
-      gate.checkpoint = { round: gate.checkpoint.round + 1, history: gate.checkpoint.history }
+      gate.checkpoint = { kind: gate.checkpoint.kind, round: gate.checkpoint.round + 1, history: gate.checkpoint.history }
       gate.updatedAt = now
     }
   }
@@ -281,14 +283,14 @@ export function applyWorkflowProposal(team: TeamState, proposal: WorkflowProposa
 }
 /** Only the authenticated human route calls this; no model tool can decide a gate. */
 export function decideCheckpoint(team: TeamState, id: string, decision: 'approve' | 'reject', evidence: string, current: string, note: string, materials?: string): void {
-  if (loopForTask(team, id)) throw new Error('请使用循环门控提交审核决定')
+  if (loopForTask(team, id) || taskOf(team, id).checkpoint?.kind === 'gate') throw new Error('请使用循环门控提交审核决定')
   const task = taskOf(team, id)
   if (!checkpointReady(team, task) || !task.checkpoint || task.checkpoint.decision) throw new Error('该检查点当前不能验收')
   if (!evidence || evidence !== current) throw new Error('验收材料已变化，请刷新材料后重新检查')
   if (materials !== undefined && workflowMaterialEvidence(materials) !== evidence) throw new Error('验收材料已变化，请刷新材料后重新检查')
   const gate = task.checkpoint, at = Date.now()
   gate.decision = decision; gate.decidedAt = at; gate.note = note; gate.evidence = evidence
-  gate.history.push({ round: gate.round, decision, at, note, evidence, ...(materials === undefined ? {} : { materials }) })
+  gate.history.push({ round: gate.round, decision, at, note, evidence, inputIds: [...task.dependencies], ...(materials === undefined ? {} : { materials }) })
   task.updatedAt = at
   if (decision === 'approve') { task.status = 'completed'; task.output = `人工验收通过：${note}` }
 }

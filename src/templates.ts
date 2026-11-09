@@ -8,7 +8,7 @@ import { deriveLoop, parseLoopConfig, validateLoopGraph } from './workflow-loop-
 import type { LoopConfig } from './workflow-loop-types.ts'
 
 export interface TemplateMember extends GalleryAccess { name: string; summary: string; role: string; executionPrompt: string }
-export interface TemplateTask { id: string; subject: string; assignee: string; dependencies: string[]; checkpoint: boolean; general: TaskBrief; kind?: 'archive'; archive?: TaskArchiveConfig }
+export interface TemplateTask { id: string; subject: string; assignee: string; dependencies: string[]; checkpoint: boolean; checkpointKind?: 'gate'|'acceptance'; general: TaskBrief; kind?: 'archive'; archive?: TaskArchiveConfig }
 export interface TemplateDefinition {
   loops?: LoopConfig[]
   name: string; description: string; tags: string[]; inputs: string
@@ -31,7 +31,7 @@ export const templateDefinitionParameter = {
     } } },
     tasks: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
       id: requiredText, subject: requiredText, assignee: { ...requiredText, description: 'Exact member name, or empty string for a human checkpoint. Never null.' },
-      dependencies: { type: 'array', required: true, items: { type: 'string' } }, checkpoint: { type: 'boolean', required: true },
+      dependencies: { type: 'array', required: true, items: { type: 'string' } }, checkpoint: { type: 'boolean', required: true }, checkpointKind: {type:'string',enum:['gate','acceptance']},
       kind: {type:'string',enum:['work','archive']}, archive:taskArchiveParameter,
       general: { type: 'object', required: true, additionalProperties: false, properties: {
         requirements: requiredText, deliverables: requiredText, acceptance: requiredText,
@@ -68,10 +68,11 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   const tasks = array(v['tasks'], 32).map(raw => {
     const t = object(raw), id = text(t['id'],true,80)
     if (!/^[a-zA-Z0-9_-]+$/u.test(id) || typeof t['checkpoint'] !== 'boolean') throw new Error('模板节点 ID 或类型无效')
+    if(t['checkpointKind']!==undefined && (!t['checkpoint'] || !['gate','acceptance'].includes(String(t['checkpointKind']))))throw new Error('模板审核节点类型无效')
     if(t['kind']!==undefined&&!['work','archive'].includes(String(t['kind'])))throw new Error('模板任务类型无效')
     if(t['kind']==='archive'&&(t['checkpoint']||t['assignee']))throw new Error('归档节点不能设置负责人或门控')
     if(/^t\d+$/.test(id) && (!Number.isSafeInteger(Number(id.slice(1))) || Number(id.slice(1))>=Number.MAX_SAFE_INTEGER))throw new Error('模板节点序号超出范围')
-    return {...t['kind']==='archive'?{kind:'archive' as const,archive:parseTaskArchive(t['archive'])}:{},id, subject:text(t['subject'],true,200), assignee:text(t['assignee']), dependencies:array(t['dependencies'],32).map(d=>text(d,true,80)), checkpoint:t['checkpoint'], general:parseBrief(t['general'])}
+    return {...t['checkpointKind']?{checkpointKind:t['checkpointKind'] as 'gate'|'acceptance'}:{},...t['kind']==='archive'?{kind:'archive' as const,archive:parseTaskArchive(t['archive'])}:{},id, subject:text(t['subject'],true,200), assignee:text(t['assignee']), dependencies:array(t['dependencies'],32).map(d=>text(d,true,80)), checkpoint:t['checkpoint'], general:parseBrief(t['general'])}
   })
   if (!tasks.length || new Set(tasks.map(t=>t.id)).size !== tasks.length) throw new Error('模板需要 1–32 个不同的节点')
   const ids = new Set(tasks.map(t=>t.id)), names = new Set(members.map(m=>m.name))
@@ -86,7 +87,7 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   if (loops?.length) {
     const check: TeamState = { id: 'template', name: 'template', captainSessionId: 'template', createdAt: 0, taskSeq: 0,
       members: members.map(m => ({ ...m, id: '', status: 'idle', joinedAt: 0 })),
-      tasks: tasks.map(t => ({ ...t, assignee: t.assignee || undefined, status: 'pending', createdAt: 0, updatedAt: 0, checkpoint: t.checkpoint ? { round: 1, history: [] } : undefined })),
+      tasks: tasks.map(t => ({ ...t, assignee: t.assignee || undefined, status: 'pending', createdAt: 0, updatedAt: 0, checkpoint: t.checkpoint ? { kind: t.checkpointKind, round: 1, history: [] } : undefined })),
       workflow: { positions: {}, discussions: {}, history: [] } }
     check.workflow!.loops = loops.map(config => deriveLoop(check, config, config.gateId, 'template'))
     for (const loop of check.workflow!.loops) check.tasks.find(task => task.id === loop.gateId)!.assignee = loop.mode === 'ai' ? loop.reviewer : undefined
@@ -105,11 +106,11 @@ export function templateSeed(team: TeamState): TemplateDefinition {
   return parseTemplate({name:team.name,description:'',inputs:'',tags:[],
     loops: team.workflow?.loops?.map(({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes }) => ({ gateId, entryId, mode, reviewer, maxRounds, timeoutMinutes })),
     members:team.members.filter(m=>m.status!=='removed'||team.tasks.some(t=>t.assignee===m.name)).map(m=>({name:m.name,summary:m.summary??'',role:m.role??'',executionPrompt:m.executionPrompt??'', ...parseGalleryAccess({...m})})),
-    tasks:team.tasks.map(t=>({...t.kind==='archive'?{kind:'archive',archive:parseTaskArchive(t.archive)}:{},id:t.id,subject:t.subject,assignee:t.checkpoint?'':t.assignee??'',dependencies:t.dependencies,checkpoint:!!t.checkpoint,general:emptyBrief()})),
+    tasks:team.tasks.map(t=>({...t.kind==='archive'?{kind:'archive',archive:parseTaskArchive(t.archive)}:{},id:t.id,subject:t.subject,assignee:t.checkpoint?'':t.assignee??'',dependencies:t.dependencies,checkpoint:!!t.checkpoint,...t.checkpoint?.kind?{checkpointKind:t.checkpoint.kind}:{},general:emptyBrief()})),
     positions:Object.fromEntries(Object.entries(team.workflow?.positions??{}).filter(([key])=>team.tasks.some(t=>key===`task:${t.id}`)))})
 }
 export function templateTopology(value: Pick<TemplateDefinition,'members'|'tasks'>): string {
-  return JSON.stringify({members:value.members.map(m=>m.name).sort(),tasks:value.tasks.map(t=>({id:t.id,kind:t.kind,archive:t.archive,assignee:t.assignee,checkpoint:t.checkpoint,dependencies:[...t.dependencies].sort()})).sort((a,b)=>a.id.localeCompare(b.id))})
+  return JSON.stringify({members:value.members.map(m=>m.name).sort(),tasks:value.tasks.map(t=>({id:t.id,kind:t.kind,archive:t.archive,assignee:t.assignee,checkpoint:t.checkpoint,checkpointKind:t.checkpointKind,dependencies:[...t.dependencies].sort()})).sort((a,b)=>a.id.localeCompare(b.id))})
 }
 export function extractedTemplate(team:TeamState, value:unknown):TemplateDefinition {
   const result=parseTemplate(value)
@@ -127,12 +128,12 @@ export function instantiateTemplate(template:TemplateVersion, id:string, captain
   const team: TeamState = {id,name:name.trim()||clean.name,description:goal.trim(),captainSessionId,createdAt:now,phase:'staged',planReviewState:'awaiting_review',
     members:clean.members.map(m=>({...m,id:'',status:'idle',joinedAt:now,specificPrompt:''})),
     tasks:clean.tasks.map(t=>({id:t.id,subject:t.subject,assignee:t.assignee||undefined,dependencies:[...t.dependencies],kind:t.kind??'work',...t.kind==='archive'?{archive:parseTaskArchive(t.archive)}:{},status:'pending',attempt:0,createdAt:now,updatedAt:now,
-      description:'',workflowConfigPending:true,workflowPaused:true,...t.checkpoint?{checkpoint:{round:1,history:[]}}:{}})),
+      description:'',workflowConfigPending:true,workflowPaused:true,...t.checkpoint?{checkpoint:{kind:t.checkpointKind,round:1,history:[]}}:{}})),
     taskSeq:Math.max(0,...clean.tasks.map(t=>/^t\d+$/.test(t.id)?Number(t.id.slice(1)):0)),
     workflow:{explicitQuality:true,templateDefinition:structuredClone(clean),positions:structuredClone(clean.positions),discussions:{},history:[],templateSource:{id:template.id,version:template.version,name:template.name}}}
   if (clean.loops?.length) {
     team.workflow!.loops = clean.loops.map(config => deriveLoop(team, config, crypto.randomUUID(), crypto.randomUUID()))
-    for (const loop of team.workflow!.loops) { const gate = team.tasks.find(t => t.id === loop.gateId)!; gate.assignee = loop.mode === 'ai' ? loop.reviewer : undefined }
+    for (const loop of team.workflow!.loops) { const gate = team.tasks.find(t => t.id === loop.gateId)!; gate.assignee = loop.mode === 'ai' ? loop.reviewer : undefined; gate.checkpoint!.kind = 'gate' }
   }
   return team
 }

@@ -39,6 +39,7 @@ export function validateLoopGraph(team: TeamState): void {
     identities.add(loop.id)
     parseLoopConfig(loop)
     const gate = taskOf(team, loop.gateId), body = new Set(loop.bodyIds)
+    if (gate.checkpoint?.kind === 'acceptance') throw new Error('验收节点不能作为循环门控')
     if (body.size > 32) throw new Error('单个循环最多 32 个执行节点，请拆分流程')
     if (loop.status !== 'passed' && gate.status === 'completed') throw new Error('循环门控只能通过正式审核放行')
     if (!gate.checkpoint || !body.size || !body.has(loop.entryId) || body.has(gate.id)) throw new Error('循环需要独立门控和有效入口')

@@ -27,7 +27,7 @@ export function resetTaskForRerun(task: TeamTask, suspended: boolean, now: numbe
   task.workflowAwaitingStart = false
   delete task.workflowRerunContext
   for (const key of ['output','attemptId','handoffId','handoffFromMemberId','reassigning','verdict','findings','changedPaths','acceptanceResults','commandsRun','supplementalEvidence','reviewedAttempt','reviewedArtifacts','reviewedGaps','reviewedScope','reviewedDuringDrift','verdictStartSnapshot'] as const) delete task[key]
-  if(task.checkpoint) task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
+  if(task.checkpoint) task.checkpoint={kind:task.checkpoint.kind,round:task.checkpoint.round+1,history:task.checkpoint.history}
 }
 import { taskNeedsConfiguration } from './task-description.ts'
 import type { TeamState } from './types.ts'
