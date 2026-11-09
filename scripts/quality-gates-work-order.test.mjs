@@ -353,14 +353,14 @@ test('#174: a capped scope is incomplete evidence and never passes as full cover
   }
 })
 
-test('#174/#161: a large artifact is hashed in constant memory (no whole-file read)', {
+test('#174/#161: an allowed artifact at the size limit is hashed in constant memory', {
   skip: artifacts === undefined ? 'artifacts module missing in this build' : false,
 }, () => {
   const root = workspace()
   try {
-    const big = join(root, 'lib', 'big.bin')
+    const big = join(root, 'lib', 'big.txt')
     const chunk = Buffer.alloc(1024 * 1024, 7)
-    const megabytes = 48
+    const megabytes = artifacts.MAX_ARTIFACT_BYTES / chunk.byteLength
     const handle = openSync(big, 'w')
     try {
       for (let index = 0; index < megabytes; index += 1) writeSync(handle, chunk)
@@ -370,7 +370,7 @@ test('#174/#161: a large artifact is hashed in constant memory (no whole-file re
     const expected = createHash('sha256')
     for (let index = 0; index < megabytes; index += 1) expected.update(chunk)
     const before = process.memoryUsage().heapUsed
-    const digest = artifacts.digestWorkspacePaths(root, ['lib/big.bin'])[0]
+    const digest = artifacts.digestWorkspacePaths(root, ['lib/big.txt'])[0]
     const grew = process.memoryUsage().heapUsed - before
     assert.equal(digest.size, megabytes * chunk.byteLength)
     assert.equal(digest.sha256, expected.digest('hex'))

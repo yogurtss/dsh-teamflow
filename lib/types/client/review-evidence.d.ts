@@ -34,6 +34,7 @@ export interface ReviewMaterial {
         unreadable?: boolean;
         sha256?: string;
         reason?: string;
+        size?: number;
     }[];
     gaps: {
         pattern: string;
@@ -68,6 +69,7 @@ export declare function reviewChanges(previous: ReviewMaterial, current: ReviewM
             unreadable?: boolean;
             sha256?: string;
             reason?: string;
+            size?: number;
         } | undefined;
         after: {
             path: string;
@@ -75,6 +77,7 @@ export declare function reviewChanges(previous: ReviewMaterial, current: ReviewM
             unreadable?: boolean;
             sha256?: string;
             reason?: string;
+            size?: number;
         } | undefined;
     }[];
     requirementsChanged: boolean;

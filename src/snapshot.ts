@@ -288,8 +288,11 @@ export async function collectTeamsActivity(
           auditWorkspace,
           ...root.workspacePath === undefined ? {} : { workspacePath: root.workspacePath },
         }))
-      } catch {
-        ctx.logger.warn(`agent-teams: skipped unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
+      } catch (error) {
+        ctx.logger.warn(`agent-teams: unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
+        // A partial success would tell the browser this team was deleted.
+        // Fail the refresh so it preserves the last successful cards instead.
+        throw error
       }
     }
   }

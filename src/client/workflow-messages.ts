@@ -845,6 +845,8 @@ Object.assign(workflowEnglish, {
 "查看原文":"View source",
 "预览":"Preview",
 "仅预览前 100 行、50 列。":"Preview limited to 100 rows and 50 columns.",
+"仅展示文件开头 256 KiB；内容已截断，不代表完整审计或验收通过。":"Only the first 256 KiB is shown. This truncated preview is not a full audit or acceptance approval.",
+"文件内容未验证":"File contents not verified",
 "文件为空":"Empty file",
 "当前文件指纹":"Current file fingerprint",
 "任务提交说明":"Task submission",

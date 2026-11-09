@@ -26,8 +26,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { type Stats, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { isDefaultExcludedPath, normalizeWorkspacePath } from './quality-gates.ts'
 import type { ArtifactDigest, ArtifactScopeGap, ArtifactSnapshot } from './types.ts'
 import type { OutcomePreview } from './outcomes.ts'
@@ -61,12 +61,13 @@ export function readOutcomePreview(workspace: string, path: string): OutcomePrev
     const textual = ['md','markdown','txt','csv','json','log','yaml','yml','toml','xml','html','htm','css','js','jsx','mjs','ts','tsx','py','sh','ps1','sql','rs','go','java','c','cpp','h','ini'].includes(ext)
     if (!mime && !textual) return { ...result, status: 'unsupported' }
     const limit = mime ? 4 * 1024 * 1024 : 256 * 1024
-    if (stat.size > limit) return { ...result, status: 'too_large' }
-    const buffer = Buffer.alloc(stat.size)
+    if (mime && stat.size > limit) return { ...result, status: 'too_large' }
+    const truncated = stat.size > limit
+    const buffer = Buffer.alloc(Math.min(stat.size, limit))
     let offset = 0
     while (offset < buffer.length) { const n = readSync(handle, buffer, offset, buffer.length - offset, null); if (!n) break; offset += n }
     const after = fstatSync(handle)
-    if (offset !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || realpathSync(absolute) !== canonical) return { ...result, status: 'unreadable' }
+    if (offset !== buffer.length || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs || realpathSync(absolute) !== canonical) return { ...result, status: 'unreadable' }
     const sha256 = createHash('sha256').update(buffer).digest('hex')
     if (mime) {
       const signature = mime === 'image/png' ? buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : mime === 'image/jpeg' ? buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 : mime === 'image/gif' ? /^GIF8[79]a$/.test(buffer.subarray(0,6).toString('ascii')) : buffer.subarray(0,4).toString('ascii') === 'RIFF' && buffer.subarray(8,12).toString('ascii') === 'WEBP'
@@ -74,9 +75,9 @@ export function readOutcomePreview(workspace: string, path: string): OutcomePrev
       return { ...result, status: 'ready', kind: 'image', sha256, dataUrl: `data:${mime};base64,${buffer.toString('base64')}` }
     }
     let text: string
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer) } catch { return { ...result, status: 'unsupported' } }
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer, { stream: truncated }) } catch { return { ...result, status: 'unsupported' } }
     if (text.includes('\0')) return { ...result, status: 'unsupported' }
-    return { ...result, status: 'ready', sha256, kind: ['md','markdown'].includes(ext) ? 'markdown' : ext === 'csv' ? 'csv' : 'text', text }
+    return { ...result, status: 'ready', ...(truncated ? { truncated: true, previewBytes: buffer.length } : { sha256 }), kind: ['md','markdown'].includes(ext) ? 'markdown' : ext === 'csv' ? 'csv' : 'text', text }
   } catch (error) { return { ...result, status: ['ENOENT','ENOTDIR'].includes(errorCode(error)) ? 'missing' : 'unreadable' } }
   finally { if (handle !== undefined) closeSync(handle) }
 }
@@ -96,6 +97,19 @@ const SKIPPED_SEGMENTS = new Set(['.git', '.dsh', '.agent-teams', 'node_modules'
  * list would let a change outside the list pass as "unchanged".
  */
 export const MAX_EXPANDED_ARTIFACTS = 200
+export const MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
+export const MAX_SCOPE_BYTES = 32 * 1024 * 1024
+export const ARTIFACT_CACHE_TTL_MS = 5_000
+const ARTIFACT_CACHE_LIMIT = 1_024
+const ARTIFACT_EXTENSIONS = new Set('md markdown txt rst csv tsv json jsonl yaml yml toml xml html htm css scss less js jsx mjs cjs ts tsx mts cts py pyi sh bash zsh ps1 sql rs go java kt kts c cpp cc cxx h hpp cs rb php swift vue svelte ini cfg conf properties lock log svg png jpg jpeg gif webp ico pdf docx xlsx pptx'.split(' '))
+const ARTIFACT_NAMES = new Set(['dockerfile', 'makefile', 'license', 'licence', 'notice', 'readme', '.gitignore', '.gitattributes', '.editorconfig'])
+const digestCache = new Map<string, { signature: string; at: number; sha256: string; size: number }>()
+/** Opt-in display cache only. Authoritative evidence reads default to fresh bytes. */
+export interface ArtifactReadOptions { cache?: boolean }
+type ReadBudget = { remaining: number; cache: boolean }
+function statSignature(stat: Stats): string {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':')
+}
 
 /** Result of reading a declared scope: what was read, and what could not be. */
 export interface ArtifactScopeRead {
@@ -107,7 +121,7 @@ type PathOutcome =
   | { kind: 'file'; digest: ArtifactDigest }
   | { kind: 'directory' }
   | { kind: 'absent' }
-  | { kind: 'unreadable'; reason: string }
+  | { kind: 'unreadable'; reason: string; size?: number; mtimeMs?: number }
 
 function errorCode(error: unknown): string {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
@@ -138,9 +152,7 @@ function resolvesInside(root: string, absolute: string): boolean | undefined {
 }
 
 /**
- * Chunk size for the streaming digest. The activity panel polls the audit
- * about once a second, so hashing must never read a whole artifact into
- * memory: a multi-gigabyte file would otherwise stall the host process.
+ * Chunk size for bounded, on-demand streaming digests.
  */
 const HASH_CHUNK_BYTES = 64 * 1024
 
@@ -149,25 +161,44 @@ const HASH_CHUNK_BYTES = 64 * 1024
  * loading the whole artifact. Throws the underlying filesystem error so the
  * caller can distinguish "cannot read" from "absent".
  */
-function hashFileConstantMemory(absolute: string): { sha256: string; size: number } {
-  const handle = openSync(absolute, 'r')
+function hashFileConstantMemory(absolute: string, expected: Stats, budget: ReadBudget): { sha256: string; size: number } {
+  const signature = statSignature(expected)
+  const cached = digestCache.get(absolute)
+  const now = Date.now()
+  if (budget.cache && cached && cached.signature === signature && now >= cached.at && now - cached.at < ARTIFACT_CACHE_TTL_MS) {
+    digestCache.delete(absolute); digestCache.set(absolute, cached)
+    budget.remaining -= cached.size
+    return cached
+  }
+  digestCache.delete(absolute)
+  const handle = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
   try {
+    const before = fstatSync(handle)
+    if (!before.isFile() || statSignature(before) !== signature) throw new Error('file changed before reading')
     const hash = createHash('sha256')
     const buffer = Buffer.allocUnsafe(HASH_CHUNK_BYTES)
     let size = 0
-    for (;;) {
-      const read = readSync(handle, buffer, 0, buffer.byteLength, null)
+    while (size < expected.size) {
+      const read = readSync(handle, buffer, 0, Math.min(buffer.byteLength, expected.size - size), null)
       if (read <= 0) break
       size += read
+      budget.remaining -= read
       // `update` consumes the bytes synchronously, so the buffer is reused.
       hash.update(read === buffer.byteLength ? buffer : buffer.subarray(0, read))
     }
-    return { sha256: hash.digest('hex'), size }
+    if (size !== expected.size || statSignature(fstatSync(handle)) !== signature || statSignature(statSync(absolute)) !== signature) throw new Error('file changed while reading')
+    const result = { sha256: hash.digest('hex'), size }
+    if (budget.cache) {
+      for (const [key, entry] of digestCache) if (now - entry.at >= ARTIFACT_CACHE_TTL_MS || now < entry.at) digestCache.delete(key)
+      if (digestCache.size >= ARTIFACT_CACHE_LIMIT) digestCache.delete(digestCache.keys().next().value!)
+      digestCache.set(absolute, { ...result, signature, at: now })
+    }
+    return result
   } finally {
     closeSync(handle)
   }
 }
-function inspectPath(workspaceRoot: string | undefined, workspace: string, normalized: string): PathOutcome {
+function inspectPath(workspaceRoot: string | undefined, workspace: string, normalized: string, budget: ReadBudget): PathOutcome {
   const absolute = join(workspace, normalized)
   let stats
   try {
@@ -197,7 +228,14 @@ function inspectPath(workspaceRoot: string | undefined, workspace: string, norma
   if (stats.isDirectory()) return { kind: 'directory' }
   if (!stats.isFile()) return { kind: 'unreadable', reason: `${normalized} is not a regular file` }
   try {
-    const { sha256, size } = hashFileConstantMemory(absolute)
+    const canonical = realpathSync(absolute)
+    if (!insideRoot(workspaceRoot, canonical)) return { kind: 'unreadable', reason: `${normalized} resolves outside the workspace` }
+    const supported = (path: string) => ARTIFACT_EXTENSIONS.has(extname(path).slice(1).toLowerCase()) || ARTIFACT_NAMES.has(basename(path).toLowerCase())
+    const refused = (reason: string): PathOutcome => ({ kind: 'unreadable', reason: `${normalized}: ${reason}`, size: stats.size, mtimeMs: stats.mtimeMs })
+    if (!supported(normalized) || !supported(canonical)) return refused('unsupported artifact file type; content not audited')
+    if (stats.size > MAX_ARTIFACT_BYTES) return refused(`exceeds the ${MAX_ARTIFACT_BYTES}-byte file limit; content not audited`)
+    if (stats.size > budget.remaining) return refused(`exceeds the ${MAX_SCOPE_BYTES}-byte scope budget; content not audited`)
+    const { sha256, size } = hashFileConstantMemory(canonical, stats, budget)
     return {
       kind: 'file',
       digest: {
@@ -290,7 +328,8 @@ function walkDirectory(input: {
  * keep explicitly named paths even when they do not exist (a later creation is
  * drift too), and report every part that could not be fully resolved.
  */
-export function readArtifactScope(workspace: string, patterns: readonly string[]): ArtifactScopeRead {
+export function readArtifactScope(workspace: string, patterns: readonly string[], options: ArtifactReadOptions = {}): ArtifactScopeRead {
+  const budget: ReadBudget = { remaining: MAX_SCOPE_BYTES, cache: options.cache === true }
   const workspaceRoot = workspaceRootOf(workspace)
   const gaps: ArtifactScopeGap[] = []
   const concrete: string[] = []
@@ -346,7 +385,7 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
   // `concrete`, and those must be digested in the same pass.
   for (let index = 0; index < concrete.length; index += 1) {
     const normalized = concrete[index] as string
-    const outcome = inspectPath(workspaceRoot, workspace, normalized)
+    const outcome = inspectPath(workspaceRoot, workspace, normalized, budget)
     if (outcome.kind === 'file') {
       artifacts.push(outcome.digest)
       continue
@@ -361,7 +400,9 @@ export function readArtifactScope(workspace: string, patterns: readonly string[]
       artifacts.push({ path: normalized, present: false })
       continue
     }
-    artifacts.push({ path: normalized, present: false, unreadable: true, reason: outcome.reason })
+    artifacts.push({ path: normalized, present: false, unreadable: true, reason: outcome.reason,
+      ...(outcome.size === undefined ? {} : { size: outcome.size, mtimeMs: outcome.mtimeMs }),
+    })
   }
   return { artifacts: artifacts.sort((a, b) => a.path.localeCompare(b.path)), gaps }
 }
@@ -382,8 +423,14 @@ export function digestWorkspacePaths(workspace: string, paths: readonly string[]
 export function workspacePathExists(workspace: string, path: string): boolean {
   const normalized = normalizeWorkspacePath(path)
   if (normalized === undefined) return false
-  const outcome = inspectPath(workspaceRootOf(workspace), workspace, normalized)
-  return outcome.kind === 'file' || outcome.kind === 'directory'
+  const root = workspaceRootOf(workspace)
+  if (!root) return false
+  try {
+    const absolute = realpathSync(join(workspace, normalized))
+    if (!insideRoot(root, absolute)) return false
+    const stat = statSync(absolute)
+    return stat.isFile() || stat.isDirectory()
+  } catch { return false }
 }
 
 /** Expand scope patterns to the concrete files they currently cover. */

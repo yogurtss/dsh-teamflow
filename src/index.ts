@@ -38,7 +38,6 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
-import { createWorkspaceAuditor } from './workspace-audit-async.ts'
 import { findTeamByCaptain } from './state.ts'
 import { leadIdentityOfAsync } from './lineage.ts'
 import { formatProfilesForPrompt, type TeamProfileConfig } from './profiles.ts'
@@ -264,8 +263,6 @@ export function apply(ctx: Context, config: Config): void {
     const webServer = authenticatedWebRoutes(rawWebServer, () => ctx.get('connection') as BrowserRequestGate | undefined)
     installWorkflowWorkbench(ctx, resolved, agentTeamsRuntime, webServer, workflowConversations)
     webRegistered = true
-    const activityAuditor = createWorkspaceAuditor()
-    ctx.effect(() => () => activityAuditor.dispose(), 'agent-teams: activity audit worker')
 
     // Activity panel data route: the browser floater polls this for team
     // snapshots (disk truth + live subagent activity). Mirrors the Claude
@@ -279,21 +276,24 @@ export function apply(ctx: Context, config: Config): void {
       const captainIds = requestedCaptains.length ? new Set(requestedCaptains) : undefined
       const roots = workspaceRegistry.list().map((workspace) => ({
         workspace: workspace.title,
-        // The panel audits the same current bytes as agent_teams_status, so it
-        // cannot advertise a passing gate over a changed revision (#161).
-        workspacePath: workspace.path,
+        // Status polling reads task records only. File evidence is on-demand.
         stateRoot: join(workspace.path, resolved.stateDir),
       }))
       // ?archived=1 serves teams moved to archive/ (post-delete review).
-      const snapshots = url.searchParams.get('archived') === '1'
-        ? await collectArchivedTeamsActivity(ctx, roots, captainIds)
-        : await collectTeamsActivity(ctx, roots, captainIds, activityAuditor.audit)
-      const body = JSON.stringify({ teams: snapshots })
-      res.writeHead(200, {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': 'no-store',
-      })
-      res.end(body)
+      try {
+        const snapshots = url.searchParams.get('archived') === '1'
+          ? await collectArchivedTeamsActivity(ctx, roots, captainIds)
+          : await collectTeamsActivity(ctx, roots, captainIds)
+        const body = JSON.stringify({ teams: snapshots })
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        })
+        res.end(body)
+      } catch {
+        res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ error: 'Activity temporarily unavailable; retain the previous snapshot' }))
+      }
     },
   }), 'agent-teams: activity route')
 
