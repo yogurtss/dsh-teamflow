@@ -79,6 +79,8 @@ export const zh = {
   'workspace.verdictStale': '结论已过期',
 
   'card.memberCount': '{count} 名成员',
+  'card.progress': '任务进度',
+  'card.completedCount': '{completed} / {total} 已完成',
   'action.openActivityPanel': '打开活动面板',
   'activity.panelButton': '活动面板',
   'activity.badgeAria': '打开 TeamFlow 画布与历史，{count} 条团队记录',
@@ -361,6 +363,8 @@ export const en = {
   'workspace.verdictStale': 'Verdict outdated',
 
   'card.memberCount': '{count} members',
+  'card.progress': 'Task progress',
+  'card.completedCount': '{completed} / {total} completed',
   'action.openActivityPanel': 'Open activity panel',
   'activity.panelButton': 'Activity panel',
   'activity.badgeAria': 'Open TeamFlow canvas and history, {count} team records',
