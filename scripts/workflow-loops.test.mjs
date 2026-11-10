@@ -110,7 +110,7 @@ test('finished AI loops retain history when members retire for archival', async 
 async function routeFixture(t, source) {
   const root = await mkdtemp(join(tmpdir(), 'teamflow-loop-route-')); t.after(() => rm(root, { recursive: true, force: true }))
   const stateRoot = join(root, '.agent-teams'); await createTeamDir(stateRoot, source)
-  const captain = { id: 'captain', status: 'idle', session: { header: { id: 'captain', cwd: root }, ownEvents: () => [] } }
+  const captain = { id: 'captain', status: 'idle', options: {provider:'fixture',model:'model-a'}, session: { header: { id: 'captain', cwd: root }, requestHeader: () => ({config:{provider:'fixture',model:'model-a'}}), ownEvents: () => [] } }
   const live = new Map([[captain.id, captain], ...source.members.map(m => [m.id, { id: m.id, status: 'running', session: { header: { id: m.id, cwd: root }, ownEvents: () => [] } }])])
   const definitions = new Map(), effects = [], noop = () => {}; let route
   const ctx = { on: () => noop, effect: fn => effects.push(fn()), logger: { warn: noop, debug: noop }, tools: { register: d => definitions.set(d.name, d) }, agents: { get: id => live.get(id) }, llm: { resolveCallConfig: async v => v }, subagents: { followup: async () => {}, registerContinuableSetup: () => noop, drainChildren: async () => {} } }
@@ -118,7 +118,7 @@ async function routeFixture(t, source) {
   const config = { stateDir: '.agent-teams', maxMembers: 8, memberProvider: 'spawn', memberMaxDepth: 1, profiles: {}, toolPolicies: {} }
   const runtime = registerAgentTeamsTools(ctx, config)
   installWorkflowWorkbench(ctx, config, runtime, { register: value => { route = value; return noop } })
-  return { root, stateRoot, read: () => readTeam(stateRoot, source.id),
+  return { root, stateRoot, live, read: () => readTeam(stateRoot, source.id),
     tool: (name, args, member = 'reviewer') => definitions.get(name).execute(args, { agent: member === 'captain' ? captain : live.get(`${member}-session`), signal: new AbortController().signal }),
     call: async (action, fields = {}) => {
       const req = Readable.from([JSON.stringify({ sessionId: 'captain', teamId: source.id, action, ...fields })]); req.method = 'POST'; req.headers = {}
@@ -139,6 +139,63 @@ function finish(team, ids = ['a', 'b']) {
   reconcileLoops(team)
 }
 const decision = (team, loop, verdict = 'revise', taskIds = ['a']) => ({ decisionId: randomUUID(), runId: loop.runId, round: loop.round, fingerprint: loopInputFingerprint(team, loop), decision: verdict, note: 'Fix edge case and rerun verification', taskIds })
+
+test('idle loop members can change configuration in every loop phase, including completed and halted teams', () => {
+  for (const status of ['ready','running','reviewing','paused','passed','cancelled']) {
+    const {team,loop}=fixture('ai')
+    if(status!=='ready')startLoop(team,loop.id)
+    if(['reviewing','passed'].includes(status))finish(team)
+    if(status==='passed')decideLoop(team,loop.id,decision(team,loop,'pass',[]),'ai:reviewer')
+    if(['paused','cancelled'].includes(status))pauseLoop(team,loop.id,status==='cancelled')
+    assert.equal(loop.status,status)
+    for(const halted of [false,true])for(const name of ['worker','reviewer']) {
+      const source={...team,halted}, before=structuredClone(source)
+      const updated=applyWorkflowOperations(source,[{action:'update_member',name,provider:'fixture',model:'model-b',reasoningEffort:'high',role:'Updated responsibility'}])
+      assert.equal(updated.members.find(m=>m.name===name).model,'model-b')
+      assert.equal(updated.halted,halted)
+      assert.deepEqual(updated.tasks,source.tasks)
+      assert.deepEqual(updated.workflow.loops,source.workflow.loops)
+      assert.deepEqual(source,before,'editing must not mutate the previous state or loop history')
+    }
+  }
+})
+
+test('only the targeted busy member blocks configuration; loop membership alone does not', () => {
+  for(const busy of ['claimed','in_progress','reassigning','stopping']) {
+    const {team,loop}=fixture('ai');startLoop(team,loop.id)
+    if(busy==='stopping')team.members[0].stopping=true
+    else if(busy==='reassigning')team.tasks[0].reassigning=true
+    else team.tasks[0].status=busy
+    const before=structuredClone(team)
+    assert.throws(()=>applyWorkflowOperations(team,[{action:'update_member',name:'worker',model:'model-b'}]),/正在执行|先停止/)
+    assert.deepEqual(team,before)
+    const updated=applyWorkflowOperations(team,[{action:'update_member',name:'reviewer',model:'model-b'}])
+    assert.equal(updated.members[1].model,'model-b')
+  }
+  const {team}=fixture();team.halted=true
+  assert.throws(()=>applyWorkflowOperations(team,[{action:'update_member',name:'worker',model:'model-b'},{action:'add_task',subject:'Unrelated',dependencies:[]}]),/团队已停止/)
+})
+
+test('completed loop HTTP model edits retire idle sessions, preserve recorded models and reject a still-running session', async t => {
+  const {team,loop}=fixture('ai')
+  Object.assign(team.members[0],{provider:'fixture',model:'model-a',activeProvider:'fallback',activeModel:'fallback-model',fallbackActive:true})
+  startLoop(team,loop.id);finish(team);decideLoop(team,loop.id,decision(team,loop,'pass',[]),'ai:reviewer')
+  team.tasks.find(task=>task.id==='after').status='completed'
+  const f=await routeFixture(t,team), before=await f.read()
+  const history=await readLoopHistory(f.stateRoot,before,loop.id)
+  f.live.get('worker-session').status='idle'
+  const saved=await f.call('edit',{base:workflowFingerprint(before),title:'Change idle worker model',operations:[{action:'update_member',name:'worker',provider:'fixture',model:'model-b',reasoningEffort:'high'}]})
+  assert.equal(saved.code,200,JSON.stringify(saved))
+  const current=await f.read(), worker=current.members.find(m=>m.name==='worker')
+  assert.equal(worker.model,'model-b');assert.equal(worker.reasoningEffort,'high')
+  assert.equal(worker.id,'');assert.ok(worker.previousSessionIds.includes('worker-session'))
+  assert.equal(worker.activeModel,undefined);assert.equal(worker.fallbackActive,undefined)
+  assert.equal(current.workflow.loops[0].status,'passed')
+  assert.deepEqual(await readLoopHistory(f.stateRoot,current,loop.id),history)
+  const rejected=await f.call('edit',{base:workflowFingerprint(current),title:'Still busy reviewer',operations:[{action:'update_member',name:'reviewer',provider:'fixture',model:'model-b'}]})
+  assert.equal(rejected.code,409,JSON.stringify(rejected));assert.match(JSON.stringify(rejected),/仍在运行/)
+  assert.deepEqual(await f.read(),current)
+})
 
 test('three business rounds reuse task identities and preserve complete histories before resetting', async t => {
   const root = await mkdtemp(join(tmpdir(), 'teamflow-loops-')); t.after(() => rm(root, { recursive: true, force: true }))

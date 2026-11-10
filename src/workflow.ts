@@ -130,7 +130,8 @@ export function checkpointInputs(team: TeamState, task: TeamTask): TeamTask[] {
 }
 /** Apply to a detached copy: validation errors never partly modify durable state. */
 export function applyWorkflowOperations(original: TeamState, operations: WorkflowOperation[], maxMembers = 8): TeamState {
-  if (original.halted) throw new Error('团队已停止，请先恢复团队')
+  // Idle-member configuration does not resume execution or change the graph.
+  if (original.halted && operations.some(op => op.action !== 'update_member')) throw new Error('团队已停止，请先恢复团队')
   const team = structuredClone(original)
   const now = Date.now()
   for (const op of operations) {
@@ -138,7 +139,8 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
     if ('id' in op && op.id && loopForTask(team, op.id) && !(loopForTask(team, op.id)?.status === 'ready' && op.action === 'update_task'
       && (op.dependencies === undefined || JSON.stringify(op.dependencies) === JSON.stringify(taskOf(team, op.id).dependencies))
       && (op.assignee === undefined || op.assignee === taskOf(team, op.id).assignee))) throw new Error('循环节点请使用循环控制；运行中不能修改拓扑或单独重跑')
-    if ((op.action === 'update_member' || op.action === 'remove_member') && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
+    // Removal changes loop membership; editing an idle member's configuration does not.
+    if (op.action === 'remove_member' && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
     if (op.action === 'add_member') {
       if (sanitizeKey(op.name) === 'captain' || team.members.some(m => sanitizeKey(m.name) === sanitizeKey(op.name))) throw new Error('成员名称重复或保留')
       if (team.members.filter(m => m.status !== 'removed').length >= maxMembers) throw new Error('已达到团队成员上限')
@@ -147,7 +149,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
     } else if (op.action === 'update_member' || op.action === 'remove_member') {
       const member = team.members.find(m => m.name === op.name && m.status !== 'removed')
       if (!member) throw new Error('成员不存在')
-      if (member.stopping || team.tasks.some(t => t.assignee === member.name && ['claimed', 'in_progress'].includes(t.status))) throw new Error('成员正在执行任务，请先停止该任务')
+      if (member.stopping || team.tasks.some(t => t.assignee === member.name && (['claimed', 'in_progress'].includes(t.status) || t.reassigning))) throw new Error('成员正在执行任务，请先停止该任务')
       if (op.action === 'remove_member') {
         if (team.tasks.some(t => t.assignee === member.name && t.status === 'pending')) throw new Error('先重新分配该成员的待执行任务')
         member.status = 'removed'
