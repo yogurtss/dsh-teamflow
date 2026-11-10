@@ -117,7 +117,8 @@ export function checkpointInputs(team: TeamState, task: TeamTask): TeamTask[] {
 }
 /** Apply to a detached copy: validation errors never partly modify durable state. */
 export function applyWorkflowOperations(original: TeamState, operations: WorkflowOperation[], maxMembers = 8): TeamState {
-  if (original.halted) throw new Error('团队已停止，请先恢复团队')
+  // Idle-member configuration does not resume execution or change the graph.
+  if (original.halted && operations.some(op => op.action !== 'update_member')) throw new Error('团队已停止，请先恢复团队')
   const team = structuredClone(original)
   const now = Date.now()
   for (const op of operations) {
@@ -129,7 +130,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
     } else if (op.action === 'update_member' || op.action === 'remove_member') {
       const member = team.members.find(m => m.name === op.name && m.status !== 'removed')
       if (!member) throw new Error('成员不存在')
-      if (member.stopping || team.tasks.some(t => t.assignee === member.name && ['claimed', 'in_progress'].includes(t.status))) throw new Error('成员正在执行任务，请先停止该任务')
+      if (member.stopping || team.tasks.some(t => t.assignee === member.name && (['claimed', 'in_progress'].includes(t.status) || t.reassigning))) throw new Error('成员正在执行任务，请先停止该任务')
       if (op.action === 'remove_member') {
         if (team.tasks.some(t => t.assignee === member.name && t.status === 'pending')) throw new Error('先重新分配该成员的待执行任务')
         member.status = 'removed'
