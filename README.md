@@ -81,6 +81,36 @@ Completed workflows remain readable and editable. Archive only when work is comp
 
 Use **Save as template** to have AI extract reusable requirements, review the draft, and save it to your personal library. Templates retain roles, tasks, dependencies, and checkpoints, but exclude execution sessions, model routes, outputs, and approvals. Saved versions and applied workflows remain independent.
 
+## Try it yourself on the development branch
+
+Use the `dev` build and an empty workspace for either example. The first needs a GPU. The second only needs Python 3.
+
+### 1. Build and verify a Triton softmax kernel
+
+On a GPU machine with working PyTorch and Triton installations, select **Iterative operator optimization** in the template gallery. Paste this into the requirements:
+
+> Implement last-dimension softmax for a 2D FP32 tensor in Triton. Use `torch.softmax(x, dim=-1)` as the reference. Fix the random seed. Test 4096 rows with both 1024 and 1025 columns, plus an input containing 1000 and −1000. Have an independent verifier check that every output is finite and compare all elements with `rtol=1e-4, atol=1e-6`. Benchmark both implementations on the same GPU, precision and inputs. Warm up, synchronize timings and report median latency for each shape. Agree on the performance target before starting, for example median latency no higher than the reference at 1024 columns. Allow up to three rounds. Deliver the implementation, tests and a repeatable benchmark command.
+
+**What to check.** Open the gate evidence and compare the last column of the 1025-column result with the reference. This exercises the boundary of the final partial block. Pass when both correctness and the agreed performance target are met. If the reviewer sends it back, look for the failing shape, error or timing in the feedback.
+
+### 2. Turn training logs into a reproducible model comparison
+
+Start a blank workflow and send the team this request together with the sample rows:
+
+> Create seven JSON log files in `logs/` from the table, one file per row with the fields model, seed, epoch and accuracy. Build a Python standard-library CLI that prints a Markdown report when I run `python report.py logs`. Treat resumed training for the same model and seed as one run and use its highest epoch as the final result. List final accuracy per run, the B−A difference for each shared seed and the mean paired difference. Have a second member check the sample independently and turn the check into a regression test.
+
+| model | seed | epoch | accuracy |
+|---|---:|---:|---:|
+| A | 1 | 10 | 0.80 |
+| A | 2 | 10 | 0.82 |
+| A | 3 | 10 | 0.84 |
+| B | 1 | 10 | 0.83 |
+| B | 2 | 4 | 0.70 |
+| B | 2 | 10 | 0.84 |
+| B | 3 | 10 | 0.85 |
+
+**What to check.** Run the command yourself. Seven files should yield **six runs and three seed pairs**. Model B, seed 2 should finish at 0.84. The paired differences should be +0.03, +0.02 and +0.01, a mean gain of **two percentage points**.
+
 ## Working in the canvas
 
 <img src="./assets/readme/workflow-editor.png" width="720" alt="Workflow canvas with a human checkpoint selected for editing">
