@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { configureLoop, decideLoop, startLoop, reconcileLoops, loopInputFingerprint, loopCanExecute, pauseLoop, pendingLoopHistory } from '../lib/workflow-loops.js'
+import { saveGateSettings, configureLoop, decideLoop, startLoop, reconcileLoops, loopInputFingerprint, loopCanExecute, pauseLoop, pendingLoopHistory } from '../lib/workflow-loops.js'
 import { readLoopHistory } from '../lib/workflow-loop-history.js'
 import { createTeamDir, readTeam, writeTeam } from '../lib/state.js'
 import { validateWorkflowGraph, applyWorkflowOperations } from '../lib/workflow.js'
@@ -448,4 +448,31 @@ test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
   for(let i=0;i<500;i++){await new Promise(r=>setTimeout(r,10));state=await readTeam(stateRoot,'healthy');if(state.workflow.loops[0].status==='paused' && state.tasks[0].status==='pending')break}
   assert.equal(state.workflow.loops[0].status,'paused');assert.ok(warnings.length)
  }finally{Date.now=clock}
+})
+
+test('IF settings update both routes atomically and retain the run across reviewer changes', () => {
+  const {team, loop} = fixture()
+  const config = {gateId:'gate', entryId:'b', mode:'ai', reviewer:'reviewer', maxRounds:4, timeoutMinutes:20, rejectToEntry:true}
+  team.tasks.push(task('ship', ['after']))
+  const original = structuredClone(team)
+  assert.throws(() => saveGateSettings(team, config, ['a'], loop.id))
+  assert.deepEqual(team, original)
+  saveGateSettings(team, config, ['ship'], loop.id)
+  const updated = team.workflow.loops[0]
+  assert.equal(updated.runId, loop.runId)
+  assert.deepEqual(updated.bodyIds, ['b'])
+  assert.deepEqual(team.tasks.find(t => t.id === 'after').dependencies, [])
+  assert.deepEqual(team.tasks.find(t => t.id === 'ship').dependencies, ['after','gate'])
+  finish(team, ['a'])
+  startLoop(team, loop.id)
+  finish(team, ['b'])
+  decideLoop(team, loop.id, decision(team, updated, 'revise', []), 'ai:reviewer')
+  assert.equal(updated.round, 2)
+  assert.equal(team.tasks.find(t => t.id === 'b').status, 'pending')
+  pauseLoop(team, loop.id)
+  saveGateSettings(team, {...config, mode:'human', reviewer:undefined}, ['ship'], loop.id)
+  assert.equal(team.workflow.loops[0].round, 2)
+  assert.equal(team.tasks.find(t => t.id === 'gate').assignee, undefined)
+  startLoop(team, loop.id)
+  validateWorkflowGraph(team)
 })

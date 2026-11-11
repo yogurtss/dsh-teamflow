@@ -99,6 +99,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const [showOutcomes, setShowOutcomes] = useState(false)
   const [galleryMode,setGalleryMode]=useState<'browse'|'save'|undefined>(teamId?undefined:'browse')
   const entryOpened = useRef(false)
+  const [showLoopSteps, setShowLoopSteps] = useState(false)
   const [editing, setEditing] = useState(false)
   const [archiveView, setArchiveView] = useState(archived)
   const [cached]=useState(()=>teamId?viewCache.get(workflowCacheKey(sessionId,teamId,archived)):undefined)
@@ -365,6 +366,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     requestAnimationFrame(() => { const p = pos(id); canvas.current?.scrollTo({left:Math.max(0,p.x*zoom-48),top:Math.max(0,p.y*zoom-48),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}) })
   }
   function locateTask(id: string, focusField?: string, focusSection = '[data-task-heading]'): void {
+    if (team?.workflow?.loops?.some(loop => loop.bodyIds.includes(id))) setShowLoopSteps(true)
     setShowOutcomes(false)
     const task = team?.tasks.find(item => item.id === id)
     if (!task) return
@@ -483,9 +485,24 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     x: 32,
     y: Math.max(-128, ...team?.tasks.map(t => pos(t.id).y) ?? []) + 160,
   }
-  const graphWidth = Math.max(580, ...team?.tasks.map(t => pos(t.id).x + 265) ?? [], taskEditing ? draftPosition.x + 265 : 0)
-  const loopRegions = team?.workflow?.loops?.map(loop => ({ loop, ...loopRegion(team.tasks, loop, pos) })) ?? []
-  const graphHeight = Math.max(260, ...team?.tasks.map(t => pos(t.id).y + 170) ?? [], ...loopRegions.map(region => region.bottom + 20), taskEditing ? draftPosition.y + 170 : 0)
+  const compactLoops = !editing && team?.phase !== 'staged' && !showLoopSteps && !!team?.workflow?.loops?.length
+  const canvasTasks = useMemo(() => {
+    const tasks = team?.tasks ?? []
+    if (!compactLoops) return tasks
+    const loops = team!.workflow!.loops!
+    const hidden = new Set(loops.flatMap(loop => loop.bodyIds))
+    return tasks.filter(task => !hidden.has(task.id)).map(task => {
+      const loop = loops.find(item => item.gateId === task.id)
+      if (!loop) return task
+      const inputs = tasks.filter(t => loop.bodyIds.includes(t.id) || t.id === task.id).flatMap(t => t.dependencies)
+      return { ...task, dependencies: [...new Set(inputs.filter(id => !hidden.has(id)))] }
+    })
+  }, [compactLoops, team?.tasks, team?.workflow?.loops])
+  const compactPositions = useMemo(() => compactLoops ? arrangeWorkflow(canvasTasks) : undefined, [canvasTasks, compactLoops])
+  const canvasPos = (id: string) => compactPositions?.[id] ?? pos(id)
+  const graphWidth = Math.max(580, ...canvasTasks.map(t => canvasPos(t.id).x + 265), taskEditing ? draftPosition.x + 265 : 0)
+  const loopRegions = compactLoops ? [] : team?.workflow?.loops?.map(loop => ({ loop, ...loopRegion(team.tasks, loop, pos) })) ?? []
+  const graphHeight = Math.max(260, ...canvasTasks.map(t => canvasPos(t.id).y + 185), ...loopRegions.map(region => region.bottom + 20), taskEditing ? draftPosition.y + 170 : 0)
   function fitCanvas(): void {
     if (!canvas.current) return
     setZoom(fitGraph(canvas.current.clientWidth, canvas.current.clientHeight, graphWidth, graphHeight))
@@ -691,7 +708,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       {showOutcomes && !galleryMode && team && <OutcomeShowcase key={team.id+':'+sessionId} team={team} sessionId={sessionId} archived={archiveView} onTask={(id,review)=>{if(review)void openReview(id);else locateTask(id)}}/>}
       <div className={css.workbenchBody} hidden={!!galleryMode || showOutcomes}>
       {team && <nav className={css.commandBar} aria-label={l("创建与视图")}>
-        <strong>{l("创建")}</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button><button disabled={working || archiveView} onClick={() => void createNode('gate')}><WorkflowIcon name="gate" />{loopLabel}</button><button disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="acceptance" />{l('验收节点')}</button><button disabled={working || archiveView} onClick={() => void createNode('archive')}><WorkflowIcon name="archive" />{l('成果归档')}</button><button disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
+        <strong>{l("创建")}</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button><button className={css.createGate} aria-label={loopLabel} title={loopLabel} disabled={working || archiveView} onClick={() => void createNode('gate')}><svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M2 20 L50 1 L98 20 L50 39 Z"/></svg><span>{l.language === 'en' ? 'Gate' : '门控'}</span></button><button disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="acceptance" />{l('验收节点')}</button><button disabled={working || archiveView} onClick={() => void createNode('archive')}><WorkflowIcon name="archive" />{l('成果归档')}</button><button disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
         <span className={css.commandSpacer} /><button aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? l("显示右侧面板") : l("收起右侧面板")}</button>
       </nav>}
       {revalidating&&<p role="status" className={css.hint}>{l('已显示上次状态，正在同步最新进度…')}</p>}
@@ -734,21 +751,21 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           <p className={css.hint}>{archiveView ? l("点击成员查看保存的配置与执行记录；恢复并编辑后可调整。") : l("点击成员卡片直接编辑；讨论调整默认继续该成员的独立讨论，保留历史上下文。")}</p></>}
         </aside>
         <main className={css.graphArea}>
-          <nav className={css.toolbar} aria-label={l("画布工具")}><button aria-pressed={!panMode} onClick={() => setPanMode(false)}><WorkflowIcon name="select" />{l("选择")}</button><button aria-pressed={panMode} onClick={() => setPanMode(true)}><WorkflowIcon name="pan" />{l("平移")}</button><button aria-label={l("缩小画布")} disabled={zoom <= .1} onClick={() => changeZoom(zoom - .1)}>−</button><button title={l("恢复 100%")} aria-label={l("缩放 {0}%，点击恢复 100%", Math.round(zoom * 100))} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label={l("放大画布")} disabled={zoom >= 2} onClick={() => changeZoom(zoom + .1)}>＋</button><button onClick={fitCanvas}><WorkflowIcon name="fit" />{l("适应画布")}</button><button disabled={working || archiveView || !team.tasks.length} onClick={() => void arrangeCanvas()}><WorkflowIcon name="arrange" />{l("自动整理")}</button></nav>
+          <nav className={css.toolbar} aria-label={l("画布工具")}><button aria-pressed={!panMode} onClick={() => setPanMode(false)}><WorkflowIcon name="select" />{l("选择")}</button><button aria-pressed={panMode} onClick={() => setPanMode(true)}><WorkflowIcon name="pan" />{l("平移")}</button><button aria-label={l("缩小画布")} disabled={zoom <= .1} onClick={() => changeZoom(zoom - .1)}>−</button><button title={l("恢复 100%")} aria-label={l("缩放 {0}%，点击恢复 100%", Math.round(zoom * 100))} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label={l("放大画布")} disabled={zoom >= 2} onClick={() => changeZoom(zoom + .1)}>＋</button>{!editing && team.phase !== 'staged' && !!team.workflow?.loops?.length && <button aria-pressed={showLoopSteps} onClick={() => setShowLoopSteps(value => !value)}>{l.language === 'en' ? showLoopSteps ? 'Hide loop steps' : 'Show loop steps' : showLoopSteps ? '收起循环任务' : '展开循环任务'}</button>}<button onClick={fitCanvas}><WorkflowIcon name="fit" />{l("适应画布")}</button><button disabled={working || archiveView || !team.tasks.length} onClick={() => void arrangeCanvas()}><WorkflowIcon name="arrange" />{l("自动整理")}</button></nav>
           <div className={css.canvas} data-pan={panMode || !editing || archiveView} data-linking={!!link} ref={canvas} onPointerDownCapture={beginPan} onClickCapture={event=>{if(suppressPanClick.current) {suppressPanClick.current=false;event.preventDefault();event.stopPropagation()}}}>
             <div className={css.plane} style={{ width: graphWidth, height: graphHeight, zoom }}>
               <svg className={css.edges} aria-label={l("任务交接连线")}><defs><marker id="workflow-arrow" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-muted)" /></marker><marker id="workflow-arrow-active" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="var(--wb-accent)" /></marker>{['pass','reject'].map(kind=><marker key={kind} id={`workflow-arrow-${kind}`} markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill={kind==='pass'?'var(--loop-pass)':'var(--loop-reject)'}/></marker>)}</defs>
                 {loopRegions.map(region=><g key={region.loop.id} className={css.loopRegion} data-loop-region={region.loop.id}><rect x={region.x} y={region.y} width={region.width} height={region.height} rx="20"/><text x={region.x+16} y={region.y+20} fontSize="12">{l.language==='en'?'LOOP':'循环区域'} · {region.loop.bodyIds.length} {l.language==='en'?'steps':'个步骤'} · {region.loop.round}/{region.loop.maxRounds}</text></g>)}
-                {team.tasks.flatMap(t => t.dependencies.map(dep => { const path = connectionPath(connectionPort(pos(dep),'output', gateNode(team.tasks.find(task => task.id === dep))),connectionPort(pos(t.id),'input', gateNode(t))); const pass=team.workflow?.loops?.some(loop=>loop.gateId===dep); const selected=selectedEdge?.from === dep && selectedEdge.to === t.id; const related=highlightedTask === dep || highlightedTask === t.id; return <g key={`${dep}-${t.id}`} data-flow-branch={pass?'pass':undefined} data-selected={selected} data-related={related} data-dimmed={(!!highlightedTask || !!selectedEdge) && !related && !selected} className={css.edge}>
+                {canvasTasks.flatMap(t => t.dependencies.map(dep => { const path = connectionPath(connectionPort(canvasPos(dep),'output', gateNode(team.tasks.find(task => task.id === dep))),connectionPort(canvasPos(t.id),'input', gateNode(t))); const pass=team.workflow?.loops?.some(loop=>loop.gateId===dep); const selected=selectedEdge?.from === dep && selectedEdge.to === t.id; const related=highlightedTask === dep || highlightedTask === t.id; return <g key={`${dep}-${t.id}`} data-flow-branch={pass?'pass':undefined} data-selected={selected} data-related={related} data-dimmed={(!!highlightedTask || !!selectedEdge) && !related && !selected} className={css.edge}>
                   <path d={path} markerEnd={pass ? 'url(#workflow-arrow-pass)' : selected ? 'url(#workflow-arrow-active)' : 'url(#workflow-arrow)'} />
-                  {pass&&<text x={(pos(dep).x+225+pos(t.id).x)/2} y={(pos(dep).y+75+pos(t.id).y+55)/2-12} textAnchor="middle" fontSize="12" fontWeight="650">PASS</text>}
-                  <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={l("交接：{0} → {1}", team.tasks.find(task => task.id === dep)?.subject ?? dep, t.subject)} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { choose({ type:'edge',from:dep,to:t.id }) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose({ type:'edge',from:dep,to:t.id }) } }} />
+                  {pass&&<text x={(canvasPos(dep).x+225+canvasPos(t.id).x)/2} y={(canvasPos(dep).y+75+canvasPos(t.id).y+55)/2-12} textAnchor="middle" fontSize="12" fontWeight="650">PASS</text>}
+                  {(!compactLoops || team.tasks.find(task => task.id === t.id)?.dependencies.includes(dep)) && <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={l("交接：{0} → {1}", team.tasks.find(task => task.id === dep)?.subject ?? dep, t.subject)} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { choose({ type:'edge',from:dep,to:t.id }) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose({ type:'edge',from:dep,to:t.id }) } }} />}
                 </g> }))}
-                {reviewHistoryEdges(team.tasks).map(edge => <g key={`history:${edge.from}:${edge.to}`} className={css.historyEdge} data-review-history-edge><path d={connectionPath(connectionPort(pos(edge.from),'output',gateNode(team.tasks.find(t=>t.id===edge.from))),connectionPort(pos(edge.to),'input',gateNode(team.tasks.find(t=>t.id===edge.to))))} markerEnd="url(#workflow-arrow)"/><text x={(pos(edge.from).x+225+pos(edge.to).x)/2} y={(pos(edge.from).y+pos(edge.to).y)/2+42} textAnchor="middle" fontSize="11">{l('历史路径')}</text></g>)}
+                {reviewHistoryEdges(canvasTasks).map(edge => <g key={`history:${edge.from}:${edge.to}`} className={css.historyEdge} data-review-history-edge><path d={connectionPath(connectionPort(canvasPos(edge.from),'output',gateNode(team.tasks.find(t=>t.id===edge.from))),connectionPort(canvasPos(edge.to),'input',gateNode(team.tasks.find(t=>t.id===edge.to))))} markerEnd="url(#workflow-arrow)"/><text x={(canvasPos(edge.from).x+225+canvasPos(edge.to).x)/2} y={(canvasPos(edge.from).y+canvasPos(edge.to).y)/2+42} textAnchor="middle" fontSize="11">{l('历史路径')}</text></g>)}
                 {loopRegions.map(region => <g key={region.loop.id} className={css.edge} data-flow-branch="reject"><path d={region.returnPath} strokeDasharray="7 5" markerEnd="url(#workflow-arrow-reject)"/><text x={region.label.x} y={region.label.y} textAnchor="middle" fontSize="13" fontWeight="650">REJECT · {l.language==='en'?'Revise with feedback':'按意见改进'} · {region.loop.round}/{region.loop.maxRounds}</text></g>)}
-                {link && <path d={connectionPath(connectionPort(pos(link.from),'output', gateNode(team.tasks.find(task => task.id === link.from))),link)} />}
+                {link && <path d={connectionPath(connectionPort(canvasPos(link.from),'output', gateNode(team.tasks.find(task => task.id === link.from))),link)} />}
               </svg>
-              {team.tasks.map(task => { const gateLoop = team.workflow?.loops?.find(loop => loop.gateId === task.id); const p = pos(task.id), control=taskControlState(team,{...task,workflowAwaitingStart:awaitsFirstStart(task)},archiveView);
+              {canvasTasks.map(task => { const gateLoop = team.workflow?.loops?.find(loop => loop.gateId === task.id); const p = canvasPos(task.id), control=taskControlState(team,{...task,workflowAwaitingStart:awaitsFirstStart(task)},archiveView);
                 const en = l.language === 'en'
                 const execution = data.execution?.[task.id]
                 const reviewing = task.status === 'pending' && !!task.checkpoint && !gateNode(task) && data.busy.includes('check:'+task.id)
@@ -818,7 +835,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
         </main>
         <div className={css.resizeHandle} role="separator" aria-label={l("调整右侧面板宽度")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
         <section className={css.inspector} aria-label={l("属性与讨论面板")}><header className={css.inspectorHeader}><strong>{reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
-          {activeTask && !selectedEdge && <LoopPanel key={activeTask.id} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
+          {activeTask && !selectedEdge && <LoopPanel key={team.id + ':' + activeTask.id} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
           {selectedEdge && <aside className={css.editor} aria-label={l("交接详情")}><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>{l("上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。")}</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>{l("删除连线")}</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? gateNode(activeTask) ? loopLabel : l('验收节点') : l("任务属性")}><header className={css.taskHeading}>
             <small>{activeTask.checkpoint ? gateNode(activeTask) ? loopLabel : l('验收节点') : l("任务属性")} · {activeTask.id}</small>

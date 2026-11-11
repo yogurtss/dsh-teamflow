@@ -11,16 +11,24 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
 }) {
   const l = useWorkflowText(), tr = (zh: string, en: string) => l.language === 'en' ? en : zh
   const loop = team.workflow?.loops?.find(item => item.gateId === task.id || item.bodyIds.includes(task.id))
-  const [entry, setEntry] = useState(''), [mode, setMode] = useState<'human' | 'ai'>('human'), [reviewer, setReviewer] = useState('')
-  const [rounds, setRounds] = useState(3), [timeout, setTimeoutMinutes] = useState(30), [extra, setExtra] = useState(1)
-  const [note, setNote] = useState(''), [targets, setTargets] = useState<string[]>([]), [error, setError] = useState(''), [loading, setLoading] = useState(false)
+  const [entry, setEntry] = useState(loop?.entryId ?? ''), [mode, setMode] = useState<'human' | 'ai'>(loop?.mode ?? 'human'), [reviewer, setReviewer] = useState(loop?.reviewer ?? '')
+  const [rounds, setRounds] = useState(loop?.maxRounds ?? 3), [timeout, setTimeoutMinutes] = useState(loop?.timeoutMinutes ?? 30), [extra, setExtra] = useState(1)
+  const [rejectToEntry, setRejectToEntry] = useState(loop ? !!loop.rejectToEntry : true)
+  const [passTargets, setPassTargets] = useState(() => team.tasks.filter(t => t.dependencies.includes(task.id)).map(t => t.id))
+  const savedPassTargets = JSON.stringify(team.tasks.filter(t => t.dependencies.includes(task.id)).map(t => t.id))
+  useEffect(() => {
+    setEntry(loop?.entryId ?? ''); setMode(loop?.mode ?? 'human'); setReviewer(loop?.reviewer ?? '')
+    setRounds(loop?.maxRounds ?? 3); setTimeoutMinutes(loop?.timeoutMinutes ?? 30)
+    setRejectToEntry(loop ? !!loop.rejectToEntry : true); setPassTargets(JSON.parse(savedPassTargets))
+  }, [loop?.id, loop?.entryId, loop?.mode, loop?.reviewer, loop?.maxRounds, loop?.timeoutMinutes, loop?.rejectToEntry, savedPassTargets])
+  const [note, setNote] = useState(''), [targets, setTargets] = useState<string[]>(loop ? [loop.entryId] : []), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [materials, setMaterials] = useState<{ artifactEvidence: string; fingerprint: string; runId: string; round: number; tasks: TeamTask[]; files?: ArtifactDigest[] }>()
   const [history, setHistory] = useState<{ records: LoopHistoryRecord[]; next?: string }>(), [comparison, setComparison] = useState<LoopHistoryRecord>()
   const historyScope = `${team.id}:${loop?.runId}:${task.id}`
   const historyScopeRef = useRef(historyScope); historyScopeRef.current = historyScope
   const scope = `${historyScope}:${loop?.round}`
   const scopeRef = useRef(scope); scopeRef.current = scope
-  useEffect(() => { setMaterials(undefined); setNote(''); setTargets([]); setError(''); setLoading(false) }, [scope])
+  useEffect(() => { setMaterials(undefined); setNote(''); setTargets(loop ? [loop.entryId] : []); setError(''); setLoading(false) }, [scope])
   useEffect(() => { setHistory(undefined); setComparison(undefined) }, [historyScope])
   if (!loop && (task.checkpoint?.kind !== 'gate' || task.status !== 'pending' || (task.attempt ?? 0) > 0 || archived)) return null
   const ancestors = new Set<string>()
@@ -39,21 +47,26 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   }
   const blocked = busy || loading
   const statuses = { ready: tr('等待启动', 'Ready'), running: tr('执行中', 'Running'), reviewing: tr('审核中', 'Reviewing'), paused: tr('已暂停', 'Paused'), passed: tr('已通过', 'Passed'), cancelled: tr('已结束', 'Cancelled') }
-  return <section className={css.panel} aria-label={tr('门控节点', 'Gate node')}>
+  return <section className={css.panel} data-loop-panel aria-label={tr('门控节点', 'Gate node')}>
     <h3>{tr('门控节点', 'Gate node')}</h3>
     {error && <p role="alert">{error}</p>}
-    {!loop ? <>
-      <p>{tr('必须连接返回线形成环路才能运行。退回时重跑原节点，保留历轮结果；不会新建返工路径。', 'A return edge forming a loop is required. Revisions rerun existing nodes and preserve round history without creating a new path.')}</p>
-      <label>{tr('返回连线目标（必选）', 'Return target (required)')}<select aria-label={tr('返回连线目标（必选）', 'Return target (required)')} value={entry} onChange={e => setEntry(e.target.value)}><option value="">{tr('选择上游任务', 'Select an upstream task')}</option>{team.tasks.filter(t => !t.checkpoint && ancestors.has(t.id)).map(t => <option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
+    {!archived && (!loop || loop.gateId === task.id && !loop.queued && ['ready', 'paused'].includes(loop.status)) && <details open={!loop || undefined}><summary>{tr('配置 IF 路径与审核', 'Configure IF routes and review')}</summary><div className={css.settings}>
+      <fieldset disabled={!!loop?.historyCount}><legend>{tr('PASS · 通过后继续', 'PASS · Continue to')}</legend>
+        {team.tasks.filter(t => t.id !== task.id && !ancestors.has(t.id)).map(t => <label key={t.id} className={css.check}><input type="checkbox" checked={passTargets.includes(t.id)} onChange={e => setPassTargets(ids => e.target.checked ? [...ids, t.id] : ids.filter(id => id !== t.id))}/>{t.subject}</label>)}
+        {!passTargets.length && <small>{tr('通过后结束此路径', 'This path ends on pass')}</small>}
+      </fieldset>
+      <label>REJECT · {tr('返回连线目标（必选）', 'Return target (required)')}<select disabled={!!loop?.historyCount} aria-label={tr('返回连线目标（必选）', 'Return target (required)')} value={entry} onChange={e => setEntry(e.target.value)}><option value="">{tr('选择上游任务', 'Select an upstream task')}</option>{team.tasks.filter(t => !t.checkpoint && ancestors.has(t.id)).map(t => <option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
+      <label className={css.check}><input type="checkbox" checked={rejectToEntry} onChange={e => setRejectToEntry(e.target.checked)} />{tr('退回时从所选入口重跑；取消勾选可在审核时指定返工任务', 'Restart at the selected entry on reject. Uncheck to choose tasks during review.')}</label>
       <label>{tr('审核方式', 'Review mode')}<select aria-label={tr('审核方式', 'Review mode')} value={mode} onChange={e => setMode(e.target.value as 'human' | 'ai')}><option value="human">{tr('人工审核', 'Human review')}</option><option value="ai">{tr('AI 自动审核', 'Automatic AI review')}</option></select></label>
       {mode === 'ai' && <label>{tr('独立审核成员', 'Independent reviewer')}<select aria-label={tr('独立审核成员', 'Independent reviewer')} value={reviewer} onChange={e => setReviewer(e.target.value)}><option value="">{tr('选择审核成员', 'Choose reviewer')}</option>{team.members.filter(m => m.status !== 'removed').map(m => <option key={m.name}>{m.name}</option>)}</select></label>}
       <label>{tr('轮次上限（包含首次）', 'Round limit (including first)')}<input aria-label={tr('轮次上限（包含首次）', 'Round limit (including first)')} type="number" min={1} max={20} value={rounds} onChange={e => setRounds(Number(e.target.value))} /></label>
       <label>{tr('每轮超时（分钟）', 'Round timeout (minutes)')}<input aria-label={tr('每轮超时（分钟）', 'Round timeout (minutes)')} type="number" min={1} max={1440} value={timeout} onChange={e => setTimeoutMinutes(Number(e.target.value))} /></label>
-      <button disabled={blocked || !entry || mode === 'ai' && !reviewer} onClick={() => void guarded(() => perform('loop_configure', { base, config: { gateId: task.id, entryId: entry, mode, reviewer, maxRounds: rounds, timeoutMinutes: timeout } }))}>{tr('连接返回线并创建环路', 'Connect return edge and create loop')}</button>
-    </> : <>
+      <button disabled={blocked || !entry || mode === 'ai' && !reviewer} onClick={() => void guarded(() => perform('loop_configure', { base, config: { gateId: task.id, entryId: entry, rejectToEntry, mode, reviewer: mode === 'ai' ? reviewer : undefined, maxRounds: rounds, timeoutMinutes: timeout }, loopId: loop?.id, passTargets }))}>{loop ? tr('保存 IF 配置', 'Save IF settings') : tr('连接返回线并创建环路', 'Connect return edge and create loop')}</button>
+    </div></details>}
+    {loop && <>
       <strong>{statuses[loop.status]} · {tr('第', 'Round')} {loop.round}/{loop.maxRounds} · {loop.mode === 'ai' ? `AI · ${loop.reviewer}` : tr('人工审核', 'Human review')}</strong>
       <p>{loop.reason || tr('通过门控后才会继续执行环外任务。', 'Downstream tasks wait until this gate passes.')}</p>
-      {loop.feedback && <details><summary>{tr('最近审核意见', 'Latest feedback')}</summary><pre>{loop.feedback}</pre></details>}
+      {loop.feedback && <p className={css.feedback}>{loop.feedback}</p>}
       {!archived && <div className={css.controls}>
         {['ready', 'paused'].includes(loop.status) && <>
           {exhausted && !capped && <label>{tr('明确追加轮数', 'Add rounds explicitly')}<input aria-label={tr('明确追加轮数', 'Add rounds explicitly')} type="number" min={1} max={20 - loop.maxRounds} value={extra} onChange={e => setExtra(Number(e.target.value))} /></label>}
@@ -70,8 +83,8 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
           <p>{task.description}</p>
           {materials.tasks.map(t => <details key={t.id}><summary>{t.subject} · {t.status}</summary>{loop.previousOutputs?.[t.id] && <p>{tr('上轮结果', 'Previous result')} · {loop.previousOutputs[t.id]}</p>}<pre>{t.output || tr('没有完成结果', 'No completed result')}</pre><pre>{JSON.stringify({ acceptance: t.acceptanceResults, verification: t.commandsRun }, null, 2)}</pre></details>)}
           <label>{tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')}<textarea rows={5} maxLength={16000} value={note} onChange={e => setNote(e.target.value)} /></label>
-          <fieldset><legend>{tr('需要改进的任务（其下游也会重跑）', 'Tasks to revise (their descendants rerun too)')}</legend>{loop.bodyIds.map(id => <label key={id} className={css.check}><input type="checkbox" checked={targets.includes(id)} onChange={e => setTargets(value => e.target.checked ? [...value, id] : value.filter(v => v !== id))} />{team.tasks.find(t => t.id === id)?.subject}</label>)}</fieldset>
-          <div className={css.controls}>{(['pass', 'revise', 'blocked'] as const).map(decision => <button key={decision} disabled={blocked || !note.trim() || decision === 'revise' && !targets.length} onClick={() => void guarded(async () => {
+          {!loop.rejectToEntry && <fieldset><legend>{tr('需要改进的任务（其下游也会重跑）', 'Tasks to revise (their descendants rerun too)')}</legend>{loop.bodyIds.map(id => <label key={id} className={css.check}><input type="checkbox" checked={targets.includes(id)} onChange={e => setTargets(value => e.target.checked ? [...value, id] : value.filter(v => v !== id))} />{team.tasks.find(t => t.id === id)?.subject}</label>)}</fieldset>}
+          <div className={css.controls}>{(['pass', 'revise', 'blocked'] as const).map(decision => <button key={decision} disabled={blocked || !note.trim() || decision === 'revise' && !loop.rejectToEntry && !targets.length} onClick={() => void guarded(async () => {
             const result = await perform('loop_decide', { loopId: loop.id, decisionId: crypto.randomUUID(), runId: materials.runId, round: materials.round, fingerprint: materials.fingerprint, artifactEvidence: materials.artifactEvidence, decision, note, taskIds: targets })
             if (result) { setMaterials(undefined); setNote(''); setTargets([]) }
           })}>{decision === 'pass' ? tr('通过并继续', 'Pass and continue') : decision === 'revise' ? tr('按意见改进', 'Revise with feedback') : tr('无法继续，暂停', 'Blocked, pause')}</button>)}</div>

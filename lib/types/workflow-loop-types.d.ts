@@ -4,6 +4,7 @@ export interface LoopConfig {
     entryId: string;
     mode: 'human' | 'ai';
     reviewer?: string;
+    rejectToEntry?: boolean;
     maxRounds: number;
     timeoutMinutes: number;
 }

@@ -10,6 +10,8 @@ export declare function loopInputFingerprint(team: TeamState, loop: WorkflowLoop
 /** The ordinary DAG is validated independently, including external paths. */
 export declare function validateLoopGraph(team: TeamState): void;
 export declare function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop;
+/** Validate edits to both branches before applying either one. */
+export declare function saveGateSettings(team: TeamState, config: LoopConfig, passTargets: unknown, loopId?: unknown): void;
 export declare function loopCanExecute(team: TeamState, task: TeamTask): boolean;
 export declare function loopDependenciesSatisfied(team: TeamState, task: TeamTask): boolean;
 /** Called before every durable write and from the scheduler watchdog. Never creates tasks. */

@@ -23,6 +23,9 @@ TeamFlow 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 本页介绍 `dev` 上的循环测试开发版 **`0.2.11-dev.3`**，详见[发布说明](./release-notes/v0.2.11-dev.3.md)。`main` 保持原流程式稳定版本，通用 bug 修复单独移植。包名为 `@yogurtss/dsh-teamflow`，请通过本仓库或本地构建包安装。
 
+在开发版画布上点击菱形门控，展开「配置 IF 路径与审核」。启动前可以选择 PASS 的下游任务、REJECT 的上游入口、审核方式和轮次上限（含首轮）。通过即离开循环；退回时可固定从入口重跑，也可由审核者指定返工任务。暂停后可更换审核者和调整剩余轮次。运行视图默认收起循环任务，点击「展开循环任务」可查看内部步骤。
+
+
 | 版本 | Git 安装源 | 适用场景 |
 | --- | --- | --- |
 | 稳定版 | `github:yogurtss/dsh-teamflow#main` | 原流程式稳定版本，不包含 dev 循环测试功能 |

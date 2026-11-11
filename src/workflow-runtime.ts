@@ -2,7 +2,7 @@ import { resumeTeamState } from './quality-gates.ts'
 import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import { readTaskArchive, cancelTaskArchive, archiveRunning } from './task-archive.ts'
 import { branchCheckpoint } from './workflow.ts'
-import { configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
+import { saveGateSettings, configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
 import { readLoopHistory } from './workflow-loop-history.ts'
 import { cp } from 'node:fs/promises'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
@@ -425,7 +425,9 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           const state = workflowState(team)
           if (action === 'loop_configure') {
             if (body['base'] !== workflowFingerprint(team)) throw new Error('流程已变化，请刷新')
-            configureLoop(team, parseLoopConfig(body['config']))
+            const config = parseLoopConfig(body['config'])
+            if ('passTargets' in body) saveGateSettings(team, config, body['passTargets'], body['loopId'])
+            else configureLoop(team, config)
           } else if (action === 'loop_start') {
             if (body['base'] !== workflowFingerprint(team)) throw new Error('流程已变化，请刷新')
             startLoop(team, string(body['loopId'], 'loopId'), Number(body['additionalRounds'] ?? 0))

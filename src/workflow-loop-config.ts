@@ -8,6 +8,7 @@ export function parseLoopConfig(raw: unknown): LoopConfig {
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1 || maxRounds > 20) throw new Error('轮次上限必须为 1–20，包含首次执行')
   if (!Number.isSafeInteger(timeoutMinutes) || timeoutMinutes < 1 || timeoutMinutes > 1440) throw new Error('执行超时必须为 1–1440 分钟')
   return { gateId: value.gateId, entryId: value.entryId, mode: value.mode as LoopConfig['mode'], maxRounds, timeoutMinutes,
+    ...(value.rejectToEntry === true ? { rejectToEntry: true } : {}),
     ...(typeof value.reviewer === 'string' && value.reviewer.trim() ? { reviewer: value.reviewer.trim() } : {}) }
 }
 
