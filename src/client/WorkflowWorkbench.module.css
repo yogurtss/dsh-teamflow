@@ -405,3 +405,8 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .adaptationSpinner { display:inline-flex; animation:adaptationTurn 1.6s linear infinite; }
 @keyframes adaptationTurn { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .adaptationSpinner { animation:none; } }
+
+.workbench .node[data-full-card] {width:var(--wb-node-width);height:230px;border:1px solid var(--wb-border);--node-side-border:1px;--node-top-border:1px;border-radius:15px;box-shadow:0 5px 17px color-mix(in srgb,var(--wb-text) 8%,transparent)}
+.workbench .node[data-full-card] > .drag {display:none}
+.workbench .node[data-full-card]:is(:hover,:focus-within,.selected) > .drag {display:flex;position:absolute;z-index:3;right:5px;top:-23px;background:var(--wb-bg);border:1px solid var(--wb-border);border-radius:6px;font-size:10px;padding:1px 5px}
+.workbench .node[data-full-card]::before,.workbench .node[data-full-card]::after {pointer-events:none}
