@@ -495,3 +495,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .quickGuide summary { cursor:pointer; width:fit-content; color:var(--wb-accent); }
 .quickGuide ol { margin:8px 0; padding-inline-start:24px; }
 .quickGuide li + li { margin-top:5px; }
+
+.workbench [data-guide-active] { outline:3px solid var(--wb-accent); outline-offset:2px; }
+.guidePopup { position:fixed; inset:auto; margin:0; box-sizing:border-box; width:min(320px,calc(100vw - 20px)); max-height:calc(100vh - 20px); overflow:auto; padding:16px; color:var(--wb-text); background:var(--wb-bg); border:1px solid var(--wb-border); border-radius:12px; box-shadow:0 6px 28px #0003; }
+.guidePopup::backdrop { background:rgb(0 0 0 / 10%); }
+.guidePopup strong { display:block; }
+.guidePopup p { margin:6px 0 14px; }
+.guidePopup footer { display:flex; justify-content:space-between; gap:12px; }
