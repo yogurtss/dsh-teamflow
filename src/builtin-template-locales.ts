@@ -1,4 +1,5 @@
 import type { TemplateVersion } from './templates.ts'
+import { deepResearchTemplate, RESEARCH_ID } from './builtin-research-template.ts'
 import { builtinLoopTemplates, BUILTIN_LOOP_IDS } from './builtin-loop-templates.ts'
 /** Only versioned built-in content is translated; personal templates and saved tasks are content. */
 const english: Record<string,string> = {
@@ -108,6 +109,7 @@ Object.assign(english, {
 const chinese = Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]))
 export function builtinText(text:string, language:'zh'|'en'):string { return (language==='en'?english:chinese)[text] ?? text }
 export function localizeBuiltinTemplate(template:TemplateVersion, language:'zh'|'en'):TemplateVersion {
+  if (template.id === RESEARCH_ID && template.version === 1) return deepResearchTemplate(language)
   if (template.version === 1 && BUILTIN_LOOP_IDS.some(id => id === template.id)) {
     const loopTemplate = builtinLoopTemplates(language).find(item => item.id === template.id)
     if (loopTemplate) return loopTemplate

@@ -244,7 +244,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   record({event:'workflow-template-passed',extraction:true,fixedGraph:true,unifiedAdaptation:true,independentVersion:true,execution:true,
     snapshot:{task:{description:result.team.tasks[0].description},sourceVersion:result.team.workflow.templateSource.version,templateVersion:v2.template.version}});
   const catalog = (await post('template_list')).templates.filter(t=>t.id.startsWith('builtin-'));
-  assert.equal(catalog.length,5);
+  assert.equal(catalog.length,6);
   for(const item of catalog){
     const owner=await ctx.agents.create({sessionId:'session-builtin-'+item.id,meta:{cwd:process.cwd()},agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
     ctx.effect(()=>()=>owner.dispose());await owner.agent.whenIdle();activeSession=owner.agent.id;activeTeam='';

@@ -74,7 +74,7 @@ test('authenticated workflow handler applies templates once and leaves the sourc
   const ctx={get:key=>key==='sessionTitle'?{get:()=>title,rename:(_session,name)=>{renames.push(name);title={title:name,source:{kind:'user'}}}}:undefined,agents:{get:id=>id==='captain'?captain:undefined},llm:{resolveCallConfig:async v=>v},effect:fn=>fn()};let route
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',templateDirectory:library,maxMembers:8},{},{register:r=>{route=r;return()=>{}}})
   async function call(action,fields={}){const req=Readable.from([JSON.stringify({sessionId:'captain',action,...fields})]);req.method='POST';let status,value;await route.handler(req,{writeHead:s=>{status=s},end:v=>{value=JSON.parse(v)}});return {status,...value}}
-  assert.equal((await call('template_list')).templates.length,6)
+  assert.equal((await call('template_list')).templates.length,builtinTemplates().length+1)
   assert.equal(messages.length,0,'Browsing must leave the captain blank')
   assert.equal((await call('template_apply',{templateId:template.id,version:999,name:'Invalid',description:'B'})).status,409)
   assert.equal(messages.length,0,'Rejected template use must not start a conversation')
@@ -99,7 +99,12 @@ test('authenticated workflow handler applies templates once and leaves the sourc
 
 test('built-in starter workflows are complete, immutable and copy into personal templates',async t=>{
  const root=await mkdtemp(join(tmpdir(),'builtin-copy-'));t.after(()=>rm(root,{recursive:true,force:true}))
- const catalog=builtinTemplates();assert.equal(catalog.length,5)
+ const catalog=builtinTemplates();assert.equal(catalog.length,6)
+ const research=getBuiltinTemplate('builtin-deep-research',1)
+ const instance=instantiateTemplate(research,'research','captain','Research','Compare evidence')
+ for(const role of ['researcher','reviewer']){
+  const member=instance.members.find(m=>m.name===role);assert.equal(member.galleryMcp,true);assert.match(member.executionPrompt,/MCP/)
+ }
  for(const item of catalog){
   assert.deepEqual(parseTemplate(item).tasks,item.tasks)
   assert.ok(item.tasks.every(task=>Object.values(task.general).every(text=>text.trim())))
@@ -115,7 +120,7 @@ test('built-in starter workflows are complete, immutable and copy into personal 
  }
  catalog[0].tasks[0].general.requirements='mutated'
  assert.notEqual(getBuiltinTemplate(catalog[0].id).tasks[0].general.requirements,'mutated')
- assert.equal((await listTemplates(root)).templates.length,5)
+ assert.equal((await listTemplates(root)).templates.length,6)
 })
 
 test('feature template v2 preserves classic v1 and leaves other built-ins unchanged',()=>{

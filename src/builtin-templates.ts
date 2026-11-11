@@ -1,5 +1,6 @@
 /** Versioned built-ins are read-only; edits become independent personal copies. */
 import { parseTemplate, type TemplateMember, type TemplateTask, type TemplateVersion } from './templates.ts'
+import { deepResearchTemplate } from './builtin-research-template.ts'
 import { builtinLoopTemplates } from './builtin-loop-templates.ts'
 const member=(name:string,summary:string):TemplateMember=>({name,summary,role:summary,executionPrompt:'按本次完整任务要求工作，先检查输入与范围；不臆造缺失信息。交付可追溯的文件、结果和证据，区分实际验证与推断。发现阻塞及时报告，不擅自扩大范围或替用户批准。'})
 const node=(id:string,subject:string,assignee:string,dependencies:string[],requirements:string,deliverables:string,acceptance:string):TemplateTask=>({id,subject,assignee,dependencies,checkpoint:!assignee,general:{requirements,deliverables,acceptance}})
@@ -47,10 +48,11 @@ const featureV2: TemplateVersion = {...featureV1, version:2, updatedAt:179341440
  {...featureTasks[4]!,dependencies:['delivery']}]
 }
 const loopTemplates = builtinLoopTemplates()
-const latest=[...definitions.map(item=>item.id==='builtin-feature'?featureV2:item), ...loopTemplates]
+const research = deepResearchTemplate()
+const latest=[...definitions.map(item=>item.id==='builtin-feature'?featureV2:item), ...loopTemplates, research]
 export function builtinTemplates():TemplateVersion[]{return structuredClone(latest)}
 export function getBuiltinTemplate(id:string,version?:number):TemplateVersion {
- const found=(version===1?[...definitions, ...loopTemplates]:latest).find(t=>t.id===id)
+ const found=(version===1?[...definitions, ...loopTemplates, research]:latest).find(t=>t.id===id)
  if(!found || version!==undefined && version!==found.version)throw new Error('内置模板版本不存在')
  return structuredClone(found)
 }
