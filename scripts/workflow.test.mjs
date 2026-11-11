@@ -889,13 +889,19 @@ test('rework also repeats downstream computation before the checkpoint', () => {
   assert.deepEqual(result.tasks[4].dependencies, [result.tasks[3].id])
   assert.deepEqual(result.tasks[2].dependencies, [result.tasks[4].id])
 })
-test('artifact bytes changing invalidates review evidence, even if task results did not change', t => {
+test('large model manifests do not block review, and changed reported metrics invalidate approval', t => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-evidence-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = withGate(); source.tasks[0].status = 'completed'; source.tasks[0].changedPaths = ['result.txt']
   writeFileSync(join(root, 'result.txt'), 'first')
   const first = workflowMaterials(source, 'gate', root)
   writeFileSync(join(root, 'result.txt'), 'second')
+  source.tasks[0].changedPaths = Array.from({length:12000},(_,i)=>'weights/shard-'+i+'.safetensors')
+  assert.equal(workflowMaterials(source,'gate',root).evidence,first.evidence)
+  source.tasks[0].output='baseline 83% '+ '0.125 '.repeat(40000) +' accuracy 83% → 91%'
   const second = workflowMaterials(source, 'gate', root)
+  assert.match(second.text,/91%/);assert.doesNotMatch(second.text,/safetensors/);assert.ok(second.text.length<180000)
+  source.tasks[0].output=source.tasks[0].output.slice(0,8000)+'1'+source.tasks[0].output.slice(8001)
+  assert.notEqual(workflowMaterials(source,'gate',root).evidence,second.evidence)
   assert.notEqual(first.evidence, second.evidence)
   assert.throws(() => decideCheckpoint(source, 'gate', 'approve', first.evidence, second.evidence, ''), /材料已变化/)
 })

@@ -30,3 +30,23 @@ test('pure configuration issues have their own label, including staged workflows
  assert.equal(activityStatus(team([config,task('rerun',{workflowRerunRequired:true})])).state,'attention');
  assert.equal(activityStatus(team([config]),true).state,'archived');
 });
+
+test('completed replacement paths retire only related failures from card progress', async () => {
+  const {replacedTaskIds} = await import('../lib/replaced-tasks.js')
+  const failed={id:'old',subject:'Build',description:'Build',status:'failed',dependencies:[]}
+  const retry={id:'retry',subject:'Build · 返工 2',description:'Build\n\n返工要求：fix',status:'completed',dependencies:[]}
+  const progress=tasks=>{
+    const retired=replacedTaskIds(tasks)
+    return activityStatus({phase:'running',tasks:tasks.map(t=>({...t,superseded:retired.has(t.id)}))})
+  }
+  assert.equal(progress([failed,retry]).state,'completed')
+  assert.equal(progress([failed,{...retry,status:'pending'}]).state,'attention')
+  assert.equal(progress([failed,retry,{...failed,id:'other',subject:'Unrelated'}]).state,'attention')
+  assert.equal(progress([failed,retry,{id:'wait',status:'pending',subject:'Waiting',dependencies:['old']}]).state,'attention')
+  assert.equal(progress([failed,{...retry,id:'second',status:'failed',replacesTaskIds:['old']},{...retry,id:'third',replacesTaskIds:['second']}]).percent,100)
+  const stranded={id:'stranded',subject:'Old test',status:'pending',dependencies:['old']}
+  assert.equal(progress([failed,stranded,{...retry,replacesTaskIds:['stranded']}]).state,'completed')
+  const repair={id:'fix',subject:'Fix',kind:'repair',status:'completed',dependencies:[],findingSourceTaskIds:['old']}
+  assert.equal(progress([failed,repair]).state,'attention')
+  assert.equal(progress([failed,repair,{id:'check',subject:'Check',kind:'review',verdict:'pass',status:'completed',dependencies:['fix']}]).state,'completed')
+})

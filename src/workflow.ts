@@ -191,7 +191,13 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       if (op.description !== undefined) task.description = op.description
       updateDescription(task,op)
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
-      if (op.dependencies !== undefined) task.dependencies = op.dependencies
+      if (op.dependencies !== undefined) {
+        if (op.dependencies.some(id => !task.dependencies.includes(id))) {
+          const replaced = task.dependencies.filter(id => !op.dependencies!.includes(id))
+          if (replaced.length) task.replacesTaskIds = [...new Set([...task.replacesTaskIds ?? [], ...replaced])]
+        }
+        task.dependencies = op.dependencies
+      }
       if (op.archive !== undefined) { if(task.kind !== 'archive') throw new Error('仅归档节点可以配置归档'); task.archive=parseTaskArchive(op.archive) }
       if (op.confirmConfiguration && task.workflowConfigPending) {
         if(task.adaptationIssue?.trim())throw new Error(`任务「${task.subject}」仍有需要确认的问题：${task.adaptationIssue}。请补充任务要求，并在问题解决后清除问题说明。`)
@@ -251,7 +257,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       for (const task of upstream.filter(t => rerun.has(t.id))) {
         if (['claimed', 'in_progress'].includes(task.status)) throw new Error('返工任务仍在运行')
         const id = nextTaskId(team); mapping.set(task.id, id)
-        team.tasks.push({ id, subject: `${task.subject} · 返工 ${gate.checkpoint.round + 1}`,
+        team.tasks.push({ id, replacesTaskIds: [task.id], subject: `${task.subject} · 返工 ${gate.checkpoint.round + 1}`,
           description: `${task.description ?? ''}\n\n返工要求：${op.instructions}`, assignee: task.assignee,
           dependencies: task.dependencies.map(dep => mapping.get(dep) ?? dep), kind: task.kind, ...task.archive ? {archive:structuredClone(task.archive)} : {},
           objective: task.objective, acceptance: task.acceptance, inScope: task.inScope, outOfScope: task.outOfScope, verify: task.verify,

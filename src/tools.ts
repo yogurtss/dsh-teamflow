@@ -2154,15 +2154,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         if (loop.lastDecisionId === args.decision_id) return { status: loop.status, round: loop.round }
         const gate = requireTask(fresh, loop.gateId)
         if (!gate.attemptId || gate.attemptId !== args.attempt_id || gate.assignee !== identity.name) throw new Error('审核执行令牌已过期')
-        let evidence: string
-        try { evidence = await loopArtifactEvidence(workspace, fresh, loop) }
-        catch (error) {
-          pauseLoop(fresh, loop.id, false, `无法读取审核文件，已暂停：${error instanceof Error ? error.message : String(error)}`)
-          await writeTeam(root, fresh)
-          return { status: loop.status, round: loop.round }
-        }
+        const evidence = loopArtifactEvidence(workspace, fresh, loop)
         if (loop.reviewArtifactEvidence !== evidence) {
-          pauseLoop(fresh, loop.id, false, '审核文件已变化，已暂停；请检查后继续以重新审核')
+          pauseLoop(fresh, loop.id, false, '本轮结果已变化，已暂停；请检查后继续以重新审核')
           await writeTeam(root, fresh)
           return { status: loop.status, round: loop.round }
         }
@@ -2932,6 +2926,7 @@ export function applyQualityFollowUp(
   // the repair instead of waiting forever on an intentionally failed task.
   const replacement = created.at(-1)
   if (replacement !== undefined) {
+    replacement.replacesTaskIds = [closed.id]
     for (const task of existing) {
       if (task.status !== 'pending' || !task.dependencies.includes(closed.id)) continue
       task.dependencies = task.dependencies.map((dependency) => (

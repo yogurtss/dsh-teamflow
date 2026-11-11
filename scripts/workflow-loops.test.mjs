@@ -37,7 +37,7 @@ test('loop controls preserve completed state, block node reruns, and distinguish
   assert.throws(() => validateWorkflowGraph(invalid), /审核成员一致/)
 })
 
-test('AI artifact drift pauses immediately and persists the reason without releasing downstream', async t => {
+test('AI result drift pauses immediately and persists the reason without releasing downstream', async t => {
   const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
   const gate = team.tasks.find(t => t.id === 'gate'); beginTaskAttempt(gate, 'reviewer')
   loop.reviewArtifactEvidence = 'old artifact digest'
@@ -47,7 +47,7 @@ test('AI artifact drift pauses immediately and persists the reason without relea
     attempt_id: gate.attemptId, decision_id: input.decisionId, decision: 'pass', note: input.note, task_ids: [] })
   assert.equal(result.status, 'paused')
   const saved = await f.read()
-  assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /文件已变化/)
+  assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /结果已变化/)
   assert.notEqual(saved.tasks.find(t => t.id === 'gate').status, 'completed')
   assert.equal(saved.tasks.find(t => t.id === 'after').status, 'pending')
 })
@@ -69,19 +69,15 @@ test('pausing live loop work revokes its attempt and resumes the same round with
   assert.equal(work.workflowRerunContext.previousOutput, 'Saved partial draft')
 })
 
-test('artifact hashing stays off the host event loop and human decisions reject changed files', async t => {
+test('human loop decisions review results independently of workspace changes', async t => {
   const { team, loop } = fixture(); startLoop(team, loop.id); finish(team)
   team.tasks[0].changedPaths = ['artifact.txt']
   const f = await routeFixture(t, team)
   await writeFile(join(f.root, 'artifact.txt'), 'a'.repeat(1024 * 1024))
-  let ticks = 0; const timer = setInterval(() => ticks++, 1)
-  let materials
-  try { materials = await f.call('loop_materials', { loopId: loop.id }) } finally { clearInterval(timer) }
-  assert.equal(materials.code, 200); assert.ok(ticks > 0, 'File hashing must yield to the host')
+  const materials = await f.call('loop_materials', { loopId: loop.id });assert.equal(materials.code,200);assert.deepEqual(materials.files,[])
   await writeFile(join(f.root, 'artifact.txt'), 'changed during human review')
   const result = await f.call('loop_decide', { loopId: loop.id, ...decision(team, loop, 'pass', []), artifactEvidence: materials.artifactEvidence })
-  assert.equal(result.code, 409); assert.match(result.error, /文件已变化/)
-  assert.equal((await f.read()).workflow.loops[0].status, 'reviewing')
+  assert.equal(result.code,200);assert.equal((await f.read()).workflow.loops[0].status,'passed')
 })
 
 test('invalid configuration is atomic and upstream reruns cannot invalidate saved loop rounds', () => {
@@ -296,7 +292,7 @@ test('actual scheduler dispatches the AI gate with a decision contract after fai
   assert.equal((await readTeam(join(root, '.agent-teams'), 'demo')).tasks[2].status, 'claimed')
 })
 
-test('unreadable AI review artifacts pause before claiming a review attempt', async t => {
+test('unreadable optional artifacts allow the AI reviewer to assess task results', async t => {
   const root = await mkdtemp(join(tmpdir(), 'teamflow-loop-artifact-failure-')); t.after(() => rm(root, { recursive: true, force: true }))
   const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
   team.tasks[0].changedPaths = ['../outside-workspace.txt']
@@ -307,8 +303,7 @@ test('unreadable AI review artifacts pause before claiming a review attempt', as
   const scheduler = installTeamScheduler(ctx, { stateDir: '.agent-teams', dispatch: async (...args) => { sent.push(args); return true } })
   await scheduler.kickTeam(root, 'demo', captain)
   const saved = await readTeam(join(root, '.agent-teams'), 'demo')
-  assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /无法读取审核文件/)
-  assert.equal(sent.length, 0); assert.equal(saved.tasks[2].attemptId, undefined)
+  assert.equal(saved.workflow.loops[0].status,'reviewing');assert.equal(sent.length,1);assert.ok(saved.tasks[2].attemptId)
   assert.equal(saved.tasks[3].status, 'pending')
 })
 

@@ -24,6 +24,7 @@ export interface WorkflowLoop extends LoopConfig {
     externalInputs: Record<string, string>;
     lastDecisionId?: string;
     lastDecision?: 'pass' | 'revise' | 'blocked';
+    previousOutputs?: Record<string, string>;
     reviewArtifactEvidence?: string;
     queued?: boolean;
     contracts?: Record<string, string>;

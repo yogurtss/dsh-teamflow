@@ -469,12 +469,7 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           } : undefined
           const reviewLoop = loopForTask(fresh, task.id)
           if (reviewLoop?.gateId === task.id) {
-            try { reviewLoop.reviewArtifactEvidence = await loopArtifactEvidence(workspace, fresh, reviewLoop) }
-            catch (error) {
-              pauseLoop(fresh, reviewLoop.id, false, `无法读取审核文件，已暂停：${error instanceof Error ? error.message : String(error)}`)
-              await writeTeam(stateRoot, fresh)
-              return undefined
-            }
+            reviewLoop.reviewArtifactEvidence = loopArtifactEvidence(workspace, fresh, reviewLoop)
           }
           const attemptId = beginTaskAttempt(task, currentMember.name)
           // A verdict must be able to say which revision was on disk when it

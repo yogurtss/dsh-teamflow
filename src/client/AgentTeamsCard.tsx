@@ -1,3 +1,4 @@
+import { activityStatus } from './activity-status.ts'
 /**
  * AgentTeams conversation card: the lightweight in-conversation summary for
  * one team — the captain's role avatar and name, the member roster as
@@ -84,8 +85,7 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
     teamName: snapshot?.name ?? data.teamName,
     members: snapshot?.members.map((member) => ({ id: member.id, name: member.name, role: member.role })) ?? data.members,
   }), [data, owner, snapshot])
-  const completed = snapshot?.tasks.filter(task => task.status === 'completed').length ?? 0
-  const total = snapshot?.tasks.length ?? 0
+  const { completed, total } = activityStatus(snapshot)
   return (
     <section className={css.root} data-agent-teams-card data-team-id={resolved.teamId}>
       <header className={css.head}>
