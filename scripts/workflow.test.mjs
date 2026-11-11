@@ -1043,7 +1043,14 @@ test('first human review opens an isolated conversation with checklist and store
   } }
   const runtime = installWorkflowConversations(ctx, { stateDir: '.agent-teams', maxMembers: 8 }, workflowMaterials)
   const captain = { id: 'captain-id', options: { provider: 'fake', model: 'fake' }, session: { header: { cwd: root }, requestHeader: () => ({ config: {} }) } }
-  const id = await runtime.open(captain, source, 'check:gate', join(root, '.agent-teams'))
+  const effects=[]
+  const scheduler=installTeamScheduler({...ctx,on:()=>()=>{},effect:fn=>effects.push(fn()),logger:{warn:message=>assert.fail(message)}},{stateDir:'.agent-teams',openReview:runtime.open})
+  t.after(()=>effects.forEach(fn=>fn?.()))
+  await Promise.all([scheduler.kickTeam(root,source.id,captain),scheduler.kickTeam(root,source.id,captain)])
+  assert.equal(prompts.length,1,'repeated scheduler kicks should start one review of this evidence')
+  const after=await readTeam(join(root,'.agent-teams'),source.id)
+  assert.equal(after.tasks.find(task=>task.id==='gate').status,'pending')
+  const id=after.workflow.discussions['discussion:check:gate'].native.sessionId
   assert.notEqual(id, captain.id); assert.equal(spec.parentSessionId, undefined)
   assert.match(prompts[0].content[0].text, /^## 待你验收/)
   assert.match(prompts[0].content[0].text, /Check validation and error messages/)
@@ -1053,7 +1060,7 @@ test('first human review opens an isolated conversation with checklist and store
   assert.equal(discussion.materialsRound, 1)
   assert.equal(discussion.native.reviewEvidence, discussion.evidence)
   assert.match(discussion.materials, /Implemented login validation/)
-  await runtime.open(captain, source, 'check:gate', join(root, '.agent-teams'))
+  await runtime.open(captain, saved, 'check:gate', join(root, '.agent-teams'))
   assert.equal(prompts.length, 1)
   assert.equal(source.tasks[1].checkpoint.decision, undefined)
 })

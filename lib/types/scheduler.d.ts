@@ -13,12 +13,13 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
-import type { TeamTask } from './types.ts';
+import type { TeamState, TeamTask } from './types.ts';
 /** Per-dependency output cap in the assignment prompt. */
 export declare const DEPENDENCY_OUTPUT_MAX_CHARS = 2000;
 /** Combined dependency-output budget in the assignment prompt. */
 export declare const DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 12000;
 export interface SchedulerConfig {
+    readonly openReview?: (captain: Agent, team: TeamState, key: string, root: string) => Promise<string>;
     readonly stateDir: string;
     readonly executionPrompt?: string;
     readonly dispatch?: (captain: Agent, teamId: string, memberName: string, text: string, signal: AbortSignal, mode: 'queue' | 'steer', attemptId?: string) => Promise<boolean>;
