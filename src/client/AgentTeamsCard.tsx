@@ -1,3 +1,4 @@
+import { ActivityActors } from './ActivityActors.tsx'
 import { activityStatus } from './activity-status.ts'
 /**
  * AgentTeams conversation card: the lightweight in-conversation summary for
@@ -105,6 +106,7 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
           {t('activity.panelButton')}
         </button>
       </header>
+      {snapshot && <ActivityActors team={snapshot} archived={archivedTeams.includes(snapshot)} t={t}/>}
       {snapshot?.description && <p className={css.description}>{snapshot.description}</p>}
       {total > 0 && <div className={css.progressSection}>
         <div className={css.progressLabel}>

@@ -1,3 +1,5 @@
+import { activityActors } from './activity-actors.ts'
+import { ActivityActors } from './ActivityActors.tsx'
 import { isGateTask } from '../workflow-node-kind.ts'
 import { workflowRequest } from './workflow-request.ts'
 import { activityStatus } from './activity-status.ts'
@@ -199,14 +201,16 @@ function CollapsedBadge({ count, busy, onClick, t, team, archived }: {
   readonly t: AgentTeamsTranslate
 }) {
   const status=activityStatus(team,archived)
-  const label=t(('activity.state.'+status.state) as Parameters<AgentTeamsTranslate>[0])
+  const actor = team && activityActors(team,archived)[0]
+  const label=actor ? t(actor.label) : t(('activity.state.'+status.state) as Parameters<AgentTeamsTranslate>[0])
   const detail=t('activity.summary',{done:status.completed,total:status.total,running:status.running,review:status.reviews,attention:status.attention})
-  const title=[team?.name,label,status.total?status.percent+'%':undefined,detail,t('activity.badgeAria',{count})].filter(Boolean).join(' · ')
-  return <button type="button" className={css.badge} data-agent-teams-collapsed data-busy={busy} data-status={status.state} onClick={onClick} aria-label={title} title={title}>
+  const title=[team?.name,actor?.name,actor?.task,label,status.total?status.percent+'%':undefined,detail,t('activity.badgeAria',{count})].filter(Boolean).join(' · ')
+  return <button type="button" className={css.badge} data-agent-teams-collapsed data-busy={busy} data-status={status.state} data-tone={actor?.tone} onClick={onClick} aria-label={title} title={title}>
     <span className={css.statusRing} aria-hidden><svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="7.5" className={css.ringTrack}/><circle cx="10" cy="10" r="7.5" className={css.ringValue} pathLength="100" strokeDasharray={status.percent+' 100'}/></svg>{status.state==='completed'?<i>✓</i>:status.state==='paused'?<i>Ⅱ</i>:status.attention>0?<i>·</i>:null}</span>
     <span className={css.statusBody}>
       <span className={css.statusHeading}><span>Workflow</span><span aria-hidden>↗</span></span>
       {team?.name && <strong className={css.statusTeam}>{team.name}</strong>}
+      {team && <ActivityActors team={team} archived={archived} t={t}/>}
       <span className={css.statusLine}>
         <span className={css.statusLabel}>{label}</span>
         {status.total>0&&<span className={css.statusPercent}>{status.percent}<small>%</small></span>}

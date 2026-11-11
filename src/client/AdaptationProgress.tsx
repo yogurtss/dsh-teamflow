@@ -7,7 +7,7 @@ export function AdaptationProgress({ phase, disabled, onOpen }: { phase: Adaptat
   const l = useWorkflowText(), labels = adaptationLabels[phase]
   const busy = phase === 'connecting' || phase === 'generating'
   return <section className={css.adaptationProgress} data-adaptation-state={phase} aria-label={l('本次任务适配')}>
-    <button type="button" disabled={disabled} onClick={onOpen}><span className={busy ? css.adaptationSpinner : undefined} aria-hidden="true"><BrandIcon /></span>{l(labels.button)}</button>
+    <button type="button" disabled={disabled} onClick={onOpen}><span className={busy ? css.adaptationSpinner : undefined} aria-hidden="true"><BrandIcon /></span>{(phase==='generating' || phase==='ready' || phase==='applied') && <strong>Captain · </strong>}{l(labels.button)}</button>
     <p role="status" aria-live="polite">{l(labels.detail)}</p>
   </section>
 }

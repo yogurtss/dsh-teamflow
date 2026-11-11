@@ -50,3 +50,17 @@ test('completed replacement paths retire only related failures from card progres
   assert.equal(progress([failed,repair]).state,'attention')
   assert.equal(progress([failed,repair,{id:'check',subject:'Check',kind:'review',verdict:'pass',status:'completed',dependencies:['fix']}]).state,'completed')
 })
+test('cards identify live actors, handoff and adaptation independently of selected member', async () => {
+  const {activityActors}=await import('../lib/client/activity-actors.js')
+  const team={phase:'running',members:['researcher','reviewer'].map(name=>({name,activity:'working'})),tasks:['researcher','reviewer'].map(name=>({id:name,subject:name,assignee:name,status:'in_progress',dependencies:[]}))}
+  assert.deepEqual(activityActors(team).map(a=>[a.name,a.tone]),[['researcher','active'],['reviewer','active']])
+  team.members[0].activity='idle'
+  assert.equal(activityActors(team)[0].tone,'blocked')
+  team.tasks[0].handoffFrom='analyst'
+  assert.equal(activityActors(team)[0].from,'analyst')
+  for (const [adaptation,tone] of [['generating','adapting'],['decision','decision'],['applied','ready']]){
+    assert.equal(activityActors({...team,adaptation})[0].name,'captain')
+    assert.equal(activityActors({...team,adaptation})[0].tone,tone)
+  }
+  assert.equal(activityActors(team,true)[0].tone,'ready')
+})

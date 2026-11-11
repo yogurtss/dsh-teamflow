@@ -2392,3 +2392,9 @@
 .statusRing svg { transform:rotate(-90deg); overflow:visible; }.ringTrack,.ringValue { fill:none; stroke-width:1.6; }.ringTrack { stroke:currentColor; opacity:.16; }.ringValue { stroke:currentColor; stroke-linecap:round; transition:stroke-dasharray .55s ease; }.statusRing i { position:absolute; font-style:normal; font-size:10px; line-height:1; }
 .statusLabel { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.statusPercent { font-variant-numeric:tabular-nums; color:var(--dsw-alias-label-secondary,light-dark(#7c8797,#a4afbd)); min-width:29px; text-align:right; }.statusPercent small { font-size:9px; margin-left:1px; }.statusCount { min-width:15px; height:15px; padding:0 3px; box-sizing:border-box; display:grid; place-items:center; border-radius:5px; color:var(--capsule-accent); background:color-mix(in srgb,var(--capsule-accent) 11%,transparent); font-size:9px; font-variant-numeric:tabular-nums; }
 @media(prefers-reduced-motion:reduce) { .ringValue { transition:none; } }
+
+.badge[data-tone=active] { --capsule-accent:light-dark(#254aaa,#b7caff) }
+.badge[data-tone=adapting] { --capsule-accent:light-dark(#704298,#d8b4fa) }
+.badge[data-tone=blocked] { --capsule-accent:light-dark(#a73936,#ffb4aa) }
+.badge[data-tone=decision] { --capsule-accent:light-dark(#825300,#f9cf83) }
+.badge[data-tone=complete] { --capsule-accent:light-dark(#206746,#a3e5bc) }

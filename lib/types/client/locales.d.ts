@@ -4,6 +4,16 @@ export declare const AGENT_TEAMS_LOCALE_NAMESPACE = "agentTeams";
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export declare const zh: {
     'language.code': string;
+    'actor.adapting': string;
+    'actor.proposal': string;
+    'actor.needsInput': string;
+    'actor.applied': string;
+    'actor.handoff': string;
+    'actor.blocked': string;
+    'actor.awaitingSession': string;
+    'actor.decision': string;
+    'actor.dependencies': string;
+    'actor.unassigned': string;
     'activity.state.running': string;
     'activity.state.review': string;
     'activity.state.attention': string;
@@ -285,6 +295,16 @@ export type AgentTeamsLocaleKey = keyof typeof zh;
 /** English dictionary, checked complete against the Chinese source key set. */
 export declare const en: {
     'language.code': string;
+    'actor.adapting': string;
+    'actor.proposal': string;
+    'actor.needsInput': string;
+    'actor.applied': string;
+    'actor.handoff': string;
+    'actor.blocked': string;
+    'actor.awaitingSession': string;
+    'actor.decision': string;
+    'actor.dependencies': string;
+    'actor.unassigned': string;
     'activity.state.running': string;
     'activity.state.review': string;
     'activity.state.attention': string;

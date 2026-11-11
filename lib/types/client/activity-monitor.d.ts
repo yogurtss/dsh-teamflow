@@ -19,6 +19,7 @@ export interface ActivityMember {
 }
 /** One task row of a host snapshot. */
 export interface ActivityTask {
+    readonly handoffFrom?: string;
     readonly superseded?: boolean;
     readonly checkpoint?: import('../workflow-types.ts').Checkpoint;
     readonly workflowPaused?: boolean;
@@ -59,6 +60,8 @@ export interface ActivityTeam {
     readonly description?: string;
     readonly captainSessionId: string;
     readonly phase: 'staged' | 'running';
+    readonly adaptation?: 'generating' | 'decision' | 'attention' | 'applied';
+    readonly captainWorking?: boolean;
     readonly workflowEnabled?: boolean;
     readonly workflow?: {
         loops: Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'queued'>[];
