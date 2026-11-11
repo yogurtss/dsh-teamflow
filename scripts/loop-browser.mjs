@@ -11,7 +11,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().endsWith('/workflow') && request.method() === 'POST') requests.push(request.postDataJSON()) })
   await page.goto(process.env.TEAMFLOW_LOOP_URL ?? 'http://127.0.0.1:8384')
-  const createGate = page.getByRole('navigation', {name:'创建与视图'}).getByRole('button', {name:'门控节点', exact:true})
+  const createGate = page.getByRole('navigation', {name:'创建与视图'}).getByRole('button', {name:'循环门控', exact:true})
   assert.equal(await createGate.locator('svg path').getAttribute('d'), 'M2 20 L50 1 L98 20 L50 39 Z')
   assert.ok(await createGate.evaluate(button => button.querySelector('svg').getBoundingClientRect().width >= button.clientWidth - 1), 'The diamond outline must span the whole creation button')
   await page.locator('[data-canvas-node="gate"]').click()

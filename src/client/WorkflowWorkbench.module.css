@@ -490,3 +490,8 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .workbench .node[data-full-card]::before,.workbench .node[data-full-card]::after {pointer-events:none}
 
 .workbench .node.gateNode {width:225px;height:150px}
+
+.quickGuide { flex:none; max-height:30vh; overflow:auto; padding:5px 16px; border-bottom:1px solid var(--wb-border); background:var(--wb-bg); }
+.quickGuide summary { cursor:pointer; width:fit-content; color:var(--wb-accent); }
+.quickGuide ol { margin:8px 0; padding-inline-start:24px; }
+.quickGuide li + li { margin-top:5px; }

@@ -711,9 +711,23 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       {showOutcomes && !galleryMode && team && <OutcomeShowcase key={team.id+':'+sessionId} team={team} sessionId={sessionId} archived={archiveView} onTask={(id,review)=>{if(review)void openReview(id);else locateTask(id)}}/>}
       <div className={css.workbenchBody} hidden={!!galleryMode || showOutcomes}>
       {team && <nav className={css.commandBar} aria-label={l("创建与视图")}>
-        <strong>{l("创建")}</strong><button disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button><button className={css.createGate} aria-label={loopLabel} title={loopLabel} disabled={working || archiveView} onClick={() => void createNode('gate')}><svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M2 20 L50 1 L98 20 L50 39 Z"/></svg><span>{l.language === 'en' ? 'Gate' : '门控'}</span></button><button disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="acceptance" />{l('验收节点')}</button><button disabled={working || archiveView} onClick={() => void createNode('archive')}><WorkflowIcon name="archive" />{l('成果归档')}</button><button disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
+        <strong>{l("创建")}</strong>
+        <button title={l('指定负责执行这项任务的成员。')} disabled={working || archiveView} onClick={() => void createNode('task')}><WorkflowIcon name="task" />{l("任务节点")}</button>
+        <button className={css.createGate} title={l('退回后重跑原任务，通过后走 PASS 路径。')} disabled={working || archiveView} onClick={() => void createNode('gate')}><svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M2 20 L50 1 L98 20 L50 39 Z"/></svg><span>{l('循环门控')}</span></button>
+        <button title={l('由人签收交付，退回后新建返工路径。')} disabled={working || archiveView} onClick={() => void createNode('check')}><WorkflowIcon name="acceptance" />{l('人工验收')}</button>
+        <button title={l('收集上游任务的交付成果。')} disabled={working || archiveView} onClick={() => void createNode('archive')}><WorkflowIcon name="archive" />{l('成果归档')}</button>
+        <button title={l('添加可分配任务的团队成员。')} disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
         <span className={css.commandSpacer} /><button aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? l("显示右侧面板") : l("收起右侧面板")}</button>
       </nav>}
+      <details className={css.quickGuide}>
+        <summary>{l('第一次用？查看工作台指南')}</summary>
+        <ol>
+          <li><strong>{l('从模板开始')}</strong> · {l('打开「流程模板库」预览流程，选择合适的模板后，按自己的目标调整成员和任务。')}</li>
+          <li><strong>{l('从零搭建')}</strong> · {l('创建团队后，先用 Agent 添加成员，再建任务节点并指定负责人。在编辑流程时，从上游节点的输出端拖线到下游输入端。')}</li>
+          <li><strong>{l('决定怎样审核')}</strong> · {l('例如写报告：要反复修改到达标，用「循环门控」，设置通过去哪里、退回到哪里及最多几轮；要由人签收最终稿，用「人工验收」，退回会新建返工路径。')}</li>
+          <li><strong>{l('查看交付')}</strong> · {l('需要汇总时，把「成果归档」接在交付任务后。运行后打开「交付内容」查看结果，点画布上的节点可查看执行详情。')}</li>
+        </ol>
+      </details>
       {revalidating&&<p role="status" className={css.hint}>{l('已显示上次状态，正在同步最新进度…')}</p>}
       {team && (unsaved.length > 0 || saveState !== 'saved' || storageError) && <section className={css.saveBar} aria-label={l("保存状态")}>
         <span role="status">{saveState === 'saving' ? l("正在保存画布…") : saveState === 'error' ? l("上次保存失败，请重试") : l("节点与连线自动保存")} · {unsaved.length ? l("{0} 个对象有未保存属性", unsaved.length) : l("属性已保存")}</span>
