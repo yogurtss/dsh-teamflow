@@ -163,6 +163,8 @@ export interface TaskEvidence {
 
 /** One task of a team's task list. */
 export interface TeamTask {
+  /** Previous task or inputs replaced by this path. Used only for progress reporting. */
+  replacesTaskIds?: string[]
   /** Non-applicability or missing input; explicit human resolution is required. */
   adaptationIssue?: string
   /** Explicit rerun context, kept separate from the durable task contract. */

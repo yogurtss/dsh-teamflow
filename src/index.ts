@@ -220,8 +220,8 @@ export function apply(ctx: Context, config: Config): void {
   // member spawn (`spawnMember`), the earliest point the provider list is
   // settled, rather than here.
 
-  const agentTeamsRuntime = registerAgentTeamsTools(ctx, resolved)
   const workflowConversations = installWorkflowConversations(ctx, resolved, workflowMaterials)
+  const agentTeamsRuntime = registerAgentTeamsTools(ctx, resolved, workflowConversations.open)
   installTeamCapabilities(ctx, {
     stateDir: resolved.stateDir,
     isPendingMember: agentTeamsRuntime.isPendingMember,

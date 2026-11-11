@@ -1,5 +1,6 @@
 /** Source-message catalog for workflow UI. Never apply to user-authored content. */
 export const workflowEnglish: Record<string, string> = {
+  "请按本节点的验收要求逐项核对执行结果。要求涉及具体文件时，可在任务成果中查看对应文件。": "Check the reported results against this node’s acceptance criteria. Open a specific file in task outcomes when a criterion calls for it.",
 " · 按策略跳过内容审计，请在本机检查":" · Content audit skipped by policy; check this file locally",
 "仅展示文件开头 256 KiB；内容已截断，不代表完整审计或验收通过。":"Showing only the first 256 KiB. This partial preview is not a full audit or approval.",
 "按策略跳过内容审计，请在本机检查":"Content audit skipped by policy; check this file locally",

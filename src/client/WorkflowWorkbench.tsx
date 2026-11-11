@@ -803,7 +803,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           }}
           onDiscuss={() => void startEmbedded(discussion)}
           onRestart={!data.currentDiscussion ? () => void startEmbedded(discussion, activeId, true) : undefined} discussionBusy={data.busy.includes(discussion)}
-          discussion={embeddedDiscussion === discussion && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : undefined}
+          discussion={(embeddedDiscussion === discussion || !!conversation?.native) && activeId ? <EmbeddedDiscussion key={`${activeId}:${discussion}:${conversation?.native?.sessionId}`} sessionId={sessionId} teamId={activeId} discussion={discussion} /> : undefined}
           proposal={proposal ? <section className={css.proposal}>{renderProposalReview()}</section> : undefined}
         />}
         {!editor && !selectedEdge && !activeTask && !reviewingCheckpoint && <aside className={css.discussion} data-template-review={reviewingTemplate}><header><img src={reviewTask ? REVIEW_ART : member ? memberArtUrl(member.name, member.role ?? '') : LEAD_ART} alt="" /><div><h3 data-review-heading tabIndex={-1}>{reviewTask ? l("验收 · {0}", reviewTask.subject) : discussionTask ? l("任务讨论 · {0}", discussionTask.subject) : member ? l("成员职责 · {0}", member.name) : discussion === 'adapt' ? l("本次任务适配") : l("流程修改")}</h3>

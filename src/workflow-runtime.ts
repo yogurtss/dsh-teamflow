@@ -20,7 +20,7 @@ import { assembleTeamSnapshot } from './snapshot.ts'
 import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
 import { drainMemberChildren, sessionOwnEvents } from './harness-compat.ts'
-import { readArtifactScope, type ArtifactScopeRead } from './artifacts.ts'
+import { excerpt, resultDigest, reviewResult } from './review-results.ts'
 import { createWorkspaceAuditor } from './workspace-audit-async.ts'
 import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import { outcomeFiles } from './outcomes.ts'
@@ -45,18 +45,23 @@ function nameTemplateCaptain(ctx: Context, captain: Agent, name: string, creatin
   const current = titles.get(captain.session)
   if (!current || creating && current.source.kind !== 'user') titles.rename(captain.session, name)
 }
-export function workflowMaterials(team: TeamState, taskId: string, workspace: string, suppliedFiles?: ArtifactScopeRead): { text: string; evidence: string } {
+export function workflowMaterials(team: TeamState, taskId: string, _workspace?: string): { text: string; evidence: string } {
   const gate = team.tasks.find(t => t.id === taskId && t.checkpoint)
   if (!gate) throw new Error('检查点不存在')
   const inputs = checkpointInputs(team, gate)
-  const paths = [...new Set(inputs.flatMap(t => [...t.changedPaths ?? [], ...t.deliverables ?? []]))]
-  const files = suppliedFiles ?? (paths.length ? readArtifactScope(workspace, paths) : { artifacts: [], gaps: [] })
-  const material = { check: { id: gate.id, subject: gate.subject, description: taskText(gate), round: gate.checkpoint!.round, ...(gate.acceptance?.length ? { acceptance: gate.acceptance } : {}) },
-    results: inputs.map(t => ({ id: t.id, subject: t.subject, status: t.status, attemptId: t.attemptId,
-      output: t.output, changedPaths: t.changedPaths, commandsRun: t.commandsRun, acceptanceResults: t.acceptanceResults })),
-    files, limitation: '任务输出和命令结果由执行 Agent 提交；文件摘要由宿主读取。验收 Agent 未独立运行命令，也未读取全部文件内容。' }
-  const text = JSON.stringify(material, null, 2)
-  if (text.length > 180000) throw new Error('验收材料过大，请将检查点拆分为更小范围')
+  const results = []
+  let size = 0
+  for (const input of [...inputs].reverse()) {
+    const result = reviewResult(input, gate)
+    size += JSON.stringify(result).length
+    if (size > 128000) break
+    results.push(result)
+  }
+  const limitation = '请按本节点的验收要求逐项核对执行结果。要求涉及具体文件时，可在任务成果中查看对应文件。' +
+    (results.length < inputs.length ? ` 已展示 ${results.length}/${inputs.length} 项，其他结果可在对应任务查看。` : '')
+  const text = JSON.stringify({ check: { id: gate.id, subject: gate.subject, description: excerpt(taskText(gate), 8000),
+    round: gate.checkpoint!.round, acceptance: gate.acceptance?.slice(0,32).map(value => excerpt(value,256)) },
+    results:results.reverse(), limitation, resultDigest: resultDigest(inputs), criteriaDigest: createHash('sha256').update(JSON.stringify([taskText(gate),gate.acceptance])).digest('hex') })
   return { text, evidence: workflowMaterialEvidence(text) }
 }
 
@@ -64,13 +69,6 @@ export function workflowMaterials(team: TeamState, taskId: string, workspace: st
 export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runtime: AgentTeamsRuntime, server: WebRouteHost, conversations?: ReturnType<typeof installWorkflowConversations>): void {
   const fileReader = createWorkspaceAuditor()
   ctx.effect(() => () => fileReader.dispose(), 'agent-teams: on-demand evidence worker')
-  const materials = async (team: TeamState, taskId: string, workspace: string, cache = false) => {
-    const gate = team.tasks.find(task => task.id === taskId && task.checkpoint)
-    if (!gate) throw new Error('检查点不存在')
-    const paths = [...new Set(checkpointInputs(team, gate).flatMap(task => [...task.changedPaths ?? [], ...task.deliverables ?? []]))]
-    const files = paths.length ? await fileReader.readScope(workspace, paths, cache) : { artifacts: [], gaps: [] }
-    return workflowMaterials(team, taskId, workspace, files)
-  }
   const stopping = new Set<string>()
   const controllingFlows = new Set<string>()
   ctx.effect(() => server.register({ kind: 'exact', path: '/plugins/dsh-agent-teams/workflow', handler: async (req, res) => {
@@ -367,7 +365,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           const team = await load(), discussion = discussionOf(team, key)
           const task = team.tasks.find(t => `check:${t.id}` === key && t.checkpoint)
           if (!task || !checkpointReady(team, task)) throw new Error('检查点尚不能验收')
-          const material = await materials(team, task.id, workspace, true)
+          const material = workflowMaterials(team, task.id)
           discussion.materials = material.text; discussion.evidence = material.evidence; discussion.materialsRound = task.checkpoint!.round
           await writeTeam(root, team)
         })
@@ -469,7 +467,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
             if(!checkpointReady(team,task))throw new Error('请先完成上游任务并启用检查点，再重新验收')
             task.updatedAt=Date.now()
-            const discussion=discussionOf(team, 'check:'+task.id),material=await materials(team,task.id,workspace)
+            const discussion=discussionOf(team, 'check:'+task.id),material=workflowMaterials(team,task.id)
             discussion.materials=material.text;discussion.evidence=material.evidence;discussion.materialsRound=task.checkpoint.round
             if(discussion.native)delete discussion.native.reviewEvidence
           } else if (action === 'review') {
@@ -477,7 +475,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             if (decision !== 'approve' && decision !== 'reject') throw new Error('无效验收决定')
             const discussion = discussionOf(team, `check:${id}`)
             if (typeof body['evidence'] !== 'string' || body['evidence'] !== discussion.evidence) throw new Error('请先打开并阅读当前验收材料')
-            const material = await materials(team, id, workspace)
+            const material = workflowMaterials(team, id)
             decideCheckpoint(team, id, decision, body['evidence'], material.evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '', material.text)
           } else if (action === 'start_path') {
             if(body['base'] !== workflowFingerprint(team))throw new Error('团队已变化，请刷新节点后重新确认')

@@ -43,7 +43,9 @@ export const DEPENDENCY_OUTPUT_MAX_CHARS = 2_000
 /** Combined dependency-output budget in the assignment prompt. */
 export const DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 12_000
 
+import { checkpointReady } from './workflow.ts'
 export interface SchedulerConfig {
+  readonly openReview?: (captain: Agent, team: TeamState, key: string, root: string) => Promise<string>
   readonly stateDir: string
   readonly executionPrompt?: string
   readonly dispatch?: (captain: Agent, teamId: string, memberName: string, text: string, signal: AbortSignal, mode: 'queue' | 'steer', attemptId?: string) => Promise<boolean>
@@ -318,6 +320,19 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
       if (team === undefined || team.halted === true || team.phase === 'staged') return
       const captain = liveCaptain(ctx, team.captainSessionId, suppliedCaptain)
       if (captain === undefined) return
+      const openReview = config.openReview
+      if (openReview) {
+        const ready = (state: TeamState, task: TeamTask) => !!task.checkpoint && checkpointReady(state, task)
+        for (const candidate of team.tasks.filter(task => ready(team, task))) {
+          try {
+            await withTeamLock(teamLockKey(stateRoot,teamId), async () => {
+              const fresh = await readTeam(stateRoot,teamId)
+              const task = fresh?.tasks.find(item => item.id === candidate.id)
+              if (fresh && task && ready(fresh,task)) await openReview(captain,fresh,'check:'+task.id,stateRoot)
+            })
+          } catch (error) { ctx.logger.warn('agent-teams: acceptance review for '+teamId+'/'+candidate.id+': '+String(error)) }
+        }
+      }
       for (const member of team.members) {
         if (member.status === 'removed') continue
         await runtime.kickMember(workspace, teamId, member.name, captain)

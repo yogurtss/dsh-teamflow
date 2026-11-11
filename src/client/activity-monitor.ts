@@ -21,6 +21,7 @@ export interface ActivityMember {
 
 /** One task row of a host snapshot. */
 export interface ActivityTask {
+  readonly superseded?: boolean
   readonly checkpoint?: import('../workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
   readonly workflowAwaitingStart?: boolean

@@ -13,6 +13,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type MemberToolPolicy } from './tool-policies.ts';
 import type { ArtifactSnapshot } from './types.ts';
 import { type TeamState, type TeamTask } from './types.ts';
+import { type SchedulerConfig } from './scheduler.ts';
 export { steerCaptainReport } from './members.ts';
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
@@ -112,7 +113,7 @@ export declare function stagedPlanFeedbackContext(teamName: string): string;
  * @param ctx - the plugin context (injects `tools`).
  * @param config - resolved tool config.
  */
-export declare function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): AgentTeamsRuntime;
+export declare function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openReview?: SchedulerConfig['openReview']): AgentTeamsRuntime;
 export declare function applyQualityFollowUp(team: TeamState, closed: TeamTask, snapshotPaths?: (paths: readonly string[]) => ArtifactSnapshot, pathExists?: (path: string) => boolean): {
     created: TeamTask[];
     escalated: boolean;

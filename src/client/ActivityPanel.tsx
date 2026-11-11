@@ -271,6 +271,7 @@ function compactTaskLabel(subject: string): string {
 }
 
 function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = false): string {
+  team = {...team, tasks:team.tasks.filter(task => !task.superseded)}
   const completed = team.tasks.filter((task) => task.status === 'completed')
   const cancelled = team.tasks.filter((task) => task.status === 'cancelled')
   const running = team.tasks.filter((task) => task.state === 'running')
@@ -309,6 +310,7 @@ function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = fal
 }
 
 function ProgressOverview({ team, t, discarded = false }: { readonly team: ActivityTeam; readonly t: AgentTeamsTranslate; readonly discarded?: boolean }) {
+  team = {...team, tasks:team.tasks.filter(task => !task.superseded)}
   const running = discarded ? 0 : team.tasks.filter((task) => task.state === 'running').length
   const claimed = discarded ? 0 : team.tasks.filter((task) => task.state === 'claimed').length
   const blocked = discarded ? 0 : team.tasks.filter(task => taskControlState(team,task).checked && taskControlState(team,task).waiting.length > 0).length
@@ -346,8 +348,8 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
  * captain messages, with no timestamps, so do not imply a complete history.
  */
 function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam; readonly t: AgentTeamsTranslate; readonly discarded: boolean }) {
-  const completed = discarded ? 0 : team.tasks.filter(task => task.status === 'completed').length
-  const total = team.tasks.length
+  const completed = discarded ? 0 : activityStatus(team).completed
+  const total = activityStatus(team).total
   return (
     <div className={css.workspaceSummary}>
       <section className={css.completionCard} aria-label={t('progress.aria')}>
@@ -616,8 +618,8 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
     && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
   const captainBusy = captainOwned.length > 0
   const captainTaskIds = formatTaskIds(captainOwned.map((task) => task.id), t)
-  const completedCount = team.tasks.filter((task) => task.status === 'completed').length
-  const allCompleted = team.tasks.length > 0 && completedCount === team.tasks.length
+  const {completed:completedCount,total:progressTotal} = activityStatus(team)
+  const allCompleted = team.tasks.length > 0 && completedCount === progressTotal
   const allSettled = team.tasks.length > 0 && team.tasks.every((task) => (
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
   ))
@@ -660,7 +662,7 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
           {stopped && <span className={css.historicPill}>{t('team.stopped')}</span>}
           <span className={css.teamStats}>
             <span data-stat="members">{t('team.stats.members', { count: team.members.length })}</span>
-            <span data-stat="tasks">{t('team.stats.completed', { completed: completedCount, total: team.tasks.length })}</span>
+            <span data-stat="tasks">{t('team.stats.completed', { completed: completedCount, total: progressTotal })}</span>
             <span data-stat="messages">{t('team.stats.messages', { count: team.messageCount })}</span>
           </span>
           {canStop && (

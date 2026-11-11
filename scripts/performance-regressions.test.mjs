@@ -145,7 +145,7 @@ test('policy exclusions survive persistence and legacy evidence without masking 
  assert.equal(artifactDrift([{path:'a.txt',present:true,sha256:'a'.repeat(64)}],[{path:'a.txt',present:true,sha256:'b'.repeat(64)}]).length,1)
 })
 
-test('checkpoint evidence ignore skipped bytes and timestamps but detect audited edits',async t=>{
+test('checkpoint evidence ignore skipped bytes and timestamps but detect changed execution results',async t=>{
  const {workflowMaterials}=await import('../lib/workflow-runtime.js')
  const root=await mkdtemp(join(tmpdir(),'teamflow-policy-evidence-'));t.after(()=>rm(root,{recursive:true,force:true}))
  fs.writeFileSync(join(root,'a.txt'),'one');fs.writeFileSync(join(root,'model.bin'),'one')
@@ -155,6 +155,8 @@ test('checkpoint evidence ignore skipped bytes and timestamps but detect audited
  fs.utimesSync(join(root,'a.txt'),new Date(),new Date(Date.now()+5000));fs.writeFileSync(join(root,'model.bin'),'changed unreviewed model')
  assert.equal(workflowMaterials(team,'gate',root).evidence,before.evidence)
  fs.writeFileSync(join(root,'a.txt'),'two')
+ assert.equal(workflowMaterials(team,'gate',root).evidence,before.evidence)
+ team.tasks[0].output='p95 improved to 12 ms'
  assert.notEqual(workflowMaterials(team,'gate',root).evidence,before.evidence)
 })
 

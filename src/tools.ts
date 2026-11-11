@@ -87,7 +87,7 @@ import {
   type MemberRuntimeConfig,
 } from './members.ts'
 import { TERMINAL_TASK_STATUSES, type TeamMember, type TeamState, type TeamTask } from './types.ts'
-import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeamScheduler } from './scheduler.ts'
+import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeamScheduler, type SchedulerConfig } from './scheduler.ts'
 import { installMailboxAdmission, isCurrentMail, mailboxContent, mailboxPrompt, readCurrentMailbox } from './mailbox.ts'
 import { resolveTeamProfile } from './profiles.ts'
 import { assertWorkflowArchivable } from './workflow-lifecycle.ts'
@@ -670,11 +670,11 @@ export function stagedPlanFeedbackContext(teamName: string): string {
  * @param ctx - the plugin context (injects `tools`).
  * @param config - resolved tool config.
  */
-export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): AgentTeamsRuntime {
+export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openReview?: SchedulerConfig['openReview']): AgentTeamsRuntime {
   installRetiredMemberGuard(ctx, config.stateDir)
   installMemberDelegationGuard(ctx, config.stateDir, config.memberMaxDepth ?? 0)
   installMailboxAdmission(ctx, config.stateDir)
-  const scheduler = installTeamScheduler(ctx, { stateDir: config.stateDir, executionPrompt: config.executionPrompt, dispatch: dispatchMember })
+  const scheduler = installTeamScheduler(ctx, { stateDir: config.stateDir, executionPrompt: config.executionPrompt, dispatch: dispatchMember, openReview })
 
 
   async function dispatchMember(captain: Agent, teamId: string, memberName: string, text: string, signal: AbortSignal, mode: 'queue' | 'steer', attemptId?: string): Promise<boolean> {
@@ -2833,6 +2833,7 @@ export function applyQualityFollowUp(
   // the repair instead of waiting forever on an intentionally failed task.
   const replacement = created.at(-1)
   if (replacement !== undefined) {
+    replacement.replacesTaskIds = [closed.id]
     for (const task of existing) {
       if (task.status !== 'pending' || !task.dependencies.includes(closed.id)) continue
       task.dependencies = task.dependencies.map((dependency) => (

@@ -1,3 +1,4 @@
+import { replacedTaskIds } from './replaced-tasks.ts'
 /**
  * Team activity snapshot assembly for the activity panel.
  *
@@ -47,6 +48,7 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
   readonly checkpoint?: import('./workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
+  readonly superseded?: boolean
   readonly workflowAwaitingStart?: boolean
   readonly workflowConfigPending?: boolean
   readonly workflowRerunRequired?: boolean
@@ -145,6 +147,7 @@ export async function assembleTeamSnapshot(
   state: TeamState,
   options: TeamSnapshotOptions = {},
 ): Promise<TeamActivitySnapshot> {
+  const superseded = replacedTaskIds(state.tasks)
   const tasks = state.tasks
   const depths = taskDepthsById(tasks)
   const roster = options.includeRemoved === true
@@ -225,6 +228,7 @@ export async function assembleTeamSnapshot(
     },
     members,
     tasks: tasks.map((task) => ({
+      ...superseded.has(task.id) ? {superseded:true} : {},
       id: task.id,
       ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },
       ...task.workflowPaused ? { workflowPaused: true, workflowAwaitingStart: awaitsFirstStart(task) } : {},
