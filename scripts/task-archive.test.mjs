@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
-import {mkdtempSync,writeFileSync,readFileSync,existsSync,rmSync} from 'node:fs'
+import {mkdtempSync,writeFileSync,readFileSync,existsSync,rmSync,mkdirSync} from 'node:fs'
+import {randomUUID} from 'node:crypto'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createTeamDir,readTeam,writeTeam,withTeamLock,isTeamTask} from '../lib/state.js'
@@ -21,6 +22,28 @@ test('archives upstream versions and evidence, copies exact bytes, retains prior
 test('reference-only default, dependency gating, configuration hold and cold execution recovery',async t=>{
  const f=await fixture(t);f.state.tasks[1].status='pending';await writeTeam(f.root,f.state);await runTaskArchives(f.root,f.workspace,'demo');assert.equal((await f.read()).tasks.at(-1).status,'pending');f.state.tasks[1].status='completed';f.state.tasks.at(-1).workflowConfigPending=true;await writeTeam(f.root,f.state);await runTaskArchives(f.root,f.workspace,'demo');assert.equal((await f.read()).tasks.at(-1).status,'pending');delete f.state.tasks.at(-1).workflowConfigPending;f.state.tasks.at(-1).status='in_progress';f.state.tasks.at(-1).attemptId='interrupted';await writeTeam(f.root,f.state);await runTaskArchives(f.root,f.workspace,'demo');const state=await f.read(),r=state.tasks.at(-1).archiveRecords[0];assert.equal(r.copiedCount,0);assert.equal(existsSync(join(f.root,'demo','artifacts',r.id,'files')),false)
 })
+for (const suffix of ['.partial', '']) {
+ test('cold recovery discards the interrupted ' + (suffix || 'renamed') + ' directory and preserves published records', async t => {
+   const f = await fixture(t,true)
+   await runTaskArchives(f.root,f.workspace,'demo')
+   const state = await f.read(), archive = state.tasks.at(-1), first = archive.archiveRecords[0]
+   const manifest = await readTaskArchive(f.root,state,archive.id,first.id)
+   archive.status = 'in_progress'
+   archive.attemptId = randomUUID()
+   await writeTeam(f.root,state)
+   const stale = join(f.root,'demo','artifacts',archive.attemptId + suffix)
+   mkdirSync(stale)
+   writeFileSync(join(stale,'unfinished'),'old copy')
+   await runTaskArchives(f.root,f.workspace,'demo')
+   const recovered = await f.read(), result = recovered.tasks.at(-1)
+   assert.equal(existsSync(stale),false)
+   assert.equal(result.status,'completed')
+   assert.equal(result.archiveRecords.length,2)
+   assert.deepEqual(await readTaskArchive(f.root,recovered,archive.id,first.id),manifest)
+   assert.equal(readFileSync(join(f.root,'demo','artifacts',first.id,'files','result.txt'),'utf8'),'version one')
+ })
+}
+
 test('pause revokes an archive attempt and continuing completes a fresh generation',async t=>{
  const f=await fixture(t,true),running=runTaskArchives(f.root,f.workspace,'demo');for(let i=0;i<200;i++){if((await f.read()).tasks.at(-1).status==='in_progress')break;await new Promise(r=>setTimeout(r,2))}
  await withTeamLock(`team:${f.root}:demo`,async()=>{const state=await f.read(),task=state.tasks.at(-1);task.workflowPaused=true;task.status='pending';delete task.attemptId;await writeTeam(f.root,state)});await cancelTaskArchive(f.root,'demo','archive');await running;let state=await f.read();assert.equal(state.tasks.at(-1).status,'pending');assert.equal(state.tasks.at(-1).archiveRecords,undefined);state.tasks.at(-1).workflowPaused=false;await writeTeam(f.root,state);await runTaskArchives(f.root,f.workspace,'demo');assert.equal((await f.read()).tasks.at(-1).status,'completed')

@@ -4,6 +4,22 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { TeamState } from './types.ts'
 import { clearPendingLoopHistory, loopsOf, pendingLoopHistory, type LoopHistoryRecord } from './workflow-loops.ts'
+import type { WorkflowLoop } from './workflow-loop-types.ts'
+
+export async function previousReview(root: string, teamId: string, loop: WorkflowLoop) {
+  if (loop.round < 2) return
+  let id = loop.historyHead
+  const seen = new Set<string>()
+  while (id) {
+    if (seen.has(id)) throw new Error('历史记录链损坏')
+    seen.add(id)
+    const record = await readHistoryRecord(root, teamId, id)
+    if (record.loopId !== loop.id || record.runId !== loop.runId) throw new Error('历史记录不属于当前循环运行')
+    if (record.round < loop.round - 1) return
+    if (record.round === loop.round - 1 && record.kind === 'decision' && record.decision === 'revise') return record
+    id = record.previous
+  }
+}
 
 const recordId = (id: string) => /^[a-f0-9-]{36}$/u.test(id)
 async function writeSynced(path: string, text: string): Promise<void> {

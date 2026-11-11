@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { open, rm } from 'node:fs/promises'
+import { lstat, open, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -20,6 +20,21 @@ function inputs(team: TeamState, task: TeamTask) {
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const eligible = (team: TeamState, task: TeamTask) => !team.halted && team.phase !== 'staged' && task.kind === 'archive' && !task.workflowPaused && !task.workflowRerunRequired && !taskNeedsConfiguration(task) && !task.reassigning && task.dependencies.every(id => team.tasks.some(t => t.id === id && t.status === 'completed'))
 
+async function discardInterruptedArchive(root: string, team: TeamState, task: TeamTask) {
+  const id = task.attemptId
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return
+  if (team.tasks.some(other => other.archiveRecords?.some(record => record.id === id) || other.id !== task.id && other.attemptId === id)) return
+  const dir = join(root, team.id, 'artifacts')
+  try {
+    if (!(await lstat(dir)).isDirectory()) throw new Error('归档目录无效')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  // Keep the interrupted ID durable until both possible worker outputs are gone.
+  for (const suffix of ['.partial', '']) await rm(join(dir, id + suffix), {recursive:true, force:true, maxRetries:3})
+}
+
 /** A worker owns file I/O; the host lock owns only claims and guarded state commits. */
 export async function runTaskArchives(root: string, workspace: string, teamId: string): Promise<void> {
   const key = keyOf(root, teamId)
@@ -31,6 +46,7 @@ export async function runTaskArchives(root: string, workspace: string, teamId: s
         if (!team) return
         const task = team.tasks.find(t => eligible(team,t) && ['pending','in_progress'].includes(t.status))
         if (!task) return
+        await discardInterruptedArchive(root, team, task)
         const source = inputs(team,task), id = randomUUID(), createdAt = Date.now()
         task.status='in_progress'; task.attempt=(task.attempt??0)+1; task.attemptId=id; task.updatedAt=createdAt
         await writeTeam(root,team)

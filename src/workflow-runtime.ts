@@ -3,7 +3,7 @@ import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import { readTaskArchive, cancelTaskArchive, archiveRunning } from './task-archive.ts'
 import { branchCheckpoint } from './workflow.ts'
 import { saveGateSettings, configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
-import { readLoopHistory } from './workflow-loop-history.ts'
+import { previousReview, readLoopHistory } from './workflow-loop-history.ts'
 import { cp } from 'node:fs/promises'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
@@ -231,7 +231,14 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         const team = await load(), loop = loopsOf(team).find(l => l.id === body['loopId'])
         if (!loop || loop.status !== 'reviewing') throw new Error('循环尚未进入审核')
         const evidence = loopArtifactEvidence(workspace, team, loop)
-        reply(200, { artifactEvidence: evidence, files: [], fingerprint: loopInputFingerprint(team, loop), runId: loop.runId, round: loop.round, tasks: team.tasks.filter(task => loop.bodyIds.includes(task.id)).map(task => reviewResult(task, team.tasks.find(t => t.id === loop.gateId))) }); return
+        const previous = await previousReview(root, team.id, loop)
+        const results = (tasks: TeamState['tasks']) => {
+          const gate = tasks.find(task => task.id === loop.gateId)
+          return tasks.filter(task => loop.bodyIds.includes(task.id)).map(task => reviewResult(task, gate))
+        }
+        reply(200, { artifactEvidence: evidence, files: [], fingerprint: loopInputFingerprint(team, loop), runId: loop.runId, round: loop.round,
+          executionRounds: loop.executionRounds, tasks: results(team.tasks), previous: previous && { round: previous.round, tasks: results(previous.tasks) } })
+        return
       }
       if (action === 'state') await withTeamLock(lock, async () => { const team = await load(); if (reconcileLoops(team)) await writeTeam(root, team) })
       if (['start_path','resume_rerun_path','resume_task','continue_task','reopen_review'].includes(action) || action === 'set_task_enabled' && body['enabled'] === true) {

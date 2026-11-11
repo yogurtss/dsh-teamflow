@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { saveGateSettings, configureLoop, decideLoop, startLoop, reconcileLoops, loopInputFingerprint, loopCanExecute, pauseLoop, pendingLoopHistory } from '../lib/workflow-loops.js'
 import { readLoopHistory } from '../lib/workflow-loop-history.js'
+import { previewGate, reviewerConflicts } from '../lib/workflow-loop-config.js'
 import { createTeamDir, readTeam, writeTeam } from '../lib/state.js'
 import { validateWorkflowGraph, applyWorkflowOperations } from '../lib/workflow.js'
 import { applyQualityFollowUp, registerAgentTeamsTools } from '../lib/tools.js'
@@ -67,6 +68,43 @@ test('pausing live loop work revokes its attempt and resumes the same round with
   startLoop(saved, loop.id)
   assert.equal(paused.status, 'running'); assert.equal(paused.round, 1); assert.equal(saved.tasks.length, 4)
   assert.equal(work.workflowRerunContext.previousOutput, 'Saved partial draft')
+})
+
+test('gate preview follows the selected entry and matches save without mutating the draft', () => {
+  const {team, loop} = fixture()
+  team.tasks[0].assignee = 'reviewer'
+  const config = {...loop, mode:'ai', reviewer:'reviewer'}
+  const before = structuredClone(team)
+  const preview = previewGate(team, config, ['after'])
+  assert.match(preview.error, /reviewer.*「a」/)
+  assert.deepEqual(reviewerConflicts(team, preview.bodyIds, 'reviewer').map(t => t.id), ['a'])
+  assert.throws(() => saveGateSettings(team, config, ['after'], loop.id), {message:preview.error})
+  const narrower = {...config, entryId:'b'}
+  assert.equal(previewGate(team, narrower, ['after']).error, '')
+  assert.ok(previewGate(team, narrower, ['a']).error)
+  assert.deepEqual(team, before)
+  saveGateSettings(team, narrower, ['after'], loop.id)
+})
+
+test('review materials compare the preceding decision with a partial rerun', async t => {
+  const {team, loop} = fixture()
+  startLoop(team, loop.id)
+  team.tasks[1].acceptanceResults = [{criterion:'speed',status:'failed',evidence:'slow'}]
+  finish(team)
+  const f = await routeFixture(t, team)
+  assert.equal((await f.call('loop_materials', {loopId:loop.id})).previous, undefined)
+  decideLoop(team, loop.id, decision(team, loop, 'revise', ['b']), 'human')
+  team.tasks[1].acceptanceResults = [{criterion:'speed',status:'passed',evidence:'fast'}]
+  team.tasks[1].commandsRun = [{command:'benchmark',status:'failed',exitCode:1,evidence:'timeout'}]
+  finish(team, ['b'])
+  await writeTeam(f.stateRoot, team)
+  const materials = await f.call('loop_materials', {loopId:loop.id})
+  assert.equal(materials.code, 200, materials.error)
+  assert.deepEqual(materials.executionRounds, {a:1,b:2})
+  assert.equal(materials.previous.round, 1)
+  assert.equal(materials.previous.tasks[1].acceptanceResults[0].status, 'failed')
+  assert.equal(materials.tasks[1].acceptanceResults[0].status, 'passed')
+  assert.equal(materials.tasks[1].commandsRun[0].command, 'benchmark')
 })
 
 test('human loop decisions review results independently of workspace changes', async t => {

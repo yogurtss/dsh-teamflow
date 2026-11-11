@@ -1,5 +1,5 @@
 import { excerpt, reviewResult } from './review-results.ts'
-import { deriveLoop, parseLoopConfig, validateLoopGraph as validateLoopStructure } from './workflow-loop-config.ts'
+import { deriveLoop, gateRouteTasks, parseLoopConfig, validateLoopGraph as validateLoopStructure } from './workflow-loop-config.ts'
 export { parseLoopConfig } from './workflow-loop-config.ts'
 /** Structured loops: backward edges are control flow, never task dependencies. */
 import { createHash, randomUUID } from 'node:crypto'
@@ -65,18 +65,12 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
 }
 /** Validate edits to both branches before applying either one. */
 export function saveGateSettings(team: TeamState, config: LoopConfig, passTargets: unknown, loopId?: unknown): void {
-  if (!Array.isArray(passTargets) || passTargets.some(id => typeof id !== 'string' || !team.tasks.some(task => task.id === id))) throw new Error('请选择有效的 PASS 目标')
   const draft = structuredClone(team)
   const previous = loopsOf(draft).find(loop => loop.gateId === config.gateId)
   if (previous?.id !== loopId) throw new Error('门控配置已变化，请刷新')
   if (draft.halted || previous && (previous.queued || !['ready', 'paused'].includes(previous.status))) throw new Error('请在启动前或暂停后配置门控')
   const started = !!previous && (!!previous.contracts || !!previous.historyCount)
-  for (const task of draft.tasks) {
-    const connected = task.dependencies.includes(config.gateId)
-    if (connected === passTargets.includes(task.id)) continue
-    if (started || task.status !== 'pending' || task.attempt || task.reassigning) throw new Error('请在首次执行前调整 PASS 路径')
-    task.dependencies = connected ? task.dependencies.filter(id => id !== config.gateId) : [...task.dependencies, config.gateId]
-  }
+  draft.tasks = gateRouteTasks(draft, config.gateId, passTargets, started)
   if (previous && started) {
     if (config.entryId !== previous.entryId || config.maxRounds < previous.round) throw new Error('已执行的循环须保留入口，轮次上限不能低于当前轮')
     validateLoopGraph(draft)

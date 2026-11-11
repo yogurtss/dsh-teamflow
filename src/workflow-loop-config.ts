@@ -24,6 +24,41 @@ export function deriveLoop(team: TeamState, config: LoopConfig, id: string, runI
   while (changed) { changed = false; for (const task of team.tasks) if (ancestors.has(task.id) && !body.has(task.id) && task.dependencies.some(id => body.has(id))) { body.add(task.id); changed = true } }
   return { ...config, id, runId, bodyIds: [...body], round: 1, status: 'ready', historyCount: 0, captured: {}, externalInputs: {} }
 }
+export function reviewerConflicts(team: TeamState, bodyIds: string[], reviewer: string) {
+  return team.tasks.filter(task => bodyIds.includes(task.id) && task.assignee === reviewer)
+}
+
+/** Apply the draft PASS edges to a new task list for both preview and save. */
+export function gateRouteTasks(team: TeamState, gateId: string, passTargets: unknown, started: boolean) {
+  if (!Array.isArray(passTargets) || passTargets.some(id => typeof id !== 'string' || !team.tasks.some(task => task.id === id))) throw new Error('请选择有效的 PASS 目标')
+  return team.tasks.map(task => {
+    const connected = task.dependencies.includes(gateId)
+    if (connected === passTargets.includes(task.id)) return task
+    if (started || task.status !== 'pending' || task.attempt || task.reassigning) throw new Error('请在首次执行前调整 PASS 路径')
+    return { ...task, dependencies: connected ? task.dependencies.filter(id => id !== gateId) : [...task.dependencies, gateId] }
+  })
+}
+
+export function previewGate(team: TeamState, config: LoopConfig, passTargets: string[]) {
+  let bodyIds: string[] = []
+  try {
+    const previous = loopsOf(team).find(loop => loop.gateId === config.gateId)
+    const started = !!(previous?.contracts || previous?.historyCount)
+    const candidate = { ...team, tasks: gateRouteTasks(team, config.gateId, passTargets, started) }
+    const loop = deriveLoop(candidate, config, previous?.id ?? config.gateId, previous?.runId ?? config.gateId)
+    bodyIds = loop.bodyIds
+    parseLoopConfig(config)
+    if (team.halted) throw new Error('请先恢复团队')
+    if (started && previous && (config.entryId !== previous.entryId || config.maxRounds < previous.round)) throw new Error('已执行的循环须保留入口，轮次上限不能低于当前轮')
+    if (!started && candidate.tasks.some(t => (bodyIds.includes(t.id) || t.id === config.gateId) && (t.status !== 'pending' || t.attempt || t.checkpoint?.decision))) throw new Error('请在首次执行前配置循环')
+    candidate.tasks = candidate.tasks.map(task => task.id === config.gateId ? { ...task, assignee: config.mode === 'ai' ? config.reviewer : undefined } : task)
+    validateLoopGraph({ ...candidate, workflow: { ...team.workflow ?? {positions:{}, discussions:{}, history:[]}, loops: [...loopsOf(team).filter(item => item !== previous), { ...loop, status: previous?.status ?? 'ready' }] } })
+    return { bodyIds, error: '' }
+  } catch (error) {
+    return { bodyIds, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export function validateLoopGraph(team: TeamState): void {
   if (!loopsOf(team).length) return
   const visiting = new Set<string>(), visited = new Set<string>()
@@ -65,7 +100,8 @@ export function validateLoopGraph(team: TeamState): void {
     if (loop.mode === 'ai') {
       if (gate.assignee !== loop.reviewer) throw new Error('AI 门控负责人必须与循环审核成员一致')
       if (!loop.reviewer || !team.members.some(m => m.name === loop.reviewer && (m.status !== 'removed' || ['paused','passed','cancelled'].includes(loop.status)))) throw new Error('请选择有效的 AI 审核成员')
-      if (loop.bodyIds.some(id => taskOf(team, id).assignee === loop.reviewer || !taskOf(team, id).assignee)) throw new Error('循环任务必须指定负责人，且与审核成员分开')
+      const conflicts = reviewerConflicts(team, loop.bodyIds, loop.reviewer)
+      if (conflicts.length) throw new Error(`${loop.reviewer} 负责「${conflicts.map(task => task.subject).join('、')}」，请选择独立审核成员`)
     } else if (gate.assignee) throw new Error('人工门控不能分配执行成员')
   }
 }
