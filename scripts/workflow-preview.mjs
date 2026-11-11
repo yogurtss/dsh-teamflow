@@ -16,7 +16,7 @@ import { assembleTeamSnapshot } from '../lib/snapshot.js';
 import { flowControlVersion } from '../lib/client/task-control.js';
 
 const port = Number(process.env.TEAMFLOW_PREVIEW_PORT ?? 8371);
-const directory = resolve('node_modules/workflow-ui');
+const directory = resolve('output/workflow-ui');
 mkdirSync(directory, { recursive: true });
 writeFileSync(directory + '/entry.tsx', `import React from 'react';
 import { createRoot } from 'react-dom/client';
