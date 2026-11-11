@@ -18,7 +18,7 @@ export interface LayoutLoop {
 export declare function loopBodyIds(tasks: readonly LayoutTask[], loop: LayoutLoop): string[];
 /** Collapse each loop into a region before arranging the surrounding DAG. */
 export declare function arrangeWorkflow(tasks: LayoutTask[], loops?: readonly LayoutLoop[]): Record<string, CanvasPoint>;
-export declare function loopRegion(tasks: readonly LayoutTask[], loop: LayoutLoop, position: (id: string) => CanvasPoint): {
+export declare function loopRegion(tasks: readonly LayoutTask[], loop: LayoutLoop, position: (id: string) => CanvasPoint, cardWidth?: number, cardHeight?: number): {
     x: number;
     y: number;
     width: number;

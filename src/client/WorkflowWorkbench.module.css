@@ -477,10 +477,16 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 }
 
 .workbench .commandBar .createGate { position:relative; isolation:isolate; width:98px; height:40px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
-.createGate svg { position:absolute; inset:0; width:100%; height:100%; z-index:-1; }
+.commandBar .createGate > svg { position:absolute; inset:0; width:100%; height:100%; z-index:-1; }
 .createGate path { fill:var(--wb-bg); stroke:var(--wb-text); stroke-width:1.5; }
 .createGate:hover path,.createGate:focus-visible path { stroke:var(--wb-accent); fill:color-mix(in srgb,var(--wb-accent) 12%,var(--wb-bg)); }
 .inspector:has(>[data-loop-panel]) { overflow:auto; scrollbar-gutter:stable; }
 .inspector:has(>[data-loop-panel]) > :is([data-loop-panel],.editor) { flex:none; overflow:visible; box-sizing:border-box; }
 .inspector:has(>[data-loop-panel]) .formBody { flex:none; overflow:visible; }
 .inspector:has(>[data-loop-panel]) .editor footer { max-height:none; }
+.workbench .node[data-full-card] {width:var(--wb-node-width);height:230px;border:1px solid var(--wb-border);--node-side-border:1px;--node-top-border:1px;border-radius:15px;box-shadow:0 5px 17px color-mix(in srgb,var(--wb-text) 8%,transparent)}
+.workbench .node[data-full-card] > .drag {display:none}
+.workbench .node[data-full-card]:is(:hover,:focus-within,.selected) > .drag {display:flex;position:absolute;z-index:3;right:5px;top:-23px;background:var(--wb-bg);border:1px solid var(--wb-border);border-radius:6px;font-size:10px;padding:1px 5px}
+.workbench .node[data-full-card]::before,.workbench .node[data-full-card]::after {pointer-events:none}
+
+.workbench .node.gateNode {width:225px;height:150px}

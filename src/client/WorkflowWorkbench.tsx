@@ -1,3 +1,5 @@
+import { CanvasTaskCard } from './CanvasTaskCard.tsx'
+import { CARD_WIDTH, CARD_HEIGHT, CARD_PORT_Y, displayPoint, storedPoint, connectionTarget, connectionPort } from './canvas-card-geometry.ts'
 import { AdaptationProgress } from './AdaptationProgress.tsx'
 import { adaptationPhase, adaptationConflicts } from './adaptation-progress.ts'
 import { reviewHistoryEdges } from './workflow-layout.ts'
@@ -17,7 +19,7 @@ import type { TeamState, TeamTask } from '../types.ts'
 import type { WorkflowOperation } from '../workflow-types.ts'
 import css from './WorkflowWorkbench.module.css'
 import { TaskRecord, WorkflowContext } from './WorkflowContext.tsx'
-import { WORKFLOW_GATE_PATH, connectionIssue, connectionTarget, connectionPort, connectionPath, WORKFLOW_NODE_WIDTH, WORKFLOW_PORT_Y, WORKFLOW_GATE_PORT_Y } from './workflow-connections.ts'
+import { WORKFLOW_GATE_PATH, connectionIssue, connectionPath, WORKFLOW_GATE_PORT_Y } from './workflow-connections.ts'
 import { LEAD_ART, REVIEW_ART, memberArtUrl } from './artwork.ts'
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { AgentTeamsTranslate } from './locales.ts'
@@ -328,7 +330,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   async function saveEdit(operations: WorkflowOperation[], title: string, finishEditing = false): Promise<Response | undefined> {
     if (finishEditing && draftStale) { setError(l("当前对象已变化。草稿已保留，请先核对最新资料，或点击「重新载入」后编辑。")); return }
     const revision=viewRef.current.revision, submitted=draftId&&editor?(viewRef.current.drafts[draftId]??initialEditorDraft(team,editor)):undefined
-    const result=await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, pos(task.id)]) ?? []) })
+    const result=await perform('edit', { operations, title, base: data?.base, positions: Object.fromEntries(team?.tasks.map(task => [task.id, storedPoint(pos(task.id))]) ?? []) })
     if (result && finishEditing) {
       let nextTarget: WorkbenchTarget | undefined
       if(editor?.id && (editor.type==='member' ? !result.team.members.some(m=>m.name===editor.id && m.status!=='removed') : !result.team.tasks.some(task=>task.id===editor.id))) nextTarget={type:'discussion',key:'graph'}
@@ -363,7 +365,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
   }
   function scrollToTask(id: string): void {
-    requestAnimationFrame(() => { const p = pos(id); canvas.current?.scrollTo({left:Math.max(0,p.x*zoom-48),top:Math.max(0,p.y*zoom-48),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}) })
+    requestAnimationFrame(() => { const node = canvas.current?.querySelector<HTMLElement>('[data-canvas-node="' + CSS.escape(id) + '"]'); const p = node ? { x: node.offsetLeft, y: node.offsetTop } : pos(id); canvas.current?.scrollTo({left:Math.max(0,p.x*zoom-48),top:Math.max(0,p.y*zoom-48),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'}) })
   }
   function locateTask(id: string, focusField?: string, focusSection = '[data-task-heading]'): void {
     if (team?.workflow?.loops?.some(loop => loop.bodyIds.includes(id))) setShowLoopSteps(true)
@@ -447,7 +449,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     const updates: WorkflowOperation[] = team.tasks.filter(task => task.dependencies.includes(id)).map(task => ({ action: 'update_task', id: task.id, dependencies: task.dependencies.filter(dep => dep !== id) }))
     updates.push({ action: 'remove_task', id })
     const revision=viewRef.current.revision
-    if (await perform('edit', { operations: updates, title: l("删除节点及其连接"), base: data?.base, positions: Object.fromEntries(team.tasks.map(task => [task.id, pos(task.id)])) })) {
+    if (await perform('edit', { operations: updates, title: l("删除节点及其连接"), base: data?.base, positions: Object.fromEntries(team.tasks.map(task => [task.id, storedPoint(pos(task.id))])) })) {
       updateView(current => { const drafts={...current.drafts}; delete drafts[editorKey(team.id,{type:'task',id})]; delete drafts[editorKey(team.id,{type:'check',id})]; return {...current,drafts} })
       if (revision===viewRef.current.revision) selectDiscussion('graph')
     }
@@ -455,7 +457,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   function beginNodeDrag(event: ReactPointerEvent<HTMLElement>, task: TeamTask): void {
     suppressNodeClick.current=false
     if (panMode || event.button !== 0 || working || archiveView || !editing || (event.target as HTMLElement).closest('[data-connection-handle]')) return
-    const target = event.currentTarget, start = point(event), original = pos(task.id)
+    const target = event.currentTarget, start = point(event), original = storedPoint(pos(task.id))
     let last = original, moved = false
     target.setPointerCapture(event.pointerId)
     const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
@@ -464,7 +466,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       if (!moved && Math.hypot(at.x - start.x, at.y - start.y) < 4 / zoom) return
       if(!moved) edit(task.checkpoint?'check':'task',task.id)
       moved = true; suppressNodeClick.current = true
-      last = { x: Math.min(10000, Math.max(0, original.x + at.x - start.x)), y: Math.min(10000, Math.max(0, original.y + at.y - start.y)) }
+      last = { x: Math.min(10000, Math.max(0, original.x + storedPoint(at).x - storedPoint(start).x)), y: Math.min(10000, Math.max(0, original.y + storedPoint(at).y - storedPoint(start).y)) }
       setPositions(prev => ({ ...prev, [task.id]: last }))
     }
     target.onpointerup = () => { cleanup(); if (moved) void perform('layout', { taskId: task.id, ...last }).then(() => setPositions(prev => { const next = { ...prev }; delete next[task.id]; return next })) }
@@ -475,7 +477,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     ? <textarea required={(key === 'summary' && !editor?.id) || (key === 'description' && !!activeTask?.workflowConfigPending) || key === 'rerunInstructions'} value={draft[key] ?? ''} onChange={e => setDraft({ ...draft, [key]: e.target.value })} />
     : <input required={key === 'name' || key === 'subject' || (key === 'summary' && !editor?.id)} value={draft[key] ?? ''} disabled={key === 'name' && (!!editor?.id || working)} onChange={e => setDraft({ ...draft, [key]: e.target.value })} />}</label>
   function pos(id: string) {
-    return positions[id] ?? team?.workflow?.positions[`task:${id}`] ?? defaultPositions[id] ?? { x: 32, y: 32 }
+    return displayPoint(positions[id] ?? team?.workflow?.positions[`task:${id}`] ?? defaultPositions[id] ?? { x: 32, y: 32 })
   }
   function point(event: { clientX: number; clientY: number }) {
     const bounds = canvas.current!.getBoundingClientRect()
@@ -483,7 +485,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }
   const draftPosition = editor?.id ? pos(editor.id) : {
     x: 32,
-    y: Math.max(-128, ...team?.tasks.map(t => pos(t.id).y) ?? []) + 160,
+    y: Math.max(-128, ...team?.tasks.map(t => pos(t.id).y) ?? []) + CARD_HEIGHT + 18,
   }
   const compactLoops = !editing && team?.phase !== 'staged' && !showLoopSteps && !!team?.workflow?.loops?.length
   const canvasTasks = useMemo(() => {
@@ -500,9 +502,9 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }, [compactLoops, team?.tasks, team?.workflow?.loops])
   const compactPositions = useMemo(() => compactLoops ? arrangeWorkflow(canvasTasks) : undefined, [canvasTasks, compactLoops])
   const canvasPos = (id: string) => compactPositions?.[id] ?? pos(id)
-  const graphWidth = Math.max(580, ...canvasTasks.map(t => canvasPos(t.id).x + 265), taskEditing ? draftPosition.x + 265 : 0)
-  const loopRegions = compactLoops ? [] : team?.workflow?.loops?.map(loop => ({ loop, ...loopRegion(team.tasks, loop, pos) })) ?? []
-  const graphHeight = Math.max(260, ...canvasTasks.map(t => canvasPos(t.id).y + 185), ...loopRegions.map(region => region.bottom + 20), taskEditing ? draftPosition.y + 170 : 0)
+  const graphWidth = Math.max(580, ...canvasTasks.map(t => canvasPos(t.id).x + CARD_WIDTH + 40), taskEditing ? draftPosition.x + CARD_WIDTH + 40 : 0)
+  const loopRegions = compactLoops ? [] : team?.workflow?.loops?.map(loop => ({ loop, ...loopRegion(team.tasks, loop, pos, CARD_WIDTH, CARD_HEIGHT) })) ?? []
+  const graphHeight = Math.max(260, ...canvasTasks.map(t => canvasPos(t.id).y + CARD_HEIGHT + 24), ...loopRegions.map(region => region.bottom + 20), taskEditing ? draftPosition.y + CARD_HEIGHT + 24 : 0)
   function fitCanvas(): void {
     if (!canvas.current) return
     setZoom(fitGraph(canvas.current.clientWidth, canvas.current.clientHeight, graphWidth, graphHeight))
@@ -604,7 +606,8 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     setLibrary('tasks'); setPane(window.matchMedia('(max-width: 900px)').matches ? 'discussion' : 'flow'); setInspectorHidden(false)
     setFeedback(l("节点已保存，可直接连线；填写要求并完成配置前不会执行或进入验收。"))
     requestAnimationFrame(() => {
-      const p = result.team.workflow?.positions[`task:${added.id}`]
+      const saved = result.team.workflow?.positions[`task:${added.id}`]
+      const p = saved && displayPoint(saved)
       if (p) canvas.current?.scrollTo({ left: Math.max(0, p.x * zoom - 48), top: Math.max(0, p.y * zoom - 48), behavior: 'smooth' })
     })
   }
@@ -681,7 +684,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       <WorkflowContext team={team} discussion={discussion} onSelect={selectDiscussion} openExecution={openExecution} />
     </section>}
     </>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} style={{'--wb-node-width':`${WORKFLOW_NODE_WIDTH}px`,'--wb-port-y':`${WORKFLOW_PORT_Y}px`,'--wb-gate-port-y':`${WORKFLOW_GATE_PORT_Y}px`} as CSSProperties} data-live={!archiveView} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label={l("TeamFlow 编排工作台")} onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} style={{'--wb-node-width':`${CARD_WIDTH}px`,'--wb-port-y':`${CARD_PORT_Y}px`,'--wb-gate-port-y':`${WORKFLOW_GATE_PORT_Y}px`} as CSSProperties} data-live={!archiveView} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label={l("TeamFlow 编排工作台")} onKeyDown={event => {
       if (!galleryMode && !showOutcomes && !archiveView && editing && (event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) { setEditing(false); setFeedback(l("已退出编辑，未保存的草稿已保留。")) } else closeWorkbench() }
       if (event.key === 'Tab') {
@@ -761,7 +764,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                   {pass&&<text x={(canvasPos(dep).x+225+canvasPos(t.id).x)/2} y={(canvasPos(dep).y+75+canvasPos(t.id).y+55)/2-12} textAnchor="middle" fontSize="12" fontWeight="650">PASS</text>}
                   {(!compactLoops || team.tasks.find(task => task.id === t.id)?.dependencies.includes(dep)) && <path className={css.edgeHit} d={path} role="button" tabIndex={0} aria-label={l("交接：{0} → {1}", team.tasks.find(task => task.id === dep)?.subject ?? dep, t.subject)} aria-pressed={selectedEdge?.from === dep && selectedEdge.to === t.id} onClick={() => { choose({ type:'edge',from:dep,to:t.id }) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose({ type:'edge',from:dep,to:t.id }) } }} />}
                 </g> }))}
-                {reviewHistoryEdges(canvasTasks).map(edge => <g key={`history:${edge.from}:${edge.to}`} className={css.historyEdge} data-review-history-edge><path d={connectionPath(connectionPort(canvasPos(edge.from),'output',gateNode(team.tasks.find(t=>t.id===edge.from))),connectionPort(canvasPos(edge.to),'input',gateNode(team.tasks.find(t=>t.id===edge.to))))} markerEnd="url(#workflow-arrow)"/><text x={(canvasPos(edge.from).x+225+canvasPos(edge.to).x)/2} y={(canvasPos(edge.from).y+canvasPos(edge.to).y)/2+42} textAnchor="middle" fontSize="11">{l('历史路径')}</text></g>)}
+                {reviewHistoryEdges(canvasTasks).map(edge => <g key={`history:${edge.from}:${edge.to}`} className={css.historyEdge} data-review-history-edge><path d={connectionPath(connectionPort(canvasPos(edge.from),'output',gateNode(team.tasks.find(t=>t.id===edge.from))),connectionPort(canvasPos(edge.to),'input',gateNode(team.tasks.find(t=>t.id===edge.to))))} markerEnd="url(#workflow-arrow)"/><text x={(canvasPos(edge.from).x+CARD_WIDTH+canvasPos(edge.to).x)/2} y={(canvasPos(edge.from).y+canvasPos(edge.to).y)/2+42} textAnchor="middle" fontSize="11">{l('历史路径')}</text></g>)}
                 {loopRegions.map(region => <g key={region.loop.id} className={css.edge} data-flow-branch="reject"><path d={region.returnPath} strokeDasharray="7 5" markerEnd="url(#workflow-arrow-reject)"/><text x={region.label.x} y={region.label.y} textAnchor="middle" fontSize="13" fontWeight="650">REJECT · {l.language==='en'?'Revise with feedback':'按意见改进'} · {region.loop.round}/{region.loop.maxRounds}</text></g>)}
                 {link && <path d={connectionPath(connectionPort(canvasPos(link.from),'output', gateNode(team.tasks.find(task => task.id === link.from))),link)} />}
               </svg>
@@ -786,7 +789,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                   preparing ? (en?'Adapting workflow':'正在适配流程') + (task.assignee ? ' · '+task.assignee : '') : blocked && execution==='interrupted' ? (en?'Interrupted':'执行中断') :
                   waiting ? (en?'Awaiting decision':'待你决策') : undefined
                 const who = <span className={css.canvasActor} title={identity}>{portrait && <img src={portrait} alt=""/>}<b>{identity}</b></span>
-                return <article key={task.id} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
+                return <article key={task.id} data-full-card={!gateNode(task) || undefined} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
                 {gateNode(task) && <svg className={css.gateShape} viewBox="0 0 225 150" aria-hidden="true"><path d={WORKFLOW_GATE_PATH} /></svg>}
                 <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{renderTaskControl(task)}</div>
                 {gateNode(task) ? <>
@@ -796,8 +799,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                     <TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} labelText={stateText} />
                   </button>
                   <span className={css.gateCaption}>{gateLoop ? (l.language === 'en' ? `Round ${gateLoop.round} / ${gateLoop.maxRounds}` : `第 ${gateLoop.round} / ${gateLoop.maxRounds} 轮`) : l('请连接返回线')}</span>
-                </> : <button className={css.nodeBody}>
-                  {who}<strong title={task.subject}>{task.subject}</strong><TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} labelText={stateText} /></button>}
+                </> : <CanvasTaskCard team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
                 <button className={`${css.port} ${css.input}`} data-connection-handle data-input-id={task.id} aria-label={l("{0} 输入端", task.subject)} />
                 <button className={`${css.port} ${css.output}`} data-connection-handle aria-label={l("{0} 输出端", task.subject)} disabled={working || archiveView || !editing || (taskEditing && !editor?.id)} title={l("从圆点拖出连接线")} onPointerDown={event => {
                   if (event.button !== 0) return

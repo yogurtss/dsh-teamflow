@@ -11,6 +11,9 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().endsWith('/workflow') && request.method() === 'POST') requests.push(request.postDataJSON()) })
   await page.goto(process.env.TEAMFLOW_LOOP_URL ?? 'http://127.0.0.1:8384')
+  const createGate = page.getByRole('navigation', {name:'创建与视图'}).getByRole('button', {name:'门控节点', exact:true})
+  assert.equal(await createGate.locator('svg path').getAttribute('d'), 'M2 20 L50 1 L98 20 L50 39 Z')
+  assert.ok(await createGate.evaluate(button => button.querySelector('svg').getBoundingClientRect().width >= button.clientWidth - 1), 'The diamond outline must span the whole creation button')
   await page.locator('[data-canvas-node="gate"]').click()
   const panel = page.getByRole('region', { name: '门控节点', exact: true })
   await panel.getByLabel('返回连线目标（必选）', { exact: true }).selectOption('a')
@@ -20,6 +23,15 @@ try {
   await panel.getByRole('button', { name: '连接返回线并创建环路', exact: true }).click()
   await page.locator(`[data-canvas-node="gate"][data-gate-mode="${human ? 'human' : 'ai'}"]`).waitFor()
   await panel.getByRole('button', {name:'启动循环',exact:true}).waitFor()
+  await panel.getByText('配置 IF 路径与审核', {exact:true}).click()
+  const target = panel.getByRole('checkbox', {name:'最终交付', exact:true})
+  await target.uncheck()
+  await panel.getByRole('button', {name:'保存 IF 配置'}).click()
+  await page.waitForFunction(() => !document.querySelector('[data-flow-branch="pass"]'))
+  await target.check()
+  await panel.getByRole('button', {name:'保存 IF 配置'}).click()
+  await page.locator('[data-flow-branch="pass"]').waitFor()
+  await panel.getByText('配置 IF 路径与审核', {exact:true}).click()
   const gate = page.locator('[data-canvas-node="gate"]')
   assert.equal(await gate.getAttribute('data-node-shape'), 'decision')
   assert.equal(await gate.getAttribute('data-gate-mode'), human ? 'human' : 'ai')
@@ -33,12 +45,22 @@ try {
   const review = async (round, pass = false) => {
     await panel.getByText(new RegExp('审核中 · 第 ' + round + '/')).waitFor({timeout:20000})
     await panel.getByRole('button', {name:'读取本轮审核材料',exact:true}).click()
-    await panel.getByLabel('审核意见、修改要求与复验条件', {exact:true}).fill(pass ? '验证已全部通过，可以交付。' : '补齐边界条件，并重新执行验证。')
+    const note = panel.getByLabel('审核意见、修改要求与复验条件', {exact:true})
+    await note.fill('长审核意见与证据'.repeat(400))
+    assert.ok(await note.evaluate(field => {
+      const panel = field.closest('[data-loop-panel]'), inspector = panel.parentElement
+      return field.getBoundingClientRect().right <= inspector.getBoundingClientRect().right &&
+        panel.getBoundingClientRect().bottom <= panel.nextElementSibling.getBoundingClientRect().top + 1
+    }), 'Filled review form must fit the inspector without overlapping the next section')
+    await note.fill(pass ? '验证已全部通过，可以交付。' : '补齐边界条件，并重新执行验证。')
     await panel.getByRole('button', {name: pass ? '通过并继续' : '按意见改进', exact:true}).click()
   }
   if (human) { await review(1); await review(2) }
   await panel.getByText('已达轮次上限，等待人工追加轮数或结束', { exact: true }).waitFor({ timeout: 20000 })
   assert.equal(await page.locator('[data-canvas-node]').count(), 2)
+  await page.getByRole('button', {name:'展开循环任务'}).click()
+  assert.equal(await page.locator('[data-canvas-node]').count(), 4)
+  await page.getByRole('button', {name:'收起循环任务'}).click()
   assert.equal(await page.locator('[data-canvas-node="after"]').getAttribute('data-status'), 'pending')
   await panel.getByRole('button', { name: /查看多轮历史/ }).click()
   await panel.getByText('历史只读，按页加载。文件摘要不等于历史文件副本。', { exact: true }).waitFor()
