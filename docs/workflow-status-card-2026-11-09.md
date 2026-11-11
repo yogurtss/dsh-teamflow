@@ -15,5 +15,3 @@ Validation: both TypeScript projects and browser bundle built successfully;
 11 activity-status/navigation regression tests passed. Git artifact stamps are
 regenerated separately on dev and main to keep development-only loop features
 out of this stable card update. No interactive browser visual verification.
-
-The development build also shows the active agent in the collapsed card and conversation summary. Live execution uses a blue pulse and Captain adaptation uses purple. Completion, blocked work and decisions use distinct green, red and amber marks. Reduced-motion mode keeps the marks static. Parallel work and handoffs display the corresponding member names.

@@ -1,4 +1,3 @@
-import { workflowFingerprint } from './workflow.ts'
 import { replacedTaskIds } from './replaced-tasks.ts'
 /**
  * Team activity snapshot assembly for the activity panel.
@@ -49,7 +48,6 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
   readonly checkpoint?: import('./workflow-types.ts').Checkpoint
   readonly workflowPaused?: boolean
-  readonly handoffFrom?: string
   readonly superseded?: boolean
   readonly workflowAwaitingStart?: boolean
   readonly workflowConfigPending?: boolean
@@ -89,8 +87,6 @@ export interface TeamActivitySnapshot {
   readonly description?: string
   readonly captainSessionId: string
   readonly phase: 'staged' | 'running'
-  readonly adaptation?: 'generating' | 'decision' | 'attention' | 'applied'
-  readonly captainWorking?: boolean
   readonly workflowEnabled?: boolean
   readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'queued'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
@@ -199,15 +195,6 @@ export async function assembleTeamSnapshot(
       unread: unreadByMember.get(member.name) ?? 0,
     }
   })
-  const discussion = state.workflow?.discussions['discussion:adapt']
-  let adaptation: TeamActivitySnapshot['adaptation']
-  if (!options.historic && !state.halted && state.phase === 'staged' && discussion?.native) {
-    if (memberActivity(ctx,[discussion.native.sessionId]).get(discussion.native.sessionId) === 'running') adaptation = 'generating'
-    else if (discussion.proposal?.status === 'pending') adaptation = discussion.proposal.base === workflowFingerprint(state) ? 'decision' : 'attention'
-    else adaptation = discussion.proposal?.status === 'applied' ? 'applied' : 'attention'
-  }
-  const captainWorking = !options.historic && tasks.some(t => t.assignee === 'captain' && ['claimed','in_progress'].includes(t.status)) &&
-    memberActivity(ctx,[state.captainSessionId]).get(state.captainSessionId) === 'running'
   const captainInbox = await readUnreadMailbox(stateRoot, state.id, CAPTAIN_KEY)
   // The panel must reach the same delivery conclusion as the status tool, so
   // it reads the same current bytes instead of trusting task records alone.
@@ -225,8 +212,6 @@ export async function assembleTeamSnapshot(
   }
   return {
     workspace,
-    ...(adaptation && {adaptation}),
-    ...(captainWorking && {captainWorking}),
     teamId: state.id,
     name: state.name,
     ...state.description !== undefined ? { description: state.description } : {},
@@ -245,7 +230,6 @@ export async function assembleTeamSnapshot(
     },
     members,
     tasks: tasks.map((task) => ({
-      ...(task.reassigning && {handoffFrom: roster.find(m => m.id && m.id === task.handoffFromMemberId)?.name ?? ''}),
       ...superseded.has(task.id) ? {superseded:true} : {},
       id: task.id,
       ...task.checkpoint === undefined ? {} : { checkpoint: task.checkpoint },

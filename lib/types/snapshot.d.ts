@@ -34,7 +34,6 @@ export interface TeamActivityMember {
 export interface TeamActivityTask {
     readonly checkpoint?: import('./workflow-types.ts').Checkpoint;
     readonly workflowPaused?: boolean;
-    readonly handoffFrom?: string;
     readonly superseded?: boolean;
     readonly workflowAwaitingStart?: boolean;
     readonly workflowConfigPending?: boolean;
@@ -72,8 +71,6 @@ export interface TeamActivitySnapshot {
     readonly description?: string;
     readonly captainSessionId: string;
     readonly phase: 'staged' | 'running';
-    readonly adaptation?: 'generating' | 'decision' | 'attention' | 'applied';
-    readonly captainWorking?: boolean;
     readonly workflowEnabled?: boolean;
     readonly workflow?: {
         loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'queued'>[];
