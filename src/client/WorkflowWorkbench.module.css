@@ -475,3 +475,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
   .node:is([data-tone=running],[data-tone=adapt]) .canvasActor::after {content:'';width:7px;height:7px;flex:none;border-radius:50%;background:var(--card-ink);animation:canvasRunning 1.5s ease-in-out infinite}
   @keyframes canvasRunning { 0%,100% { opacity:.5;transform:scale(.8) } 50% { opacity:1;transform:scale(1.12) } }
 }
+
+.workbench .node[data-full-card] {width:var(--wb-node-width);height:230px;border:1px solid var(--wb-border);--node-side-border:1px;--node-top-border:1px;border-radius:15px;box-shadow:0 5px 17px color-mix(in srgb,var(--wb-text) 8%,transparent)}
+.workbench .node[data-full-card] > .drag {display:none}
+.workbench .node[data-full-card]:is(:hover,:focus-within,.selected) > .drag {display:flex;position:absolute;z-index:3;right:5px;top:-23px;background:var(--wb-bg);border:1px solid var(--wb-border);border-radius:6px;font-size:10px;padding:1px 5px}
+.workbench .node[data-full-card]::before,.workbench .node[data-full-card]::after {pointer-events:none}
+
+.workbench .node.gateNode {width:225px;height:150px}

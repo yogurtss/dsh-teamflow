@@ -1,0 +1,21 @@
+button.card {--ink:light-dark(#525d70,#c5cedb);--paper:var(--wb-bg);display:grid;grid-template-rows:74px 1fr 42px;position:absolute;inset:0;width:100%;height:100%;padding:0!important;overflow:hidden;min-width:0;text-align:left;border:0!important;border-radius:13px;background:var(--paper)!important;color:var(--wb-text);font:inherit}
+.card[data-card-tone=running]{--ink:light-dark(#244f9c,#a9c6ff)}
+.card[data-card-tone=complete]{--ink:light-dark(#246244,#a1dfbd)}
+.card[data-card-tone=blocked]{--ink:light-dark(#973f36,#ffb5a8)}
+.card[data-card-tone=decision]{--ink:light-dark(#845415,#fad08c)}
+.card[data-card-tone=adapt]{--ink:light-dark(#704299,#dabbf5)}
+.header,.body,.footer{box-sizing:border-box;min-width:0;width:100%}
+.header{display:flex;align-items:center;gap:9px;padding:10px 13px;background:linear-gradient(105deg,color-mix(in srgb,var(--ink) 14%,var(--paper)),color-mix(in srgb,var(--ink) 4%,var(--paper)));border-bottom:1px solid var(--wb-border)}
+.avatar{width:46px;height:46px;border-radius:13px;flex:none}
+.identity{min-width:0;flex:1;display:grid;gap:3px}
+.identity b,.identity small,.footer span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.identity b{font-size:21px;line-height:26px;letter-spacing:-.4px}
+.identity small{font-size:12px;color:var(--wb-muted)}
+.header .badge{--task-state-color:var(--ink);align-self:flex-start;max-width:86px;margin-top:3px}
+.body{display:grid;align-content:center;gap:6px;padding:7px 16px}
+.body strong,.body>span{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.body strong{font-size:17px;line-height:22px;-webkit-line-clamp:2}
+.body>span{font-size:13px;line-height:18px;color:var(--wb-muted);-webkit-line-clamp:2}
+.footer{display:flex;gap:7px;align-items:center;padding:0 14px;border-top:1px solid var(--wb-border);font-size:12px;background:color-mix(in srgb,var(--ink) 3%,var(--paper))}
+.footer b{color:var(--ink);flex:none}
+@media(prefers-reduced-motion:no-preference){.card:is([data-card-tone=running],[data-card-tone=adapt]) .badge::after{content:'';width:6px;height:6px;flex:none;border-radius:50%;background:var(--ink);animation:cardPulse 1.6s ease-in-out infinite}@keyframes cardPulse{50%{opacity:.4;transform:scale(.78)}}}

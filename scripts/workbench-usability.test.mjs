@@ -157,3 +157,15 @@ test('configuration errors identify the task and issue, and only explicit resolu
   const resolved=applyWorkflowOperations(source,[{action:'update_task',id:'t1',description:'补充正文与验收阈值',adaptationIssue:'',confirmConfiguration:true}])
   assert.equal(resolved.tasks[0].workflowConfigPending,false)
 })
+
+test('expanded canvas cards preserve saved coordinates and snap to the displayed input port', async () => {
+  const {displayPoint,storedPoint,connectionPort,connectionTarget}=await import('../lib/client/canvas-card-geometry.js')
+  const saved={x:332,y:222}, shown=displayPoint(saved)
+  const persisted=storedPoint(shown)
+  assert.ok(Math.abs(persisted.x-saved.x)<1e-9 && Math.abs(persisted.y-saved.y)<1e-9)
+  const input=connectionPort(shown,'input'), output=connectionPort(shown,'output')
+  assert.ok(Math.abs(output.x-input.x-294)<1e-9);assert.equal(input.y,shown.y+114)
+  const nodes=[{id:'source'},{id:'target'}]
+  assert.equal(connectionTarget(nodes,()=>shown,input,'source')?.id,'target')
+  assert.equal(connectionTarget(nodes,()=>shown,{x:shown.x+350,y:shown.y+115},'source'),undefined)
+})
