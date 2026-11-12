@@ -79,15 +79,7 @@ export declare const zh: {
     'card.memberCount': string;
     'card.progress': string;
     'card.completedCount': string;
-    'action.openActivityPanel': string;
-    'activity.panelButton': string;
     'activity.badgeAria': string;
-    'activity.panelAria': string;
-    'activity.title': string;
-    'activity.float': string;
-    'activity.dockRight': string;
-    'activity.collapse': string;
-    'activity.empty': string;
     'team.stop': string;
     'team.stopped': string;
     'team.stopTitle': string;
@@ -162,7 +154,6 @@ export declare const zh: {
     'dependency.parallel': string;
     'dependency.title': string;
     'dependency.hint.parallel': string;
-    'dependency.hint.chain': string;
     'dependency.hint.pinned': string;
     'task.runningAria': string;
     'task.model': string;
@@ -361,15 +352,7 @@ export declare const en: {
     'card.memberCount': string;
     'card.progress': string;
     'card.completedCount': string;
-    'action.openActivityPanel': string;
-    'activity.panelButton': string;
     'activity.badgeAria': string;
-    'activity.panelAria': string;
-    'activity.title': string;
-    'activity.float': string;
-    'activity.dockRight': string;
-    'activity.collapse': string;
-    'activity.empty': string;
     'team.stop': string;
     'team.stopped': string;
     'team.stopTitle': string;
@@ -444,7 +427,6 @@ export declare const en: {
     'dependency.parallel': string;
     'dependency.title': string;
     'dependency.hint.parallel': string;
-    'dependency.hint.chain': string;
     'dependency.hint.pinned': string;
     'task.runningAria': string;
     'task.model': string;

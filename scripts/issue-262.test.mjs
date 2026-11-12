@@ -19,7 +19,6 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   if (context.parentURL?.endsWith('/client/WorkflowWorkbench.js') && specifier === './StagingPlanEditor.js') source = 'export const StagedModelPicker = () => null'
   if (context.parentURL?.endsWith('/client/ActivityPanel.js')) {
     if (specifier === '@deepseek-ai/dsh-client-ui-primitives') source = 'export const Modal = () => null'
-    if (specifier === './AgentTeamsCard.js') source = 'export const OPEN_PANEL_EVENT = "test-open"'
     if (specifier === './StagingPlanEditor.js') source = 'export const StagingPlanEditor = () => null'
     if (specifier === './QuickMemberEditor.js') source = 'export const QuickMemberEditor = () => null'
   }
@@ -56,11 +55,11 @@ for (const status of ['running', 'idle', 'absent']) test(`claimed remains distin
   ])
 })
 
-test('snapshot reaches sidebar and workspace legends, summary, DAG and assignment chips', async t => {
+test('snapshot reaches workspace legends, summary, DAG and assignment chips', async t => {
   const { projected } = await snapshot(t)
-  for (const dict of [en, zh]) for (const workspace of [false, true]) {
-    const html = render(projected, dict, { workspace })
-    if (process.env.ISSUE262_CAPTURE_DIR && dict === en && workspace) await writeFile(join(process.env.ISSUE262_CAPTURE_DIR, 'panel.html'), html)
+  for (const dict of [en, zh]) {
+    const html = render(projected, dict)
+    if (process.env.ISSUE262_CAPTURE_DIR && dict === en) await writeFile(join(process.env.ISSUE262_CAPTURE_DIR, 'panel.html'), html)
     assert.match(html, /data-task-id="t1" data-state="claimed"/)
     assert.match(html, new RegExp(`<span data-state="claimed">■ ${dict === en ? 'Preparing 1' : '准备执行 1'}</span>`))
     assert.match(html, new RegExp(dict === en ? 'Preparing to run: t1' : '准备执行：t1'))

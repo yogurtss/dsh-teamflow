@@ -13,7 +13,6 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   if (context.parentURL?.endsWith('/client/WorkflowWorkbench.js') && specifier === './StagingPlanEditor.js') source = 'export const StagedModelPicker = () => null'
   if (context.parentURL?.endsWith('/client/ActivityPanel.js')) {
     if (specifier === '@deepseek-ai/dsh-client-ui-primitives') source = 'export const Modal = () => null'
-    if (specifier === './AgentTeamsCard.js') source = 'export const OPEN_PANEL_EVENT = "test-open"'
     if (specifier === './StagingPlanEditor.js') source = 'export const StagingPlanEditor = () => null'
     if (specifier === './QuickMemberEditor.js') source = 'export const QuickMemberEditor = () => null'
   }
@@ -35,7 +34,7 @@ test('rerun proposal shows the previous result and requires new instructions bef
 })
 const task = (id, status, state = status) => ({ id, subject: id, status, state, assignee: '', dependencies: [], depth: 0 })
 const render = (team, dict, extra = {}) => renderToStaticMarkup(React.createElement(TeamSection, {
-  team, workspace: true, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
+  team, onNavigate() {}, t: (key, values = {}) => dict[key].replace(/\{(\w+)\}/g, (_, name) => String(values[name])), ...extra,
 }))
 
 test('compact dependency cards distinguish human reviews and put controls in the selected detail',()=>{
@@ -108,7 +107,7 @@ test('waiting downstream never advertises execution pause and all summaries use 
   assert.ok(!summary.includes('待领取'))
 })
 
-test('every lifecycle state is visible on unselected diagram cards in compact and workspace panels',()=>{
+test('every lifecycle state is visible on unselected diagram cards in the workspace',()=>{
   const cases=[
     [{workflowConfigPending:true},'configurationPending'],[{workflowPaused:true,workflowAwaitingStart:true},'awaitingStart'],
     [{workflowPaused:true,workflowAwaitingStart:false},'paused'],[{workflowRerunRequired:true},'rerunRequired'],
@@ -120,16 +119,16 @@ test('every lifecycle state is visible on unselected diagram cards in compact an
     [{checkpoint:{round:1,history:[],decision:'reject'}},'reviewRejected'],
     [{status:'completed',checkpoint:{round:1,history:[],decision:'approve'}},'reviewPassed'],
   ]
-  for(const workspace of [false,true]) for(const [patch,visual] of cases) {
+  for(const [patch,visual] of cases) {
     const item={...task('target','pending','open'),...patch}
-    const html=render({...base,tasks:[task('other','pending','blocked'),item]},zh,{workspace})
+    const html=render({...base,tasks:[task('other','pending','blocked'),item]},zh)
     const graph=html.slice(html.indexOf('class="dagCanvas"'),html.indexOf('class="taskDetail"'))
-    assert.ok(graph.includes(`data-lifecycle="${visual}"`),`${workspace}: ${visual}`)
+    assert.ok(graph.includes(`data-lifecycle="${visual}"`),visual)
     assert.ok(graph.includes(zh[taskControlState({...base,tasks:[item]},item).label]),visual)
     assert.ok(graph.includes('class="symbol"'),visual)
   }
   for(const [teamPatch,visual] of [[{phase:'staged'},'staged'],[{halted:true},'stopped']]) {
-    const html=render({...base,...teamPatch,tasks:[task('target','pending','open')]},zh,{workspace:false})
+    const html=render({...base,...teamPatch,tasks:[task('target','pending','open')]},zh)
     assert.ok(html.includes(`data-lifecycle="${visual}"`))
   }
 })
@@ -175,7 +174,6 @@ test('inbox renders unread snapshot content safely and keeps scroll regions keyb
   assert.match(html, /class="inboxMessages" tabindex="0" aria-label="Captain inbox"/)
   assert.match(html, /class="completionTasks" tabindex="0" aria-label="Task completion summary"/)
   assert.ok(html.includes(en['workspace.inboxHint']))
-  assert.doesNotMatch(render(base, en, { workspace: false }), /class="workspaceSummary"/)
 })
 
 for(const dict of [zh,en]) test(`human checkpoints use review labels and approval updates the progress (${dict===zh?'zh':'en'})`,()=>{
