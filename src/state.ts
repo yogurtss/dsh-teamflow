@@ -25,7 +25,7 @@ import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
 import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
-import { loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
+import { loopRetryInstructions, loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
 import { writeLoopTeam } from './workflow-loop-history.ts'
 
 export {
@@ -898,6 +898,13 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
     // pass drops out-of-contract numeric sentinels such as `line: -1`
     // (issue #188), so an already-written bad record self-heals on read.
     const cleaned = flattenLegacyTask(normalizeBlankOptionalTaskFields(task))
+    // Older same-round retries wrote an empty instruction after a failed turn.
+    const retry = cleaned['workflowRerunContext'], workflow = current['workflow']
+    if (isRecord(retry) && retry['instructions'] === '' && ['failed','cancelled'].includes(String(retry['previousStatus']))
+      && isRecord(workflow) && Array.isArray(workflow['loops']) && workflow['loops'].some(loop =>
+        isRecord(loop) && Array.isArray(loop['bodyIds']) && loop['bodyIds'].includes(cleaned['id']))) {
+      cleaned['workflowRerunContext'] = { ...retry, instructions: loopRetryInstructions }
+    }
     if (cleaned['profileSeedId'] !== undefined && (typeof cleaned['profileSeedId'] !== 'string' || cleaned['profileSeedId'].trim() === '')) {
       const next = { ...cleaned }
       delete next['profileSeedId']

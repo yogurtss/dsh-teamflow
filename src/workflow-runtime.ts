@@ -374,7 +374,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           const ids = await withTeamLock(lock, async () => {
             const team = await load()
             if (team.halted || team.phase === 'staged' || body['version'] !== flowControlVersion(team)) throw new Error('流程已变化或尚未启动，请刷新后重试')
-            if (body['enabled']) for (const loop of loopsOf(team)) if (loop.status === 'ready') startLoop(team, loop.id)
+            if (body['enabled']) for (const loop of loopsOf(team)) if (loop.status === 'ready' || loop.status === 'paused' && loop.failedExecutionTaskId) startLoop(team, loop.id)
             if (!body['enabled']) for (const loop of loopsOf(team)) if (loop.status === 'ready' && loop.queued) pauseLoop(team, loop.id, false, '用户暂停流程，已取消循环排队')
             const tasks = team.tasks.filter(task => (!body['enabled'] || !loopForTask(team, task.id)) && !['completed','failed','cancelled'].includes(task.status) && !task.checkpoint?.decision && !task.workflowConfigPending)
             if (body['enabled'] && tasks.some(task => task.workflowPaused && (task.status !== 'pending' || task.reassigning || team.members.some(m => m.name === task.assignee && m.stopping)))) throw new Error('请等待当前执行停止完成，或重试暂停流程')

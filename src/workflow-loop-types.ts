@@ -15,6 +15,7 @@ export interface WorkflowLoop extends LoopConfig {
   round: number
   status: 'ready' | 'running' | 'reviewing' | 'paused' | 'passed' | 'cancelled'
   reason?: string
+  failedExecutionTaskId?: string
   feedback?: string
   requestedTaskIds?: string[]
   startedAt?: number

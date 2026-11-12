@@ -278,6 +278,59 @@ test('stale decisions and duplicates cannot advance twice or approve incomplete 
   assert.throws(() => decideLoop(team, loop.id, decision(team, loop, 'pass', []), 'human'), /未通过/)
 })
 
+test('a provider failure pauses the loop while ordinary failed work stays reviewable', () => {
+  const {team,loop}=fixture('human')
+  startLoop(team,loop.id);finish(team,['a'])
+  const work=team.tasks[1]
+  work.status='failed';work.output='provider unavailable'
+  reconcileLoops(team,Date.now(),work.id)
+  assert.equal(loop.status,'paused')
+  assert.equal(loop.failedExecutionTaskId,work.id)
+  startLoop(team,loop.id)
+  assert.equal(loop.status,'running')
+  assert.equal(work.workflowRerunContext.previousOutput,'provider unavailable')
+  assert.equal(team.tasks[0].status,'completed')
+  assert.equal(loop.round,1)
+})
+
+test('reading an old reviewing loop after HTTP 500 restores both resume entry points',async t=>{
+  for(const global of [false,true]){
+    const {team,loop}=fixture('ai')
+    startLoop(team,loop.id);finish(team)
+    const f=await routeFixture(t,team)
+    // Reproduce the pre-fix durable record without running the new write hook.
+    const saved=await f.read()
+    const failed=saved.tasks.find(task=>task.id===(global?'gate':'b'))
+    failed.status='failed';failed.output='HTTP 500 Internal Server Error (code server_error)'
+    await writeFile(join(f.stateRoot,team.id,'team.json'),JSON.stringify(saved))
+    const state=await f.call('state')
+    assert.equal(state.code,200,state.error)
+    assert.equal(state.team.workflow.loops[0].status,'paused')
+    assert.equal(flowControlState({...state.team,tasks:state.team.tasks.slice(0,3)}).canStart,true)
+    const resumed=global ? await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(state.team)})
+      : await f.call('loop_start',{loopId:loop.id,base:state.base})
+    assert.equal(resumed.code,200,resumed.error)
+    const current=resumed.team.workflow.loops[0]
+    assert.equal(current.status,global?'reviewing':'running')
+    assert.equal(current.round,1)
+    assert.equal(current.failedExecutionTaskId,undefined)
+    assert.equal(resumed.team.tasks[0].status,'completed')
+    assert.equal(resumed.team.tasks[2].checkpoint.round,1)
+    assert.equal(resumed.team.tasks[3].status,'pending')
+    const paused=await f.call('loop_pause',{loopId:loop.id,base:resumed.base})
+    assert.equal(paused.code,200,paused.error)
+    assert.equal(paused.team.workflow.loops[0].status,'paused')
+    if (!global) {
+      const legacy=await f.read()
+      legacy.tasks[1].workflowRerunContext.instructions=''
+      await writeFile(join(f.stateRoot,team.id,'team.json'),JSON.stringify(legacy))
+      const reopened=await f.call('state')
+      assert.equal(reopened.code,200,reopened.error)
+      assert.ok(reopened.team.tasks[1].workflowRerunContext.instructions)
+    }
+  }
+})
+
 test('partial revisions preserve unrelated branches and rerun the downstream closure', () => {
   const { team, loop } = fixture(); startLoop(team, loop.id); finish(team)
   const previous = team.tasks[0].attemptId

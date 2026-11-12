@@ -88,7 +88,7 @@ export interface TeamActivitySnapshot {
   readonly captainSessionId: string
   readonly phase: 'staged' | 'running'
   readonly workflowEnabled?: boolean
-  readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'queued'>[] }
+  readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'queued'|'failedExecutionTaskId'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
   readonly members: readonly TeamActivityMember[]
@@ -218,7 +218,7 @@ export async function assembleTeamSnapshot(
     captainSessionId: state.captainSessionId,
     phase: state.phase ?? 'running',
     ...state.workflow === undefined ? {} : { workflowEnabled: true },
-    ...state.workflow?.loops?.length ? { workflow: { loops: state.workflow.loops.map(({gateId,bodyIds,status,mode,queued}) => ({gateId,bodyIds,status,mode,queued})) } } : {},
+    ...state.workflow?.loops?.length ? { workflow: { loops: state.workflow.loops.map(({gateId,bodyIds,status,mode,queued,failedExecutionTaskId}) => ({gateId,bodyIds,status,mode,queued,failedExecutionTaskId})) } } : {},
     ...state.phase === 'staged'
       ? { planReviewState: state.planReviewState ?? 'awaiting_review' as const }
       : {},
