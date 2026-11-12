@@ -145,19 +145,23 @@ test('policy exclusions survive persistence and legacy evidence without masking 
  assert.equal(artifactDrift([{path:'a.txt',present:true,sha256:'a'.repeat(64)}],[{path:'a.txt',present:true,sha256:'b'.repeat(64)}]).length,1)
 })
 
-test('checkpoint evidence ignore skipped bytes and timestamps but detect changed execution results',async t=>{
+test('checkpoint and loop evidence ignore skipped bytes and timestamps but detect changed execution results',async t=>{
  const {workflowMaterials}=await import('../lib/workflow-runtime.js')
+ const {loopArtifactEvidence}=await import('../lib/workflow-loop-evidence.js')
  const root=await mkdtemp(join(tmpdir(),'teamflow-policy-evidence-'));t.after(()=>rm(root,{recursive:true,force:true}))
  fs.writeFileSync(join(root,'a.txt'),'one');fs.writeFileSync(join(root,'model.bin'),'one')
  const paths=['a.txt','model.bin']
  const team={tasks:[{id:'work',subject:'work',dependencies:[],status:'completed',changedPaths:paths},{id:'gate',subject:'gate',description:'Review',dependencies:['work'],checkpoint:{round:1,history:[]}}]}
  const before=workflowMaterials(team,'gate',root)
+ const loopBefore=await loopArtifactEvidence(root,team,{bodyIds:['work']})
  fs.utimesSync(join(root,'a.txt'),new Date(),new Date(Date.now()+5000));fs.writeFileSync(join(root,'model.bin'),'changed unreviewed model')
  assert.equal(workflowMaterials(team,'gate',root).evidence,before.evidence)
+ assert.equal(await loopArtifactEvidence(root,team,{bodyIds:['work']}),loopBefore)
  fs.writeFileSync(join(root,'a.txt'),'two')
  assert.equal(workflowMaterials(team,'gate',root).evidence,before.evidence)
  team.tasks[0].output='p95 improved to 12 ms'
  assert.notEqual(workflowMaterials(team,'gate',root).evidence,before.evidence)
+ assert.notEqual(await loopArtifactEvidence(root,team,{bodyIds:['work']}),loopBefore)
 })
 
 test('directory aliases and duplicates do not consume extra file slots',async t=>{

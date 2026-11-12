@@ -19,11 +19,14 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path'
 import type { MemberToolFilter } from './tool-policies.ts'
 import { FINDING_SEVERITIES, REVIEW_VERDICTS, TASK_KINDS, TERMINAL_TASK_STATUSES, type ReviewFinding, type TaskStatus, type TeamMember, type TeamMessage, type TeamProfileSnapshot, type TeamState, type TeamTask } from './types.ts'
+import { validArchiveFields } from './task-archive-config.ts'
 import { hasValidQualityTaskFields, isReviewPolicy, isValidFindingLine, normalizeBlankOptionalTaskFields } from './quality-gates.ts'
 import { teamLeadMatch, type LeadIdentity } from './lineage.ts'
 import { isCheckpoint, isStoppedAttempts, isWorkflowRerunContext, isWorkflowState } from './workflow-validation.ts'
 import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
+import { loopRetryInstructions, loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
+import { writeLoopTeam } from './workflow-loop-history.ts'
 
 export {
   amendTaskContract,
@@ -241,7 +244,7 @@ export function invalidateTaskAttempt(
 export async function createTeamDir(stateRoot: string, state: TeamState): Promise<void> {
   const dir = join(stateRoot, state.id)
   await mkdir(join(dir, 'inbox'), { recursive: true })
-  await atomicWriteText(join(dir, 'team.json'), JSON.stringify(state, null, 2))
+  await writeTeam(stateRoot, state)
 }
 
 /**
@@ -307,7 +310,12 @@ export function readTeamSync(stateRoot: string, teamId: string): TeamState | und
  * @param state - the record to persist.
  */
 export async function writeTeam(stateRoot: string, state: TeamState): Promise<void> {
-  assertStableFeatureScope(state)
+  if (loopsOf(state).length || state.workflow?.loopRevision !== undefined) {
+    validateLoopGraph(state)
+    reconcileLoops(state)
+    await writeLoopTeam(stateRoot, state)
+    return
+  }
   await atomicWriteText(join(stateRoot, state.id, 'team.json'), JSON.stringify(state, null, 2))
 }
 
@@ -839,16 +847,7 @@ function coerceProfileSnapshot(value: unknown): TeamProfileSnapshot | undefined 
   }
 }
 
-function assertStableFeatureScope(value: unknown): void {
-  if (!isRecord(value)) return
-  const workflow = value['workflow']
-  if (isRecord(workflow) && (workflow['loopRevision'] !== undefined || Array.isArray(workflow['loops']) && workflow['loops'].length > 0)
-    || Array.isArray(value['tasks']) && value['tasks'].some(task => isRecord(task) && task['kind'] === 'archive')) {
-    throw new Error('This team uses development-only loop or archive-node features. Open it with the dev build; main will not execute or rewrite it.')
-  }
-}
 function coerceTeamState(value: unknown, expectedId: string): TeamState | undefined {
-  assertStableFeatureScope(value)
   if (!isRecord(value)) return undefined
   if (value['profile'] !== undefined && !isTeamProfileSnapshot(value['profile']) && typeof value['profile'] !== 'string') {
     const next = { ...value }
@@ -899,6 +898,13 @@ function coerceTeamState(value: unknown, expectedId: string): TeamState | undefi
     // pass drops out-of-contract numeric sentinels such as `line: -1`
     // (issue #188), so an already-written bad record self-heals on read.
     const cleaned = flattenLegacyTask(normalizeBlankOptionalTaskFields(task))
+    // Older same-round retries wrote an empty instruction after a failed turn.
+    const retry = cleaned['workflowRerunContext'], workflow = current['workflow']
+    if (isRecord(retry) && retry['instructions'] === '' && ['failed','cancelled'].includes(String(retry['previousStatus']))
+      && isRecord(workflow) && Array.isArray(workflow['loops']) && workflow['loops'].some(loop =>
+        isRecord(loop) && Array.isArray(loop['bodyIds']) && loop['bodyIds'].includes(cleaned['id']))) {
+      cleaned['workflowRerunContext'] = { ...retry, instructions: loopRetryInstructions }
+    }
     if (cleaned['profileSeedId'] !== undefined && (typeof cleaned['profileSeedId'] !== 'string' || cleaned['profileSeedId'].trim() === '')) {
       const next = { ...cleaned }
       delete next['profileSeedId']
@@ -1127,6 +1133,7 @@ export function isTeamTask(value: unknown): value is TeamTask {
     && isFiniteNumber(value['createdAt'])
     && isFiniteNumber(value['updatedAt'])
     && hasValidQualityTaskFields(value)
+    && validArchiveFields(value)
 }
 
 /** Validate the full team record before it can participate in authorization. */
@@ -1176,6 +1183,7 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     if (task.id === '' || taskIds.has(task.id)) return false
     taskIds.add(task.id)
   }
+  try { validateLoopGraph(value as unknown as TeamState) } catch { return false }
   return true
 }
 

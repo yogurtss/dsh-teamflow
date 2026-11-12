@@ -6,6 +6,6 @@ type Point = {
 };
 export declare const displayPoint: (p: Point) => Point;
 export declare const storedPoint: (p: Point) => Point;
-export declare function connectionPort(p: Point, side: 'input' | 'output'): Point;
-export declare function connectionTarget(tasks: TeamTask[], position: (id: string) => Point, point: Point, from: string): TeamTask | undefined;
+export declare function connectionPort(p: Point, side: 'input' | 'output', diamond?: boolean): Point;
+export declare function connectionTarget(tasks: TeamTask[], position: (id: string) => Point, point: Point, from: string, diamond?: (t: TeamTask) => boolean): TeamTask | undefined;
 export {};

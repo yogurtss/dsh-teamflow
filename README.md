@@ -19,14 +19,16 @@ Built on [AgentTeams](https://github.com/NanmiCoder/dsh-agent-teams), TeamFlow n
 
 ## Start here
 
+When configuring an IF gate, select the return target to preview the loop and see which tasks each ineligible reviewer owns. During human review, open the materials to compare the previous and current results. Reruns, changed acceptance checks and failures open first. Reused results show their execution round. When an interrupted archive task retries, it clears that attempt’s unpublished files and keeps earlier published archives.
+
 **Continue and rerun**: Start all resumes unfinished, paused, or interrupted work and preserves completed results. Run through a node resumes its required ancestors and pauses later descendants; human checkpoints still require approval. Continuing needs no new input. An explicit rerun requires a reason in the card editor. Reconnection reads current state without replaying mutations. Blockers and recovery explains configuration, dependencies, review, and execution issues with next actions.
 
-This README describes stable version **`0.2.11`** on `main`. See the [release notes](./release-notes/v0.2.11.md); ongoing development remains on `dev`. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
+This README describes stable version **`0.2.12`** on `main`. See the [release notes](./release-notes/v0.2.12.md). The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
 
 | Channel | Git source | Purpose |
 | --- | --- | --- |
-| Stable | `github:yogurtss/dsh-teamflow#main` | Approved TeamFlow release described here; the default installation below |
-| Development | `github:yogurtss/dsh-teamflow#dev` | Upcoming changes under development |
+| Stable | `github:yogurtss/dsh-teamflow#main` | Stable workflows with gated loops, rework and result archives |
+| Development | `github:yogurtss/dsh-teamflow#dev` | Super Agent development and upcoming fixes |
 | Classic | `github:yogurtss/dsh-teamflow#classic` | Historical version without Gallery |
 
 This release accepts DSH `0.2.1-rc.5`; the repository's development dependencies remain on `0.2.1-rc.2`. See the [compatibility record](./docs/harness-0.2.1-rc.5/README.md) and [compatibility matrix](./compatibility.json) for exact targets and validation scope. Stable and development releases have separate schedules.
@@ -37,7 +39,7 @@ This release accepts DSH `0.2.1-rc.5`; the repository's development dependencies
 
 **Use a template:** open **Workflow** in the sidebar, browse the Gallery, and enter what you want to accomplish. You can browse before choosing a project. When applying the template, select an existing workspace or use **Add workspace** to choose or create a folder. From a chat, you can also open **Teamflow → Gallery**.
 
-The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. Built-in templates are read-only; save a personal copy to customize one.
+The starter library includes **Feature development**, **Bug investigation and repair**, and **Operator development and optimization**. For work that needs repeated improvement, choose **Iterative operator optimization** (5 rounds) or **Fix and regression loop** (3 rounds): independent AI gates return feedback to the same tasks, and exhausted budgets pause for user action. Setup and delivery remain one-off tasks. Built-in templates are read-only; save a personal copy to customize one.
 
 **Start from a goal:** send a request in a project conversation:
 
@@ -69,7 +71,7 @@ Open **Deliverables** at the top of Workflow to browse submissions, reported che
 
 After a return, **Review current results again** starts a fresh review round while retaining the returned decision. To repair the work, select an upstream task under **Arrange rework**, confirm its instructions, and rerun it. Then use **Run through this node** to resume the path to the checkpoint; the current round’s evidence loads when ready, so you can review the new result. Other affected branches stay paused.
 
-**Start all** also confirms pending reruns across the workflow. Enabled nodes run in dependency order, wait at human checkpoints, and continue automatically after approval. **Pause all** stops current work and prevents queued downstream work from starting. Unconfigured nodes, rejected reviews, and failed tasks still need attention.
+**Start all** also confirms pending reruns across the workflow. A paused or blocked loop resumes from its saved round. Each task card controls only its own task. Pausing a task leaves parallel tasks running, and its dependents wait. Use the controls at the bottom of the loop frame to pause or resume the whole loop. If the work is complete, the gate reopens for review. A revision at the round limit requires an explicit extension. Enabled nodes run in dependency order, wait at human checkpoints, and continue automatically after approval. **Pause all** stops current work and prevents queued downstream work from starting. Unconfigured nodes, rejected reviews, and failed tasks still need attention.
 
 The compact status capsule shows completed-node progress and an attention count. Pure configuration issues show “Setup needed”; mixed issues show “Attention”. Hover for a breakdown, or click to open Workflow. Running cards breathe gently; reduced-motion settings disable animation.
 
@@ -80,6 +82,36 @@ For a finished, failed, or cancelled task, review the previous result, fill in t
 Completed workflows remain readable and editable. Archive only when work is complete; **Restore and edit workflow** reopens an archive for review with fresh member sessions and unfinished tasks paused. It does not overwrite an existing live team.
 
 Use **Save as template** to have AI extract reusable requirements, review the draft, and save it to your personal library. Templates retain roles, tasks, dependencies, and checkpoints, but exclude execution sessions, model routes, outputs, and approvals. Saved versions and applied workflows remain independent.
+
+## Try it yourself
+
+Use an empty workspace for either example. The first needs a GPU. The second only needs Python 3.
+
+### 1. Build and verify a Triton softmax kernel
+
+On a GPU machine with working PyTorch and Triton installations, select **Iterative operator optimization** in the template gallery. Paste this into the requirements:
+
+> Implement last-dimension softmax for a 2D FP32 tensor in Triton. Use `torch.softmax(x, dim=-1)` as the reference. Fix the random seed. Test 4096 rows with both 1024 and 1025 columns, plus an input containing 1000 and −1000. Have an independent verifier check that every output is finite and compare all elements with `rtol=1e-4, atol=1e-6`. Benchmark both implementations on the same GPU, precision and inputs. Warm up, synchronize timings and report median latency for each shape. Agree on the performance target before starting, for example median latency no higher than the reference at 1024 columns. Allow up to three rounds. Deliver the implementation, tests and a repeatable benchmark command.
+
+**What to check.** Open the gate evidence and compare the last column of the 1025-column result with the reference. This exercises the boundary of the final partial block. Pass when both correctness and the agreed performance target are met. If the reviewer sends it back, look for the failing shape, error or timing in the feedback.
+
+### 2. Turn training logs into a reproducible model comparison
+
+Start a blank workflow and send the team this request together with the sample rows:
+
+> Create seven JSON log files in `logs/` from the table, one file per row with the fields model, seed, epoch and accuracy. Build a Python standard-library CLI that prints a Markdown report when I run `python report.py logs`. Treat resumed training for the same model and seed as one run and use its highest epoch as the final result. List final accuracy per run, the B−A difference for each shared seed and the mean paired difference. Have a second member check the sample independently and turn the check into a regression test.
+
+| model | seed | epoch | accuracy |
+|---|---:|---:|---:|
+| A | 1 | 10 | 0.80 |
+| A | 2 | 10 | 0.82 |
+| A | 3 | 10 | 0.84 |
+| B | 1 | 10 | 0.83 |
+| B | 2 | 4 | 0.70 |
+| B | 2 | 10 | 0.84 |
+| B | 3 | 10 | 0.85 |
+
+**What to check.** Run the command yourself. Seven files should yield **six runs and three seed pairs**. Model B, seed 2 should finish at 0.84. The paired differences should be +0.03, +0.02 and +0.01, a mean gain of **two percentage points**.
 
 ## Working in the canvas
 
@@ -99,6 +131,8 @@ Use **Save as template** to have AI extract reusable requirements, review the dr
 Flow, task, member, and review discussions stay inside Workflow. The main conversation remains in the Session list. Discussions retain their history and show streaming replies when the host supports them. **Enter** sends; **Shift+Enter** inserts a line break.
 
 Manual property edits save directly; AI proposals require confirmation. **Save all properties** saves drafts without starting tasks or confirming reruns. Unsaved property and discussion drafts are backed up in the current browser tab; they are not a cross-device backup.
+
+In the workbench, use the selector on a loop gate or acceptance card, or in its inspector, to switch between human and AI review. A loop gate has an input, a PASS output and a REJECT return port. Connect the upstream task first, drag REJECT back to it and save the loop settings. Select an independent team reviewer for an AI loop gate. Loops open expanded. An acceptance node has an input and output, and its AI mode uses its own acceptance agent to decide against the current evidence.
 
 ## Installation and updates
 
@@ -126,7 +160,7 @@ dsh plugin --profile web add github:yogurtss/dsh-teamflow#main
 dsh --profile web
 ```
 
-Use `#dev` instead of `#main` for this development version. Git installs include built artifacts. Restart Harness and refresh the browser after installation or updates.
+Use `#dev` instead of `#main` for the development build. Git installs include built artifacts. Restart Harness and refresh the browser after installation or updates.
 
 Verify the installed package:
 

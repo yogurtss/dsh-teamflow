@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm';
 import { exerciseWorkflow, ownSessionEvents } from './harness-workflow-case.mjs';
+import { exerciseLoops } from './harness-loop-case.mjs';
 
 const events = [];
 const handledControlMessages = new Set();
@@ -44,6 +45,24 @@ class WebApprovalAdapter extends LlmAdapter {
     async *stream(options) {
         const system = options.system ?? options.messages.filter(message => message.role === 'system').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');
         if (options.purpose) { yield* textChunks('Web approval lab'); return; }
+        if (system.includes('LOOP_WORKER') || system.includes('LOOP_REVIEWER')) {
+            const assignment = options.messages.findLastIndex(m => m.role === 'user' && m.content?.some(b => b.type === 'text' && (b.text.includes('AgentTeams automatic task assignment') || b.text.includes('You are the designated loop reviewer'))));
+            if (assignment < 0) { yield* textChunks('LOOP_READY'); return; }
+            const prompt = options.messages[assignment].content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+            const calls = options.messages.slice(assignment).flatMap(m => m.content ?? []).filter(b => b.type === 'tool-call').map(b => b.name);
+            const attempt = prompt.match(/Attempt id: ([^\s.]+)/)?.[1]; assert.ok(attempt);
+            const gate = prompt.includes('You are the designated loop reviewer');
+            const taskId = gate ? prompt.match(/Claim task (\S+)/)?.[1] : prompt.match(/\nTask: (\S+)/)?.[1]; assert.ok(taskId);
+            if (!calls.includes('agent_teams_claim_task')) { yield* call('agent_teams_claim_task', { task_id: taskId }); return; }
+            if (gate && !calls.includes('agent_teams_decide_loop')) {
+                const round = Number(prompt.match(/, round=(\d+)/)?.[1]);
+                yield* call('agent_teams_decide_loop', { loop_id: prompt.match(/loop_id=([^,]+)/)?.[1], run_id: prompt.match(/run_id=([^,]+)/)?.[1], round, fingerprint: prompt.match(/fingerprint=([^,]+)/)?.[1], attempt_id: attempt, decision_id: randomUUID(), decision: round < 3 ? 'revise' : 'pass', note: 'Recheck boundary coverage and verification evidence', task_ids: round < 3 ? ['work'] : [] }); return;
+            }
+            if (!gate && calls.filter(n => n === 'agent_teams_update_task').length < 2) {
+                yield* call('agent_teams_update_task', { task_id: taskId, attempt_id: attempt, status: calls.includes('agent_teams_update_task') ? 'completed' : 'in_progress', output: `LOOP_RESULT ${taskId} ${attempt}`, changedPaths: ['outcome-report.md'] }); return;
+            }
+            yield* textChunks('LOOP_DONE'); return;
+        }
         // Script each assignment independently so a rerun does not reuse the prior turn's tool calls.
         const assignmentIndex=system.includes('WEB_APPROVAL_MEMBER') ? options.messages.findLastIndex(message=>message.role==='user'&&message.content?.some(block=>block.type==='text'&&block.text.includes('AgentTeams automatic task assignment'))) : -1;
         const turnMessages=assignmentIndex<0?options.messages:options.messages.slice(assignmentIndex);
@@ -116,6 +135,7 @@ class WebApprovalAdapter extends LlmAdapter {
         const reportNotice = reports.find(message => !handledControlMessages.has(message.id));
         let chunks;
         if (isMember) {
+            const assignedTaskId=[...userText.matchAll(/^Task: ([^\s]+)/gm)].at(-1)?.[1]??'t1';
             if (userText.includes('AgentTeams automatic task assignment') && userText.includes('Implement operator B according to confirmed specifications')) {
               assert.ok(!userText.includes('通用任务：'), 'Executor must not receive the generic layer');
               assert.ok(userText.includes('Independent B correctness checks'), 'Executor must receive concretized acceptance');
@@ -125,11 +145,11 @@ class WebApprovalAdapter extends LlmAdapter {
             await memberGate;
             options.signal?.throwIfAborted();
             if (!userText.includes('AgentTeams automatic task assignment')) chunks = textChunks('WEB_MEMBER_READY');
-            else if (!names.includes('agent_teams_claim_task')) chunks = call('agent_teams_claim_task', { task_id: 't1' });
+            else if (!names.includes('agent_teams_claim_task')) chunks = call('agent_teams_claim_task', { task_id: assignedTaskId });
             else if (calls.filter(block => block.name === 'agent_teams_update_task').length < 2) {
                 const attempt = toolText.match(/attempt_id ([^,\s)]+)/)?.[1];
                 assert.ok(attempt, 'Claim result must expose the real task attempt');
-                chunks = call('agent_teams_update_task', { task_id: 't1', status: names.includes('agent_teams_update_task') ? 'completed' : 'in_progress', output: 'WEB_MEMBER_TASK_DONE', changedPaths: ['outcome-report.md'], attempt_id: attempt });
+                chunks = call('agent_teams_update_task', { task_id: assignedTaskId, status: names.includes('agent_teams_update_task') ? 'completed' : 'in_progress', output: 'WEB_MEMBER_TASK_DONE', changedPaths: ['outcome-report.md'], attempt_id: attempt });
             }
             else if (!names.includes('agent_teams_send_message')) chunks = call('agent_teams_send_message', { to: 'captain', content: 'WEB_MEMBER_REPORT_OK' });
             else chunks = textChunks('WEB_MEMBER_DONE');
@@ -212,6 +232,16 @@ export function apply(ctx) {
             assert.equal(events.filter(event => event.event === 'web-request').length, 0, 'Restored discussion must not wake an execution agent');
             await ctx.sessions.flush(restored.agent.session);
             record({ event: 'workflow-cold-passed', nativeId: saved.nativeId, historyRetained: true, toolIsolation: true });
+            for (const mode of ['human','ai']) {
+              const savedLoop = JSON.parse(readFileSync(`loop-${mode}-resume.json`, 'utf8'));
+              const team = JSON.parse(readFileSync(join('.agent-teams',savedLoop.teamId,'team.json'), 'utf8'));
+              const loop = team.workflow.loops.find(l => l.id === savedLoop.loopId);
+              assert.equal(loop.runId,savedLoop.runId); assert.equal(loop.round,3); assert.equal(loop.status,'passed'); assert.equal(loop.historyHead,savedLoop.historyHead);
+              let cursor=loop.historyHead; const decisions=[];
+              while(cursor){ const entry=JSON.parse(readFileSync(join('.agent-teams',team.id,'loop-history',cursor+'.json'),'utf8')); assert.equal(entry.runId,loop.runId); if(entry.kind==='decision')decisions.push(entry.decision); cursor=entry.previous; }
+              assert.deepEqual(decisions,['pass','revise','revise']);
+              record({event:'gated-loop-cold-passed',mode,rounds:3,decisions});
+            }
             process.stdout.write('WORKFLOW_COLD_OK\n'); ctx.get('appExit')(0); return;
         }
         await ctx.workspaceRegistry.create(process.cwd(), 'Web approval regression');
@@ -317,8 +347,8 @@ export function apply(ctx) {
         assert.ok(captainRequests.every(request => sha256(JSON.stringify(request.tools ?? [])) === toolsSha256), 'Captain tool schemas must remain stable across the complete Web workflow');
         const memberRequests = events.filter(event => event.event === 'web-request' && event.isMember);
         assert.ok(memberRequests.length > 0);
-        const memberTools = ['agent_teams_claim_task', 'agent_teams_update_task', 'agent_teams_send_message', 'agent_teams_status'].sort();
-        for (const request of memberRequests) assert.deepEqual(request.tools.filter(tool => tool.name.startsWith('agent_teams_')).map(tool => tool.name).sort(), memberTools, 'Every real member request must expose exactly the four member tools');
+        const memberTools = ['agent_teams_decide_loop', 'agent_teams_claim_task', 'agent_teams_update_task', 'agent_teams_send_message', 'agent_teams_status'].sort();
+        for (const request of memberRequests) assert.deepEqual(request.tools.filter(tool => tool.name.startsWith('agent_teams_')).map(tool => tool.name).sort(), memberTools, 'Every real member request must expose exactly the five member tools');
         record({ event: 'web-headers-stable', sessionId: captain.id, systemSha256, toolsSha256, captainRequests: captainRequests.length, memberRequests: memberRequests.length, memberTeamToolCount: memberTools.length });
         record({ event: 'web-approval-passed', sessionId: captain.id, teamId: completed.id, memberId: completed.members[0].id, taskStatus: completed.tasks[0].status, captainRequests: captainRequests.length });
         await exerciseWorkflow({ baseUrl, cookie, captain, readTeam, record, ctx, events });
@@ -335,6 +365,7 @@ export function apply(ctx) {
         const runnable = await fetch(baseUrl + '/plugins/dsh-agent-teams/plan', { method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl, cookie }, body: JSON.stringify({ sessionId: planningHandle.agent.id, teamId: ready.id, action: 'approve' }), signal: AbortSignal.timeout(10000) });
         assert.equal(runnable.status, 200, await runnable.text());
         record({ event: 'captain-single-description-passed', createCalls: 1, configuredTasks: ready.tasks.length, approvalStatus: runnable.status });
+        await exerciseLoops({ baseUrl, cookie, ctx, record });
         process.stdout.write('WEB_APPROVAL_OK\n');
         ctx.get('appExit')(0);
     })().catch(error => {

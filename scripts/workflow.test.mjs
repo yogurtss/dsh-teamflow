@@ -8,7 +8,7 @@ import { applyWorkflowOperations, applyWorkflowProposal, checkpointReady, decide
 import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-runtime.js'
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
-import { cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
+import { archiveTeamDir, cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
 import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
 import { registerAgentTeamsTools } from '../lib/tools.js'
 import { installWorkflowConversations, workflowDiscussion } from '../lib/workflow-native.js'
@@ -17,7 +17,7 @@ import { openAgentTeamMember, openWorkflowConversation } from '../lib/client/ses
 import { taskDraftOperations } from '../lib/client/workflow-draft.js'
 import { rerunImpact, rerunnableTasks } from '../lib/task-rerun.js'
 import { draftSource, editorKey, editorTarget, finishWorkbenchSave, initialWorkbenchView, selectWorkbench, targetDiscussion } from '../lib/client/workbench-selection.js'
-import { arrangeTasks, fitGraph } from '../lib/client/workflow-layout.js'
+import { arrangeTasks, arrangeWorkflow, loopBodyIds, loopRegion, fitGraph } from '../lib/client/workflow-layout.js'
 import { flowControlVersion, flowControlState, taskControlState } from '../lib/client/task-control.js'
 
 const member = { id: '', name: 'worker', role: 'developer', provider: 'fixture', model: 'fixture', status: 'idle', joinedAt: 1 }
@@ -46,6 +46,16 @@ async function lifecycleFixture(t, source, options = {}) {
   }
   return {workspace:root,read,call,dispatched,save:state=>writeTeam(stateRoot,state),kick:()=>scheduler.kickTeam(root,source.id,captain)}
 }
+
+test('system archive executes without a member claim and survives team archival and restore',async t=>{
+ const source=team();source.workflow={positions:{},discussions:{},history:[]};source.tasks[0].status='completed';source.tasks[0].output='Saved result'
+ const state=applyWorkflowOperations(source,[{action:'add_task',id:'archive',kind:'archive',subject:'Archive',dependencies:['t1'],archive:{copyFiles:false,paths:[]}}]);const f=await lifecycleFixture(t,state);await f.kick()
+ let current;for(let i=0;i<200;i++){current=await f.read();if(current.tasks.at(-1).status==='completed')break;await new Promise(r=>setTimeout(r,5))}
+ const archived=current.tasks.at(-1);assert.equal(archived.status,'completed');assert.equal(f.dispatched.length,0);const recordId=archived.archiveRecords[0].id
+ const before=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(before.code,200);assert.equal(before.manifest.tasks[0].output,'Saved result')
+ await archiveTeamDir(join(f.workspace,'.agent-teams'),'demo');const historical=await f.call('task_archive',{taskId:'archive',recordId,archived:true});assert.equal(historical.code,200);assert.deepEqual(historical.manifest,before.manifest)
+ const restore=await f.call('restore_archive');assert.equal(restore.code,200,JSON.stringify(restore));const restored=await f.call('task_archive',{taskId:'archive',recordId});assert.equal(restored.code,200);assert.deepEqual(restored.manifest,before.manifest)
+})
 
 test('conditional state omits unchanged large payloads but updates for live execution and edits',async t=>{
  const liveAgents=new Map(),source=team();source.members[0].id='worker-session';source.tasks[0].status='claimed'
@@ -132,9 +142,12 @@ test('pause all fences the entire chain before draining, retains results and rec
   assert.equal(response.code,409)
   let current=await f.read()
   assert.equal(taskControlState(current,current.tasks[0]).stopping,true)
-  assert.equal(flowControlState(current).canStart,false)
+  assert.equal(flowControlState(current).canStart,true)
   response=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(current)})
-  assert.equal(response.code,409,'resume cannot race the outstanding stop')
+  assert.equal(response.code,200,response.error)
+  assert.equal(response.team.tasks[0].workflowPaused,true,'resume cannot race the outstanding stop')
+  assert.ok(response.skipped.length)
+  current=response.team
   response=await f.call('set_flow_enabled',{enabled:false,version:flowControlVersion(current)})
   assert.equal(response.code,200,response.error)
   current=response.team
@@ -316,7 +329,7 @@ test('completed canvas tasks edit and rerun atomically while preserving unrelate
   source.tasks.push({...task('unrelated'),status:'completed',output:'preserved'})
   source.members.push({...member,name:'replacement'})
   const before=structuredClone(source), operation=parseWorkflowOperations([{action:'rerun_task',id:'t1',instructions:'Use the previous result and check the new requirement',subject:'Revised task',description:'New requirement',assignee:'replacement',output:'ignore forged result'}])[0]
-  assert.equal(editorTarget(source,{type:'task',id:'t1'},true).type,'task')
+  assert.equal(editorTarget(source,{type:'task',id:'t1'}).type,'task')
   const result=applyWorkflowOperations(source,[operation])
   assert.deepEqual(source,before);assert.equal(result.tasks[0].subject,'Revised task');assert.equal(result.tasks[0].description,'New requirement');assert.equal(result.tasks[0].assignee,'replacement')
   assert.equal(result.tasks[0].status,'pending');assert.equal(result.tasks[0].output,undefined);assert.equal(result.tasks[0].objective,'keep objective');assert.deepEqual(result.tasks[0].acceptance,['keep acceptance'])
@@ -383,7 +396,7 @@ test('late saves cannot move a newer selection or remove newer typing', () => {
 test('completed work remains a task selection and explicit member navigation clears it', () => {
   const source=team();source.tasks[0].status='completed'
   let view=selectWorkbench(initialWorkbenchView(),{type:'task',id:'t1'},source)
-  assert.equal(editorTarget(source,view.target),undefined,'completed work has read-only task properties')
+  assert.equal(editorTarget(source,view.target)?.id,'t1','completed work has editable task properties')
   view=selectWorkbench(view,{type:'member',id:'worker'},source,{rerunTaskId:'t1'})
   assert.equal(view.target.type,'member');assert.equal(editorTarget(source,view.target).type,'member')
   view=selectWorkbench(view,{type:'discussion',key:'member:worker'},source)
@@ -582,6 +595,36 @@ test('connection magnet accepts node interiors and rejects duplicate, cyclic and
   assert.equal(connectionIssue(tasks,'a','c'),undefined,'suspended downstream nodes remain editable with drawio connections')
 })
 
+test('AI acceptance is bound to the selected mode, current evidence, round and native session',async t=>{
+  const source=withGate()
+  source.tasks[0].status='completed'
+  const nativeId='session-at-discussion-'+createHash('sha256').update('demo').digest('hex').slice(0,16)+'-00000000-0000-0000-0000-000000000003'
+  workflowDiscussion(source,'check:gate').native={sessionId:nativeId,label:'acceptance'}
+  const f=await lifecycleFixture(t,source)
+  const defs=new Map(), kicks=[]
+  installWorkflowConversations({tools:{register:d=>defs.set(d.name,d)},subagents:{registerContinuableSetup(){}}},{stateDir:'.agent-teams',maxMembers:8},workflowMaterials,async(...args)=>kicks.push(args))
+  const exec={agent:{id:nativeId,session:{header:{cwd:f.workspace},ownEvents:()=>[]}}}
+  const read=async()=>JSON.parse(await defs.get('agent_teams_workflow_context').execute({},exec))
+  const decide=(fields)=>defs.get('agent_teams_decide_acceptance').execute(fields,exec)
+  const ctx=await read(), args={round:1,evidence:ctx.evidence,decision:'approve',note:'Checked the delivery.'}
+  await assert.rejects(decide(args))
+  const state=await f.call('state')
+  const changed=await f.call('checkpoint_mode',{taskId:'gate',mode:'ai',base:state.base})
+  assert.equal(changed.team.tasks.find(t=>t.id==='gate').checkpoint.mode,'ai')
+  await assert.rejects(decide(args),'The old session loses its authority')
+  const next=await f.read()
+  exec.agent.id=nativeId.replace(/3$/,'4')
+  workflowDiscussion(next,'check:gate').native={sessionId:exec.agent.id,label:'ai-acceptance'}
+  await f.save(next)
+  await read()
+  await assert.rejects(decide({...args,round:2}))
+  await assert.rejects(decide({...args,evidence:'stale'}))
+  await decide(args)
+  await assert.rejects(decide(args))
+  assert.equal(kicks.length,1)
+  assert.match((await f.call('state')).team.tasks.find(t=>t.id==='gate').output,/AI/)
+})
+
 test('native discussion and return-to-captain navigation open ordinary sessions', async () => {
   const seen = []
   await openAgentTeamMember({}, 'discussion', 'discussion', { selectPanel: value => seen.push(value) }, { openSession: value => seen.push(value) })
@@ -731,6 +774,19 @@ test('canvas layout separates branching cards and fits tall as well as wide grap
   assert.equal(fitGraph(1200, 800, 600, 400), 1)
 })
 
+test('loop layout keeps multiple steps and parallel joins inside distinct regions with visible exits', () => {
+  const tasks = [task('prepare'), task('a',['prepare']), task('b',['a']), task('c',['a']), task('join',['b','c']), task('gate',['join']), task('next',['gate']), task('gate2',['next']), task('deliver',['gate2'])]
+  const loops = [{ entryId:'a', gateId:'gate' }, { entryId:'next', gateId:'gate2' }]
+  const before = structuredClone(tasks), points = arrangeWorkflow(tasks, loops)
+  assert.deepEqual(loopBodyIds(tasks, loops[0]), ['a','b','c','join'])
+  assert.ok(points.gate.y > points.join.y && points.gate.y > points.c.y)
+  assert.ok(points.next.x > points.gate.x && points.deliver.x > points.gate2.x)
+  for (const a of tasks) for (const b of tasks) if (a.id !== b.id) assert.ok(Math.abs(points[a.id].x-points[b.id].x)>=225 || Math.abs(points[a.id].y-points[b.id].y)>=150, `${a.id}/${b.id} overlap`)
+  for (const loop of loops) { const region=loopRegion(tasks,loop,id=>points[id]); assert.ok(region.bottom>points[loop.gateId].y+150); assert.match(region.returnPath,/ H/); }
+  assert.deepEqual(tasks, before, 'Layout must never add backward dependencies')
+  assert.deepEqual(arrangeWorkflow(tasks),arrangeTasks(tasks))
+})
+
 test('opening a new review round refreshes the native conversation once', async t => {
   const root = mkdtempSync(join(tmpdir(), 'workflow-round-')); t.after(() => rmSync(root, { recursive: true, force: true }))
   const source = withGate(); source.tasks[0].status = 'completed'; source.tasks[1].checkpoint.round = 2
@@ -772,11 +828,12 @@ test('active work and active member instructions cannot change until stopped', (
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_member', name: 'worker', role: 'other' }]), /先停止/)
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', description: 'other' }]), /已开始/)
 })
-test('completed work is immutable, and members with pending assignments cannot be removed', () => {
+test('completed work can be edited without restarting it, and members with pending assignments cannot be removed', () => {
   const source = team()
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'remove_member', name: 'worker' }]), /重新分配/)
   source.tasks[0].status = 'completed'
-  assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', subject: 'rewrite' }]), /已开始/)
+  const edited = applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', subject: 'rewrite' }])
+  assert.equal(edited.tasks[0].subject, 'rewrite'); assert.equal(edited.tasks[0].status, 'completed')
   const removed = applyWorkflowOperations(source, [{ action: 'remove_member', name: 'worker' }])
   assert.equal(removed.members[0].status, 'removed'); assert.equal(removed.tasks[0].assignee, 'worker')
 })
@@ -823,7 +880,7 @@ test('new upstream wiring reopens a rejected checkpoint without stopping it or l
   assert.equal(checkpointReady(updated,gate),false,'new unfinished upstream blocks review')
   assert.equal(applyWorkflowOperations(updated,[operation]).tasks[1].checkpoint.round,2,'repeat wiring cannot create extra rounds')
   assert.throws(()=>applyWorkflowOperations(source,[{...operation,description:'Unrelated edit'}]),/先停止/)
-  assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:['t1']}]),/先停止/)
+  assert.deepEqual(applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:['t1']}]).tasks[1].checkpoint, before.tasks[1].checkpoint)
   assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:[]}]),/先停止/)
   assert.throws(()=>applyWorkflowOperations(source,[{action:'remove_task',id:'gate'}]),/先停止/)
   assert.match(connectionIssue(source.tasks,'after','gate'),/循环/)

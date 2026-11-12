@@ -32,6 +32,7 @@ export type TaskKind =
   | 'repair'
   | 'integration'
   | 'work'
+  | 'archive'
 
 export const TASK_KINDS: readonly TaskKind[] = [
   'requirements',
@@ -41,6 +42,7 @@ export const TASK_KINDS: readonly TaskKind[] = [
   'repair',
   'integration',
   'work',
+  'archive',
 ]
 
 /** Review / requirements conclusion. Only `pass` may complete those kinds. */
@@ -101,8 +103,9 @@ export interface ArtifactDigest {
    * symlink escaping the workspace, I/O error). Never conflated with "absent":
    * unreadable bytes cannot be claimed as unchanged.
    */
-  skipped?: 'type' | 'size' | 'budget'
   unreadable?: boolean
+  /** Intentionally excluded from content auditing; existence/metadata remain available. */
+  skipped?: 'type' | 'size' | 'budget'
   /** Why the path could not be read, when `unreadable` is set. */
   reason?: string
 }
@@ -178,6 +181,8 @@ export interface TeamTask {
   }
   /** Upstream rerun invalidated this task; explicit human confirmation is required. */
   workflowRerunRequired?: boolean
+  /** A body-task hold leaves parallel tasks in this loop schedulable. */
+  workflowLoopTaskHold?: boolean
   workflowPaused?: boolean
   /** New canvas work is held for its first explicit start, distinct from a user pause. */
   workflowAwaitingStart?: boolean
@@ -213,6 +218,8 @@ export interface TeamTask {
   reassigning?: boolean
   /** Quality-gate kind. Missing values are treated as `work`. */
   kind?: TaskKind
+  archive?: import('./task-archive-config.ts').TaskArchiveConfig
+  archiveRecords?: import('./task-archive-config.ts').TaskArchiveRecord[]
   /** Review / requirements / repair loop index, 1-based when present. */
   round?: number
   verdict?: ReviewVerdict
@@ -328,8 +335,9 @@ export interface TeamMember extends GalleryAccess {
   /** Exact child-scoped setup restored on hosts with managed activations. */
   runtimeSetup?: { persona: string; toolFilter: MemberToolFilter } & GalleryAccess
   joinedAt: number
-  restoreOnUnarchive?: boolean
   status: MemberStatus
+  /** Distinguish archive retirement from a deliberate roster removal. Absent on legacy archives. */
+  restoreOnUnarchive?: boolean
   /** Execution admission is closed while a failed/pending handoff is drained. */
   stopping?: boolean
   /**

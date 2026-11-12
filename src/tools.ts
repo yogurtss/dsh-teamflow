@@ -1,4 +1,8 @@
+import { cancelTaskArchive } from './task-archive.ts'
+import { parseTaskArchive, taskArchiveParameter } from './task-archive-config.ts'
 import { drainMemberChildren } from './harness-compat.ts'
+import { configureLoop, decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopInputFingerprint, loopsOf, pauseLoop, startLoop } from './workflow-loops.ts'
+import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
 /**
  * The `agent_teams_*` model-facing tools.
  *
@@ -62,18 +66,15 @@ import { appendTaskEvidence } from './quality-gates.ts'
 import {
   artifactDrift,
   bindReviewToRevision,
-  deliveryArtifactPaths,
-  deliveryScopePatterns,
   isQualityKind,
   verdictScopePatterns,
 } from './quality-gates.ts'
-import type { DeliveryAudit } from './quality-gates.ts'
 import { auditTeamWorkspace } from './workspace-audit.ts'
 import { readArtifactScope, snapshotWorkspacePaths, workspacePathExists } from './artifacts.ts'
 import { agentTeamsSource, observedSessionFormatVersion, restrictableToolNames } from './harness-compat.ts'
-import { memberSpawnRelaxableDeny, optionalToolPolicy, requireToolPolicy, resolveMemberToolFilter, type MemberToolFilter, type MemberToolPolicy } from './tool-policies.ts'
+import { memberSpawnRelaxableDeny, optionalToolPolicy, requireToolPolicy, resolveMemberToolFilter, type MemberToolPolicy } from './tool-policies.ts'
 import type { ContractAmendmentInput } from './state.ts'
-import type { AcceptanceResult, ArtifactDigest, ArtifactSnapshot, CommandResult, ReviewFinding, ReviewVerdict, TaskKind } from './types.ts'
+import type { AcceptanceResult, ArtifactSnapshot, CommandResult, ReviewFinding, ReviewVerdict, TaskKind } from './types.ts'
 import {
   deliverToMember,
   installRetiredMemberGuard,
@@ -91,7 +92,7 @@ import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeam
 import { installMailboxAdmission, isCurrentMail, mailboxContent, mailboxPrompt, readCurrentMailbox } from './mailbox.ts'
 import { resolveTeamProfile } from './profiles.ts'
 import { assertWorkflowArchivable } from './workflow-lifecycle.ts'
-import { forkLineageNote, leadIdentityOf, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeam, sessionLeadsTeamAsync } from './lineage.ts'
+import { forkLineageNote, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeamAsync } from './lineage.ts'
 
 export { steerCaptainReport } from './members.ts'
 
@@ -301,7 +302,8 @@ function requireTask(team: TeamState, taskId: string): TeamTask {
   if (task === undefined) {
     throw new Error(`no task "${taskId}" in team "${team.name}" — use agent_teams_status to list tasks`)
   }
-  if (task.checkpoint) throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
+  if (task.kind === 'archive') throw new Error('Archive nodes are system-owned. Configure them through workflow operations; the scheduler creates their manifest automatically.')
+  if (task.checkpoint && loopForTask(team, task.id)?.mode !== 'ai') throw new Error('human checkpoint: only the workflow review UI can approve or reject it')
   if (taskNeedsConfiguration(task)) throw new Error('task configuration is incomplete; finish configuration in the workflow UI')
   if (task.workflowPaused) throw new Error('task paused for human editing; resume it in the workflow UI')
   return task
@@ -337,12 +339,12 @@ function isEmptyPlanMember(member: unknown): boolean {
  * @param plan - the materialized inline plan argument.
  * @returns whether the plan carries no member content and no task at all.
  */
-function isEmptyInlinePlan(plan: { readonly members?: unknown, readonly tasks?: unknown }): boolean {
+function isEmptyInlinePlan(plan: { readonly members?: unknown, readonly tasks?: unknown, readonly loops?: unknown }): boolean {
   const members = plan.members
   const tasks = plan.tasks
   const emptyMembers = !Array.isArray(members) || members.length === 0 || members.every(member => isEmptyPlanMember(member))
   const emptyTasks = !Array.isArray(tasks) || tasks.length === 0
-  return emptyMembers && emptyTasks
+  return emptyMembers && emptyTasks && (!Array.isArray(plan.loops) || plan.loops.length === 0)
 }
 
 /**
@@ -859,6 +861,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       }
       await validateMemberLlmSelections(ctx, selections, runSignal)
       fresh.phase = 'running'
+      for (const loop of loopsOf(fresh)) if (loop.status === 'ready') startLoop(fresh, loop.id)
       delete fresh.planReviewState
       fresh.approvedAt = Date.now()
       await writeTeam(stateRoot, fresh)
@@ -926,6 +929,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       })
       // A staged plan owns no child sessions. Archiving releases the captain
       // immediately while retaining the rejected graph for later inspection.
+      await cancelTaskArchive(stateRoot,fresh.id)
       await archiveTeamDir(stateRoot, fresh.id)
       return { teamId: fresh.id, teamName: fresh.name }
     })
@@ -958,7 +962,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       profile: { type: 'string', description: 'Optional configured profile name.' },
       plan: {
         type: 'object', additionalProperties: false,
-        description: 'Optional complete ordinary-work roster and DAG in one atomic call, instead of separate add_member/create_task rounds. Mutually exclusive with profile. For quality gates use create_task with the explicit quality contract.',
+        description: 'Complete roster, task DAG and optional gated loops in one atomic call. Mutually exclusive with profile. Loop back edges belong in loops, never in task dependencies.',
         properties: {
           members: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
             name: { type: 'string', required: true }, role: { type: 'string' },
@@ -970,6 +974,15 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
             id: { type: 'string', required: true, description: 'Local reference used by dependencies in this plan; the result maps it to a durable task id.' },
             subject: { type: 'string', required: true }, description: { type: 'string' }, assignee: { type: 'string' },
             dependencies: { type: 'array', items: { type: 'string' } },
+            kind: {type:'string',enum:['work','archive'],description:'archive is an automatic system-owned node after upstream review, outside loop bodies; no assignee.'}, archive:taskArchiveParameter,
+            checkpoint: { type: 'boolean', description: 'True for a decision gate. Human gates have no assignee; an AI loop gate is assigned to its configured reviewer.' },
+          } } },
+          loops: { type: 'array', description: 'Optional disjoint gated loops. IDs reference tasks in this plan. Each body must exit only through its gate. Defaults: maxRounds=3, timeoutMinutes=30.', items: { type: 'object', additionalProperties: false, properties: {
+            gateId: { type: 'string', required: true }, entryId: { type: 'string', required: true },
+            mode: { type: 'string', enum: ['human', 'ai'], required: true },
+            reviewer: { type: 'string', description: 'AI mode requires an independent member who owns no task inside this loop.' },
+            maxRounds: { type: 'number', description: 'Finite total rounds including first, 1–20; exhaustion pauses for user action.' },
+            timeoutMinutes: { type: 'number', description: 'Execution/review timeout, 1–1440 minutes.' },
           } } },
         },
       },
@@ -995,7 +1008,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           tasks: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { task_id: { type: 'string', required: true }, seed_id: { type: 'string', required: true }, subject: { type: 'string', required: true }, status: { type: 'string', required: true }, kind: { type: 'string' }, assignee: { type: 'string' }, dependencies: { type: 'array', items: { type: 'string' }, required: true } } } },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: (value.phase === 'staged'
           ? `Team "${value.team_name}" plan created under ${value.state_dir}. It is staged: finish the roster and DAG, then wait for the user to edit and approve it. Do not start or approve it yourself.`
@@ -1056,6 +1069,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           }
           if (profileName === undefined && inlinePlan === undefined) {
             const state: TeamState = {
+              workflow: { positions: {}, discussions: {}, history: [], explicitQuality: true },
               name: teamName,
               id: teamId,
               description: args.description,
@@ -1329,7 +1343,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       model: { type: 'string', description: 'Optional model override (used verbatim, including any "/" in the id). Omit for the configured memberModel default (paired with memberLlmProvider when set) or the captain\'s current model.' },
       reasoning_effort: { type: 'string', description: 'Optional reasoning effort override: one of the target model\'s supported effort ids, or "default" to force its default. When omitted, the captain\'s effort is inherited only for the same provider/model; a changed route uses the target default.' },
       executionPrompt: { type: 'string', description: 'Optional member-specific execution prompt. It remains editable while staged.' },
-      tool_policy: { type: 'string', description: 'Optional id of a tool policy declared by the deployment owner (config toolPolicies). It restricts which global tools this member sees and may invoke: a policy allow-list also keeps the four coordination tools, and captain-only tools can never be reopened. Omit for the unchanged default tool set.' },
+      tool_policy: { type: 'string', description: 'Optional id of a tool policy declared by the deployment owner (config toolPolicies). It restricts which global tools this member sees and may invoke: a policy allow-list also keeps the five coordination tools, and captain-only tools can never be reopened. Omit for the unchanged default tool set.' },
     },
     output: {
       schema: {
@@ -1346,7 +1360,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           phase: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: (value.phase === 'staged'
           ? `Member "${value.member_name}" added to the staged roster (${value.provider}/${value.model}); no child was spawned.`
@@ -1440,7 +1454,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           requeued_tasks: { type: 'array', items: { type: 'string' }, required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Member "${value.member_name}" removed (status ${value.status}); requeued tasks: ${value.requeued_tasks.join(', ') || 'none'}.`,
       }],
@@ -1528,7 +1542,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           assignee: { type: 'string' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task "${value.subject}" created as ${value.task_id} (status ${value.status}, kind ${value.kind}, ${value.assignee ? `assigned to ${value.assignee}` : 'unassigned shared pool'}).`,
       }],
@@ -1679,6 +1693,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       const revoked = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(ctx, stateRoot, team.id, captain.id)
         const task = requireTask(fresh, args.task_id)
+        if (loopForTask(fresh, task.id)) throw new Error('循环任务请使用循环控制，不能单独重新分配')
         if (task.status === 'completed') throw new Error(`completed task ${task.id} is immutable and cannot be reassigned`)
         if (task.reassigning === true) {
           const previousMember = fresh.members.find(member => member.id === task.handoffFromMemberId && member.stopping === true)
@@ -1793,7 +1808,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           task_details: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task ${value.task_id} claimed by ${value.assignee} (attempt ${value.attempt}${value.attempt_id ? `, attempt_id ${value.attempt_id}` : ''}, status ${value.status}).\n${value.task_details}`,
       }],
@@ -1832,6 +1847,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           }
           assignee = identity.name
         }
+        if (loopForTask(fresh, task.id) && !loopCanExecute(fresh, task)) throw new Error('循环当前不允许领取此节点')
         // Authorization must happen before the idempotent return: another
         // member must not receive a false success for somebody else's task.
         if (task.status === 'claimed' || task.status === 'in_progress') {
@@ -1847,7 +1863,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
             ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
           }
         }
-        const pending = unsatisfiedDependencies(fresh.tasks, task.dependencies)
+        if (loopForTask(fresh, task.id) && !loopCanExecute(fresh, task)) throw new Error('循环当前不允许执行此节点')
+        const pending = loopDependenciesSatisfied(fresh, task) ? [] : unsatisfiedDependencies(fresh.tasks, task.dependencies)
         if (pending.length > 0) {
           throw new Error(`task ${task.id} is blocked by unfinished dependencies: ${pending.join(', ')} — complete them first`)
         }
@@ -1962,7 +1979,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           follow_up: { type: 'string' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task ${value.task_id} attempt ${value.attempt} → ${value.status}${value.output !== undefined ? `\nOutput: ${value.output}` : ''}${value.evidence_count === undefined ? '' : `\nSupplemental evidence records: ${value.evidence_count}. Original result unchanged.`}${value.follow_up ? `\n${value.follow_up}` : ''}`,
       }],
@@ -1976,6 +1993,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       const updated = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(ctx, stateRoot, team.id, caller.id)
         const task = requireTask(fresh, args.task_id)
+        const ownedLoop = loopForTask(fresh, task.id)
+        if (ownedLoop) {
+          if (!loopCanExecute(fresh, task) || !task.attemptId || args.attempt_id !== task.attemptId) throw new Error('循环已暂停或执行令牌过期，请停止本次工作')
+          if (ownedLoop.gateId === task.id && (args.status !== 'in_progress' || args.output !== undefined)) throw new Error('循环门控必须通过 agent_teams_decide_loop 提交决定')
+        }
         if (identity.kind === 'captain'
           && task.assignee !== undefined
           && task.assignee !== CAPTAIN_KEY
@@ -2107,6 +2129,47 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
   }))
 
   ctx.tools.register(defineTool({
+    name: 'agent_teams_decide_loop',
+    description: 'The designated AI loop reviewer submits the current round decision. pass releases downstream; revise reruns existing tasks with feedback within the finite round budget; blocked pauses. Never creates repair nodes. Only the configured reviewer with the current attempt token may call this.',
+    parameters: {
+      loop_id: { type: 'string', required: true }, run_id: { type: 'string', required: true },
+      round: { type: 'number', required: true }, fingerprint: { type: 'string', required: true },
+      attempt_id: { type: 'string', required: true }, decision_id: { type: 'string', required: true },
+      decision: { type: 'string', enum: ['pass', 'revise', 'blocked'], required: true },
+      note: { type: 'string', required: true, description: 'Findings, required changes and revalidation criteria. Never empty.' },
+      task_ids: { type: 'array', items: { type: 'string' }, required: true, description: 'Existing loop task IDs to revise; empty for pass/blocked.' },
+    },
+    output: { schema: { type: 'object', additionalProperties: false, properties: { status: { type: 'string', required: true }, round: { type: 'number', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Loop ${value.status}, round ${value.round}` }] },
+    async execute(args, exec) {
+      const caller = requireCaptain(exec), workspace = workspaceOf(caller), root = stateRootOf(workspace, config)
+      const team = await requireParticipantTeam(ctx, workspace, config, caller)
+      const result = await withTeamLock(teamLockKey(root, team.id), async () => {
+        const { team: fresh, identity } = await requireFreshParticipant(ctx, root, team.id, caller.id)
+        const loop = loopsOf(fresh).find(l => l.id === args.loop_id)
+        if (!loop || loop.mode !== 'ai' || identity.kind !== 'member' || identity.name !== loop.reviewer) throw new Error('只有指定 AI 审核成员可以提交循环决定')
+        if (loop.lastDecisionId === args.decision_id) return { status: loop.status, round: loop.round }
+        const gate = requireTask(fresh, loop.gateId)
+        if (!gate.attemptId || gate.attemptId !== args.attempt_id || gate.assignee !== identity.name) throw new Error('审核执行令牌已过期')
+        const evidence = loopArtifactEvidence(workspace, fresh, loop)
+        const staleReview = loop.status === 'reviewing' && args.run_id === loop.runId && args.round === loop.round
+          && args.fingerprint !== loopInputFingerprint(fresh, loop)
+        if (staleReview || loop.reviewArtifactEvidence !== evidence) {
+          pauseLoop(fresh, loop.id, false, '本轮结果已变化，已暂停；请检查后继续以重新审核')
+          await writeTeam(root, fresh)
+          return { status: loop.status, round: loop.round }
+        }
+        decideLoop(fresh, loop.id, { runId: args.run_id, round: args.round, fingerprint: args.fingerprint, decisionId: args.decision_id,
+          decision: args.decision as 'pass' | 'revise' | 'blocked', note: args.note, taskIds: args.task_ids }, `ai:${identity.name}`)
+        await writeTeam(root, fresh)
+        return { status: loop.status, round: loop.round }
+      })
+      await scheduler.kickTeam(workspace, team.id, await liveLeadAnchorAgent(ctx, team, caller))
+      return result
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'agent_teams_amend_task',
     description: 'Captain-only controlled contract amendment for one non-terminal quality task: replace a wrong objective/acceptance/verify/inScope/outOfScope when the original contract makes honest completion impossible (for example a verify command that cannot pass, or an inScope that forbids the file the objective names). The amendment is appended to the task\'s revisions ledger with previous values and the reason, and is rejected once a review/requirements task has passed judgment on this task. Members cannot amend contracts; the implementer re-reads the amended contract before its next quality gate. Lists are full replacements, not deltas.',
     parameters: {
@@ -2143,6 +2206,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
       const amended = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(ctx, stateRoot, team.id, captain.id)
         const task = requireTask(fresh, args.task_id)
+        if (loopForTask(fresh, task.id)) throw new Error('循环任务契约不能单独改写')
         const input: ContractAmendmentInput = {
           ...args.objective === undefined ? {} : { objective: args.objective },
           ...args.acceptance === undefined ? {} : { acceptance: args.acceptance },
@@ -2208,7 +2272,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           delivered: { type: 'string', required: true, description: 'live (accepted by the live captain), wake (member recipient woken), mailbox (durable inbox only), or duplicate (same message already retained).' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Message ${value.message_id} ${value.from} → ${value.to} delivered via ${value.delivered}.`,
       }],
@@ -2367,7 +2431,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
         attempt_id: task.attemptId ?? '',
         reassigning: task.reassigning === true,
         kind: taskKindOf(task),
-        ...task.checkpoint ? { human_checkpoint: true, checkpoint_round:task.checkpoint.round, checkpoint_decision:task.checkpoint.decision??'pending', review_instructions:'请在团队与流程打开材料并点击“通过验收”或“退回”；聊天文字不改变审批状态，不能把该节点当成可领取的执行任务。' } : {},
+        ...task.checkpoint ? { human_checkpoint: loopForTask(team, task.id)?.mode !== 'ai', checkpoint_round:task.checkpoint.round, checkpoint_decision:task.checkpoint.decision??'pending', review_instructions:loopForTask(team, task.id)?.mode === 'ai' ? 'Use agent_teams_decide_loop with the current run, round, fingerprint and attempt token.' : '请在团队与流程打开材料并点击“通过验收”或“退回”；聊天文字不改变审批状态，不能把该节点当成可领取的执行任务。' } : {},
         ...task.round === undefined ? {} : { round: task.round },
         ...task.verdict === undefined ? {} : { verdict: task.verdict },
         ...task.supplementalEvidence === undefined ? {} : { supplemental_evidence: JSON.stringify(task.supplementalEvidence) },
@@ -2427,6 +2491,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
         team_name: team.name,
         description: team.description ?? '',
         phase: team.phase ?? 'running',
+        gated_loops: loopsOf(team).map(({ id, runId, gateId, entryId, bodyIds, mode, reviewer, status, round, maxRounds, reason, feedback, historyCount }) =>
+          ({ id, runId, gateId, entryId, bodyIds, mode, reviewer: reviewer ?? '', status, round, maxRounds, reason: reason ?? '', feedback: feedback?.slice(0, 2000) ?? '', historyCount })),
         halted: loop.halted,
         escalated: loop.escalated,
         loop_state: loop.state,
@@ -2533,7 +2599,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           team_name: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Team "${value.team_name}" ended and archived.`,
       }],
@@ -2570,7 +2636,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
         })
         // Archive, not delete: tasks (with their dependency graph) and the
         // mailboxes stay on disk for later review and dependency rebuilds.
-        await archiveTeamDir(stateRoot, fresh.id)
+        await cancelTaskArchive(stateRoot,fresh.id)
+      await archiveTeamDir(stateRoot, fresh.id)
       })
       return { deleted: true, team_name: team.name }
     },
@@ -2603,7 +2670,10 @@ async function initializeProfileTeam(input: {
   teamName: string
   teamId: string
   profileName: string
-  inlinePlan?: import('./profiles.ts').TeamProfileConfig
+  inlinePlan?: Omit<import('./profiles.ts').TeamProfileConfig, 'tasks'> & {
+    tasks?: (import('./profiles.ts').TeamProfileTaskConfig & { checkpoint?: boolean; kind?: string; archive?: unknown })[]
+    loops?: { gateId: string; entryId: string; mode: string; reviewer?: string; maxRounds?: number; timeoutMinutes?: number }[]
+  }
   description?: string
   staged: boolean
 }): Promise<{ committed: true; state: TeamState }> {
@@ -2622,7 +2692,12 @@ async function initializeProfileTeam(input: {
       tool_policy: trimmedOptional(member.tool_policy),
     })),
   }
-  const profile = resolveTeamProfile(inlinePlan === undefined ? input.config.profiles : { [input.profileName]: inlinePlan }, input.profileName, input.config.maxMembers)
+  // Keep owner profiles strict. Workflow metadata is validated before commit.
+  const profilePlan = inlinePlan === undefined ? undefined : (({ loops: _loops, tasks, ...rest }) => ({
+    ...rest, tasks: tasks?.map(({ checkpoint, kind, archive, ...task }) => {if(kind&&kind!=='work'&&kind!=='archive')throw new Error('Invalid workflow task kind');if(kind==='archive'&&(checkpoint||task.assignee?.trim()))throw new Error('Archive nodes cannot have checkpoints or assignees');return { ...task, assignee: checkpoint||kind==='archive' ? undefined : task.assignee }}),
+  }))(inlinePlan)
+  const profile = resolveTeamProfile(profilePlan === undefined ? input.config.profiles : { [input.profileName]: profilePlan }, input.profileName, input.config.maxMembers,
+    new Set(input.inlinePlan?.tasks?.filter(task => task.checkpoint||task.kind==='archive').map(task => task.id.trim())))
   const selections: Awaited<ReturnType<typeof resolveMemberLlmSelection>>[] = []
   for (const template of profile.members) {
     selections.push(await resolveMemberLlmSelection(input.ctx, input.captain, {
@@ -2638,6 +2713,7 @@ async function initializeProfileTeam(input: {
   const now = Date.now()
   const seedToActual = new Map(profile.tasks.map((template, index) => [template.id, `t${index + 1}`] as const))
   const draft: TeamState = {
+    ...inlinePlan === undefined ? {} : { workflow: { positions: {}, discussions: {}, history: [], explicitQuality: true } },
     name: input.teamName,
     id: input.teamId,
     description: input.description,
@@ -2691,6 +2767,21 @@ async function initializeProfileTeam(input: {
   // Roster creation is durable planning only. The scheduler starts each
   // member with its first actual task once its dependencies are satisfied.
   if (input.inlinePlan !== undefined) delete draft.profile
+  for (const template of input.inlinePlan?.tasks ?? []) if (template.checkpoint) {
+    const task = draft.tasks.find(task => task.id === seedToActual.get(template.id.trim()))!
+    task.checkpoint = { round: 1, history: [] }
+    delete task.assignee
+  }
+  for(const template of input.inlinePlan?.tasks??[])if(template.kind==='archive'){const task=draft.tasks.find(t=>t.id===seedToActual.get(template.id.trim()))!;task.kind='archive';task.archive=parseTaskArchive(template.archive);delete task.assignee}
+  for (const config of input.inlinePlan?.loops ?? []) {
+    configureLoop(draft, {
+      ...config, mode: config.mode as 'human' | 'ai',
+      gateId: seedToActual.get(config.gateId.trim()) ?? config.gateId,
+      entryId: seedToActual.get(config.entryId.trim()) ?? config.entryId,
+      maxRounds: config.maxRounds ?? 3, timeoutMinutes: config.timeoutMinutes ?? 30,
+    })
+  }
+  if (!input.staged) for (const loop of loopsOf(draft)) startLoop(draft, loop.id)
   await createTeamDir(input.stateRoot, draft)
   return { committed: true, state: draft }
 }
@@ -2779,6 +2870,7 @@ export function applyQualityFollowUp(
   snapshotPaths?: (paths: readonly string[]) => ArtifactSnapshot,
   pathExists?: (path: string) => boolean,
 ): { created: TeamTask[]; escalated: boolean; reason?: string; excludedFindings?: string[] } {
+  if (team.workflow?.explicitQuality || loopForTask(team, closed.id)) return { created: [], escalated: false }
   const planned = planQualityFollowUp(team, closed, pathExists === undefined ? {} : { pathExists })
   if (planned.escalated === true) team.escalated = true
   const created: TeamTask[] = []
@@ -2867,6 +2959,7 @@ function renderStatus(value: JsonValue): string {
     description?: string
     profile?: { name: string; protocol?: string; task_planning?: string }
     viewer: string
+    gated_loops?: { id: string; gateId: string; entryId: string; mode: string; reviewer?: string; status: string; round: number; maxRounds: number; reason?: string; feedback?: string }[]
     members: {
       name: string
       role: string
@@ -2915,6 +3008,7 @@ function renderStatus(value: JsonValue): string {
       return `  - ${member.name} [${member.role}] ${member.status}/${member.activity}${route}${effort}${policy}${failure}`
     }),
     `Tasks (${team.tasks.length}):`,
+    ...(team.gated_loops ?? []).map(loop => `Gated loop ${loop.id}: ${loop.entryId} → ${loop.gateId}, ${loop.mode}${loop.reviewer ? ` (${loop.reviewer})` : ''}, ${loop.status}, round ${loop.round}/${loop.maxRounds}${loop.reason ? `; ${loop.reason}` : ''}${loop.feedback ? `; feedback: ${loop.feedback.slice(0, 2000)}` : ''}. Use loop controls in the workbench to pause/resume; never bypass with task reassignment.`),
     ...team.tasks.map((task) => {
       const deps = task.dependencies.length > 0 ? ` (deps: ${task.dependencies.join(',')})` : ''
       const output = task.output !== undefined ? `\n      output: ${task.output.slice(0, 300)}` : ''

@@ -1,3 +1,4 @@
+import { archiveRunning, runTaskArchives } from './task-archive.ts'
 /**
  * Event-driven shared task scheduler.
  *
@@ -37,6 +38,10 @@ import {
 import { contractStaleness, isVerdictKind, taskKindOf, verdictScopePatterns } from './quality-gates.ts'
 import { digestWorkspacePaths, snapshotWorkspacePaths } from './artifacts.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
+import { loopCanExecute, loopDependenciesSatisfied, loopForTask, loopPrompt, loopsOf, pauseLoop, reconcileLoops } from './workflow-loops.ts'
+import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
+import { drainMemberChildren } from './harness-compat.ts'
+import { recordRetiredMemberIds } from './state.ts'
 
 /** Per-dependency output cap in the assignment prompt. */
 export const DEPENDENCY_OUTPUT_MAX_CHARS = 2_000
@@ -67,6 +72,7 @@ export interface DependencyOutput {
 }
 
 export interface DispatchTicket {
+  readonly loopReviewPrompt?: string
   readonly taskId: string
   readonly memberName: string
   readonly memberId: string
@@ -203,11 +209,11 @@ function ownedOpenTask(tasks: readonly TeamTask[], memberName: string): TeamTask
     && (task.status === 'claimed' || task.status === 'in_progress'))
 }
 
-function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
-  const ready = tasks.filter(task => task.status === 'pending'
-    && task.checkpoint === undefined && task.workflowPaused !== true && !taskNeedsConfiguration(task)
+function nextReadyTask(team: TeamState, memberName: string): TeamTask | undefined {
+  const ready = team.tasks.filter(task => task.status === 'pending' && task.kind !== 'archive'
+    && loopCanExecute(team, task) && task.workflowPaused !== true && !taskNeedsConfiguration(task)
     && task.reassigning !== true && task.workflowRerunRequired !== true
-    && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
+    && loopDependenciesSatisfied(team, task))
   return ready.find(task => task.assignee === memberName)
     ?? ready.find(task => task.assignee === undefined)
 }
@@ -218,6 +224,7 @@ export function assignmentPrompt(
   teamId: string,
   workOrderWarnings: readonly string[] = [],
 ): string {
+  if (ticket.loopReviewPrompt) return `${ticket.loopReviewPrompt}\nReview requirements: ${ticket.description ?? ticket.subject}\nAttempt id: ${ticket.attemptId}. Claim task ${ticket.taskId} to read this existing attempt; submit the loop decision with this token.`
   const description = ticket.description === undefined ? '' : `\n\n${ticket.description}`
   const seed = ticket.profileSeedId === undefined ? '' : ` [${ticket.profileSeedId}]`
   const goal = ticket.teamDescription?.trim() || '(not provided)'
@@ -286,6 +293,56 @@ State policy: ${stateDir}/${teamId}/ is read-only diagnostics; mutate team state
 
 /** Install one scheduler and its member activity observer. */
 export function installTeamScheduler(ctx: Context, config: SchedulerConfig): TeamScheduler {
+  const watchedLoops = new Map<string, { workspace: string; teamId: string }>()
+  const drainingLoops = new Set<string>()
+  async function drainPausedLoops(root: string, teamId: string): Promise<void> {
+    const key = `${root}:${teamId}`
+    if (drainingLoops.has(key)) return
+    drainingLoops.add(key)
+    try {
+      const team = await readTeam(root, teamId), captain = team && liveCaptain(ctx, team.captainSessionId)
+      if (!team || !captain) return
+      const tasks = team.tasks.filter(task => ['claimed', 'in_progress'].includes(task.status) && ['paused', 'cancelled'].includes(loopForTask(team, task.id)?.status ?? ''))
+      for (const task of tasks) {
+        const member = team.members.find(m => m.name === task.assignee)
+        if (member?.id) await drainMemberChildren(ctx.subagents, captain, [member.id as SessionId])
+        await withTeamLock(teamLockKey(root, teamId), async () => {
+          const fresh = await readTeam(root, teamId), current = fresh?.tasks.find(t => t.id === task.id)
+          if (!fresh || !current || current.attemptId !== task.attemptId || !['paused', 'cancelled'].includes(loopForTask(fresh, current.id)?.status ?? '')) return
+          const owner = fresh.members.find(m => m.name === current.assignee)
+          if (owner?.id && owner.id === member?.id) {
+            await recordRetiredMemberIds(root, [owner.id]); owner.previousSessionIds = [...new Set([...owner.previousSessionIds ?? [], owner.id])]
+            owner.id = ''; owner.status = 'idle'; owner.stopping = false; delete owner.runtimeSetup
+          }
+          const previousOutput = current.output, previousAttemptId = current.attemptId
+          invalidateTaskAttempt(current, current.assignee)
+          current.workflowPaused = true; current.workflowAwaitingStart = false
+          current.workflowRerunContext = { continuation: true, previousStatus: 'pending', previousOutput, previousAttemptId, instructions: '', requestedAt: Date.now() }
+          await writeTeam(root, fresh)
+        })
+      }
+    } finally { drainingLoops.delete(key) }
+  }
+  let checkingLoops = false
+  const watchdog = setInterval(async () => {
+    if (checkingLoops) return
+    checkingLoops = true
+    try {
+      for (const [key, value] of watchedLoops) {
+        try {
+          const root = stateRootOf(value.workspace, config)
+          await withTeamLock(teamLockKey(root, value.teamId), async () => {
+            const team = await readTeam(root, value.teamId)
+            if (!team || !loopsOf(team).some(l => ['running', 'reviewing'].includes(l.status)) && !team.tasks.some(t => ['claimed', 'in_progress'].includes(t.status) && loopForTask(team, t.id))) { watchedLoops.delete(key); return }
+            if (reconcileLoops(team)) await writeTeam(root, team)
+          })
+          await drainPausedLoops(root, value.teamId)
+        } catch (error) { ctx.logger.warn(`agent-teams: loop watchdog for ${value.teamId}: ${String(error)}`) }
+      }
+    } finally { checkingLoops = false }
+  }, 15000)
+  watchdog.unref()
+  ctx.effect(() => () => { clearInterval(watchdog); watchedLoops.clear() })
   const memberQueues = new Map<string, Promise<unknown>>()
   // An idle edge in this process proves that the resident member ended its
   // turn while the current attempt was still open. Remember that capability
@@ -318,11 +375,12 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
       const stateRoot = stateRootOf(workspace, config)
       const team = await readTeam(stateRoot, teamId)
       if (team === undefined || team.halted === true || team.phase === 'staged') return
+      if (loopsOf(team).some(l => ['running', 'reviewing'].includes(l.status))) watchedLoops.set(`${stateRoot}:${teamId}`, { workspace, teamId })
       const captain = liveCaptain(ctx, team.captainSessionId, suppliedCaptain)
       if (captain === undefined) return
       const openReview = config.openReview
       if (openReview) {
-        const ready = (state: TeamState, task: TeamTask) => !!task.checkpoint && checkpointReady(state, task)
+        const ready = (state: TeamState, task: TeamTask) => !!task.checkpoint && !loopForTask(state, task.id) && checkpointReady(state, task)
         for (const candidate of team.tasks.filter(task => ready(team, task))) {
           try {
             await withTeamLock(teamLockKey(stateRoot,teamId), async () => {
@@ -332,6 +390,9 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
             })
           } catch (error) { ctx.logger.warn('agent-teams: acceptance review for '+teamId+'/'+candidate.id+': '+String(error)) }
         }
+      }
+      if (!archiveRunning(stateRoot,teamId) && team.tasks.some(t=>t.kind==='archive'&&!t.reassigning&&!t.workflowPaused&&!t.workflowRerunRequired&&!taskNeedsConfiguration(t)&&['pending','in_progress'].includes(t.status)&&t.dependencies.every(id=>team.tasks.some(up=>up.id===id&&up.status==='completed')))) {
+        void runTaskArchives(stateRoot,workspace,teamId).then(()=>runtime.kickTeam(workspace,teamId,captain)).catch(error=>ctx.logger.warn(`agent-teams: archive failed: ${String(error)}`))
       }
       for (const member of team.members) {
         if (member.status === 'removed') continue
@@ -385,6 +446,13 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           const currentMember = fresh.members.find(candidate => candidate.name === memberName && candidate.status !== 'removed')
           if (currentMember === undefined || !isMemberAvailable(ctx, currentMember)) return undefined
           const owned = ownedOpenTask(fresh.tasks, currentMember.name)
+          const interruptedLoop = owned && loopForTask(fresh, owned.id)
+          if (interruptedLoop && ['running', 'reviewing'].includes(interruptedLoop.status)) {
+            pauseLoop(fresh, interruptedLoop.id); interruptedLoop.reason = '执行会话已中断，请检查保存记录后继续'
+            await writeTeam(stateRoot, fresh)
+            watchedLoops.set(`${stateRoot}:${teamId}`, { workspace, teamId })
+            return undefined
+          }
           // An idle edge observed by this scheduler parks the exact open
           // capability. Harness may dispose its AgentHandle after settlement,
           // so registry absence is not evidence that the owner was lost. Keep
@@ -392,11 +460,12 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           // this process has not observed is eligible for one cold recovery.
           const parkedAttemptId = parkedAttempts.get(currentMember.id)
           const recoverOwned = owned !== undefined
+            && !loopForTask(fresh, owned.id)
             && !owned.workflowPaused && !owned.workflowRerunRequired && !owned.reassigning && !taskNeedsConfiguration(owned)
             && unsatisfiedDependencies(fresh.tasks,owned.dependencies).length===0
             && (owned.attemptId === undefined || owned.attemptId !== parkedAttemptId)
           const task = recoverOwned ? owned : owned === undefined
-            ? nextReadyTask(fresh.tasks, currentMember.name)
+            ? nextReadyTask(fresh, currentMember.name)
             : undefined
           if (task === undefined) {
             if (currentMember.status !== 'idle') {
@@ -413,6 +482,10 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
             output: task.output, verdict: task.verdict, findings: task.findings,
             changedPaths: task.changedPaths, acceptanceResults: task.acceptanceResults, commandsRun: task.commandsRun,
           } : undefined
+          const reviewLoop = loopForTask(fresh, task.id)
+          if (reviewLoop?.gateId === task.id) {
+            reviewLoop.reviewArtifactEvidence = loopArtifactEvidence(workspace, fresh, reviewLoop)
+          }
           const attemptId = beginTaskAttempt(task, currentMember.name)
           // A verdict must be able to say which revision was on disk when it
           // started, so a review that runs while someone else edits the tree
@@ -432,6 +505,7 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           const profileSeedId = taskProfileSeedId(task)
           const protocol = teamProfileProtocol(fresh)
           return {
+            loopReviewPrompt: loopPrompt(fresh, task),
             taskId: task.id,
             memberName: currentMember.name,
             memberId: currentMember.id,
@@ -491,6 +565,8 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           if (fresh === undefined) return
           const task = fresh.tasks.find(candidate => candidate.id === ticket.taskId)
           if (task?.attemptId !== ticket.attemptId) return
+          const failedLoop = loopForTask(fresh, task.id)
+          if (failedLoop) pauseLoop(fresh, failedLoop.id)
           if (ticket.recoveredOwned && ticket.previousStatus !== undefined && ticket.previousAttemptId !== undefined) {
             // Recovery delivery failed. Restore the durable generation instead
             // of returning it to pending, then keep it parked so later status

@@ -88,6 +88,7 @@ export interface TeamActivitySnapshot {
   readonly captainSessionId: string
   readonly phase: 'staged' | 'running'
   readonly workflowEnabled?: boolean
+  readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'round'|'maxRounds'|'queued'|'failedExecutionTaskId'|'reason'|'lastDecision'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
   readonly members: readonly TeamActivityMember[]
@@ -147,7 +148,7 @@ export async function assembleTeamSnapshot(
   state: TeamState,
   options: TeamSnapshotOptions = {},
 ): Promise<TeamActivitySnapshot> {
-  const superseded = replacedTaskIds(state.tasks)
+  const superseded = replacedTaskIds(state.tasks, state.workflow)
   const tasks = state.tasks
   const depths = taskDepthsById(tasks)
   const roster = options.includeRemoved === true
@@ -217,6 +218,7 @@ export async function assembleTeamSnapshot(
     captainSessionId: state.captainSessionId,
     phase: state.phase ?? 'running',
     ...state.workflow === undefined ? {} : { workflowEnabled: true },
+    ...state.workflow?.loops?.length ? { workflow: { loops: state.workflow.loops.map(({gateId,bodyIds,status,mode,round,maxRounds,queued,failedExecutionTaskId,reason,lastDecision}) => ({gateId,bodyIds,status,mode,round,maxRounds,queued,failedExecutionTaskId,reason,lastDecision})) } } : {},
     ...state.phase === 'staged'
       ? { planReviewState: state.planReviewState ?? 'awaiting_review' as const }
       : {},

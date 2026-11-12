@@ -8,12 +8,12 @@ export declare function reviewResult(t: TeamTask, gate?: TeamTask): {
     attemptId: string | undefined;
     output: string;
     acceptanceResults: {
-        status: "failed" | "passed";
+        status: "passed" | "failed";
         criterion: string | undefined;
         evidence: string | undefined;
     }[];
     commandsRun: {
-        status: "failed" | "passed";
+        status: "passed" | "failed";
         exitCode: number | undefined;
         command: string | undefined;
         evidence: string | undefined;

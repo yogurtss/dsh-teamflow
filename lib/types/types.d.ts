@@ -14,7 +14,7 @@ export type TaskStatus = 'pending' | 'claimed' | 'in_progress' | 'completed' | '
 /** Statuses after which a task can no longer be claimed or worked on. */
 export declare const TERMINAL_TASK_STATUSES: readonly TaskStatus[];
 /** Structured quality-gate kind. Absent / unknown values are treated as `work`. */
-export type TaskKind = 'requirements' | 'implementation' | 'verification' | 'review' | 'repair' | 'integration' | 'work';
+export type TaskKind = 'requirements' | 'implementation' | 'verification' | 'review' | 'repair' | 'integration' | 'work' | 'archive';
 export declare const TASK_KINDS: readonly TaskKind[];
 /** Review / requirements conclusion. Only `pass` may complete those kinds. */
 export type ReviewVerdict = 'pass' | 'needs_revision' | 'reject';
@@ -67,8 +67,9 @@ export interface ArtifactDigest {
      * symlink escaping the workspace, I/O error). Never conflated with "absent":
      * unreadable bytes cannot be claimed as unchanged.
      */
-    skipped?: 'type' | 'size' | 'budget';
     unreadable?: boolean;
+    /** Intentionally excluded from content auditing; existence/metadata remain available. */
+    skipped?: 'type' | 'size' | 'budget';
     /** Why the path could not be read, when `unreadable` is set. */
     reason?: string;
 }
@@ -138,6 +139,8 @@ export interface TeamTask {
     };
     /** Upstream rerun invalidated this task; explicit human confirmation is required. */
     workflowRerunRequired?: boolean;
+    /** A body-task hold leaves parallel tasks in this loop schedulable. */
+    workflowLoopTaskHold?: boolean;
     workflowPaused?: boolean;
     /** New canvas work is held for its first explicit start, distinct from a user pause. */
     workflowAwaitingStart?: boolean;
@@ -177,6 +180,8 @@ export interface TeamTask {
     reassigning?: boolean;
     /** Quality-gate kind. Missing values are treated as `work`. */
     kind?: TaskKind;
+    archive?: import('./task-archive-config.ts').TaskArchiveConfig;
+    archiveRecords?: import('./task-archive-config.ts').TaskArchiveRecord[];
     /** Review / requirements / repair loop index, 1-based when present. */
     round?: number;
     verdict?: ReviewVerdict;
@@ -293,8 +298,9 @@ export interface TeamMember extends GalleryAccess {
         toolFilter: MemberToolFilter;
     } & GalleryAccess;
     joinedAt: number;
-    restoreOnUnarchive?: boolean;
     status: MemberStatus;
+    /** Distinguish archive retirement from a deliberate roster removal. Absent on legacy archives. */
+    restoreOnUnarchive?: boolean;
     /** Execution admission is closed while a failed/pending handoff is drained. */
     stopping?: boolean;
     /**

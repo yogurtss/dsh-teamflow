@@ -1,3 +1,4 @@
+import { taskIsExecuting } from '../task-rerun.ts'
 import { galleryAccessKeys, type GalleryAccess } from "../gallery-access.ts"
 import { sourceText, type WorkflowText } from './workflow-text.ts'
 import type { TeamState } from '../types.ts'
@@ -58,9 +59,11 @@ export function propertyOperation(team: TeamState, target: EditorTarget, entry: 
       : {action:'add_member',name:value['name'] ?? '',summary:value['summary'] ?? '',role:value['role'],executionPrompt:value['executionPrompt'],specificPrompt:value['specificPrompt'],...draftGalleryAccess(value),...route}
   }
   const task = team.tasks.find(item => item.id === target.id)
-  if (!task || task.status !== 'pending') throw new Error('已开始或已结束任务的草稿需单独处理；保存全部不会自动重跑。')
-  return {action:'update_task',id:task.id,subject:value['subject'],description:value['description'],adaptationIssue:value['adaptationIssue']??'',assignee:target.type === 'check' ? undefined : value['assignee']}
+  if (!task || taskIsExecuting(task)) throw new Error('任务不存在或正在执行，请刷新后再保存。')
+  return {action:'update_task',id:task.id,subject:value['subject'],description:value['description'],adaptationIssue:value['adaptationIssue']??'',assignee:target.type === 'check' || task.kind==='archive' ? undefined : value['assignee'],...task.kind==='archive'?{archive:archiveDraft(value)}:{}}
 }
 
 /** Editing a composer while its old message sends must never lose the new text. */
 export const remainingMessage = (current: string, submitted: string): string => current === submitted ? '' : current
+
+export const archiveDraft=(draft:Record<string,string>)=>({copyFiles:draft['copyFiles']==='true',paths:(draft['archivePaths']??'').split('\n').map(p=>p.trim()).filter(Boolean)})

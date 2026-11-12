@@ -1,8 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {activityStatus} from '../lib/client/activity-status.js'
+import {applyWorkflowOperations} from '../lib/workflow.js'
+import {replacedTaskIds} from '../lib/replaced-tasks.js'
 const task=(id,patch={})=>({id,status:'pending',dependencies:[],...patch})
 const team=tasks=>({phase:'running',tasks,members:[]})
+test('only actionable human decisions appear in the activity review count', () => {
+  const gate = task('gate', {checkpoint:{kind:'gate'}, dependencies:['work']})
+  const work = task('work', {status:'failed'})
+  const flow = team([work, gate, task('accept', {checkpoint:{kind:'acceptance',mode:'ai'}})])
+  assert.equal(activityStatus(flow).reviews, 0)
+  const loop = {gateId:'gate', bodyIds:['work'], status:'reviewing', mode:'human'}
+  flow.workflow = {loops:[loop]}
+  assert.equal(activityStatus(flow).reviews, 1)
+  loop.mode = 'ai'
+  assert.equal(activityStatus(flow).reviews, 0)
+})
+test('workflow completion follows its endpoints even when earlier nodes failed',()=>{
+  const failed=task('earlier',{status:'failed'})
+  const end=task('finish',{status:'completed',dependencies:['earlier']})
+  const result=activityStatus(team([end,failed]))
+  assert.equal(result.state,'completed')
+  assert.equal(result.percent,100)
+  assert.equal(result.completed,1)
+  assert.notEqual(activityStatus(team([end,failed,task('second-end',{dependencies:['earlier']})])).state,'completed')
+  assert.notEqual(activityStatus(team([failed,{...end,checkpoint:{round:1}}])).state,'completed')
+  assert.equal(activityStatus(team([failed,{...end,checkpoint:{round:1,decision:'approve'}}])).state,'completed')
+})
 test('capsule shows node completion and prioritizes actionable reviews over concurrent work',()=>{
  const result=activityStatus(team([task('a',{status:'completed'}),task('b',{status:'in_progress'}),task('g',{checkpoint:{round:1},dependencies:['a']})]))
  assert.equal(result.percent,33);assert.equal(result.running,1);assert.equal(result.reviews,1);assert.equal(result.attention,1);assert.equal(result.state,'review')
@@ -32,7 +56,6 @@ test('pure configuration issues have their own label, including staged workflows
 });
 
 test('completed replacement paths retire only related failures from card progress', async () => {
-  const {replacedTaskIds} = await import('../lib/replaced-tasks.js')
   const failed={id:'old',subject:'Build',description:'Build',status:'failed',dependencies:[]}
   const retry={id:'retry',subject:'Build · 返工 2',description:'Build\n\n返工要求：fix',status:'completed',dependencies:[]}
   const progress=tasks=>{
@@ -49,4 +72,32 @@ test('completed replacement paths retire only related failures from card progres
   const repair={id:'fix',subject:'Fix',kind:'repair',status:'completed',dependencies:[],findingSourceTaskIds:['old']}
   assert.equal(progress([failed,repair]).state,'attention')
   assert.equal(progress([failed,repair,{id:'check',subject:'Check',kind:'review',verdict:'pass',status:'completed',dependencies:['fix']}]).state,'completed')
+})
+
+test('rewiring a failed input in two canvas edits completes the outer card only after the new path finishes',()=>{
+  const old=task('old',{subject:'Old path',status:'failed'})
+  const next=task('new',{subject:'New path',status:'completed'})
+  const end=task('end',{subject:'Delivery',dependencies:['old']})
+  const progress=(tasks,workflow)=>{
+    const retired=replacedTaskIds(tasks,workflow)
+    return activityStatus(team(tasks.map(t=>({...t,superseded:retired.has(t.id)}))))
+  }
+  for(const intermediate of [[],['old','new']]){
+    let graph=team([old,next,end])
+    for(const dependencies of [intermediate,['new']]){
+      graph=applyWorkflowOperations(graph,[{action:'update_task',id:'end',dependencies}])
+    }
+    assert.notEqual(progress(graph.tasks).state,'completed')
+    graph.tasks[2].status='completed'
+    assert.equal(graph.tasks[0].status,'failed')
+    assert.equal(progress(graph.tasks).percent,100)
+    assert.equal(progress(graph.tasks).state,'completed')
+    assert.equal(progress([...graph.tasks,task('waiting',{dependencies:['old']})]).state,'attention')
+    const earlier=task('earlier',{status:'failed'})
+    assert.equal(progress([earlier,{...old,dependencies:['earlier']},...graph.tasks.slice(1)]).state,'completed')
+  }
+  const legacy=[old,next,{...end,status:'completed',dependencies:['new']}]
+  const history=[{status:'applied',operations:[{action:'add_task',id:'end',dependencies:['old']}]}]
+  assert.equal(progress(legacy,{history}).state,'completed')
+  assert.equal(progress(legacy,{history:[{...history[0],status:'dismissed'}]}).state,'attention')
 })

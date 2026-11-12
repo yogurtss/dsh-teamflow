@@ -31,7 +31,7 @@ export declare function boundDiscussion(team: TeamState, agent: Agent): Workflow
 export declare function installWorkflowConversations(ctx: Context, config: ToolsConfig, materials: (team: TeamState, taskId: string, workspace: string) => {
     text: string;
     evidence: string;
-}): {
+}, afterDecision?: (workspace: string, teamId: string, captainId: string) => Promise<void>): {
     readEmbedded(team: TeamState, key: string): Promise<{
         messages: {
             id: string;

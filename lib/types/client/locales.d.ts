@@ -50,6 +50,7 @@ export declare const zh: {
     'task.control.review': string;
     'task.control.properties': string;
     'task.control.human': string;
+    'task.control.ai': string;
     'task.control.round': string;
     'workspace.dependencies': string;
     'workspace.title': string;
@@ -331,6 +332,7 @@ export declare const en: {
     'task.control.review': string;
     'task.control.properties': string;
     'task.control.human': string;
+    'task.control.ai': string;
     'task.control.round': string;
     'workspace.dependencies': string;
     'workspace.title': string;

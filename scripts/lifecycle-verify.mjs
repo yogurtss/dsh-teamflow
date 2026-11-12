@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import { haltTeamWork, registerAgentTeamsTools } from '../lib/tools.js'
 import { buildActivationDirective, invokedAgentTeamsGoal, invokedAgentTeamsInvocation, installAgentTeamsGestureBoundary, profileCommandName, registerAgentTeamsCommand } from '../lib/command.js'
-import { readArchivedTeam, readMailbox, readTeam, readUnreadMailbox } from '../lib/state.js'
+import { readArchivedTeam, readMailbox, readTeam, readUnreadMailbox, writeTeam } from '../lib/state.js'
 import { assembleTeamSnapshot, collectArchivedTeamsActivity } from '../lib/snapshot.js'
 
 const deliveryHarness = process.argv.includes('--delivery-harness')
@@ -770,6 +770,11 @@ try {
       && haltedArchive.tasks.every(item => item.status === 'cancelled'))
 
   await call('agent_teams_create', { name: 'Quality Loop', description: 'review loop' })
+  const legacyQuality = await readTeam(stateRoot, 'quality-loop')
+  check('new teams default to explicit quality without automatic expansion', legacyQuality.workflow?.explicitQuality === true)
+  // Retain coverage for stored legacy teams, which deliberately use the old policy.
+  delete legacyQuality.workflow
+  await writeTeam(stateRoot, legacyQuality)
   await call('agent_teams_add_member', { name: 'builder', role: 'implementer' })
   await call('agent_teams_add_member', { name: 'critic', role: 'reviewer' })
   const impl = await call('agent_teams_create_task', {

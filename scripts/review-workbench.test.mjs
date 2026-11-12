@@ -12,10 +12,24 @@ const hook = registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context)
 } })
 const { ReviewWorkbench } = await import('../lib/client/ReviewWorkbench.js')
+const { LoopPanel } = await import('../lib/client/LoopPanel.js')
 hook.deregister()
 const task = { id: 'review', subject: 'Review export', description: 'Inspect all evidence before approving.', acceptance: ['Encoding'], dependencies: ['work'], status: 'pending', checkpoint: { round: 2, history: [] } }
 const raw = JSON.stringify({ check: { id: 'review', subject: task.subject, description: task.description, round: 2 }, results: [{ id: 'work', subject: 'Implementation', output: '<script>unsafe()</script>', acceptanceResults: [{ criterion: 'Encoding', status: 'passed', evidence: 'Round-trip test' }, { criterion: 'Encoding performance', status: 'failed' }], commandsRun: [{ command: 'npm test', status: 'passed', evidence: '3 tests', exitCode: 0 }] }], files: { artifacts: [{ path: 'out.csv', present: true, sha256: 'abc' }], gaps: [{ pattern: 'private', reason: 'Excluded' }] } })
 const material = parseReviewMaterial(raw)
+test('acceptance has no loop settings while an incomplete gate requires a return edge and renders the workbench reviewer picker', () => {
+  const render = kind => renderToStaticMarkup(React.createElement(WorkflowLocale, {t:key=>en[key]??key}, React.createElement(LoopPanel, {
+    team:{id:'team',members:[],tasks:[{...task,checkpoint:{kind,round:1,history:[]}}]}, task:{...task,checkpoint:{kind,round:1,history:[]}},
+    sessionId:'captain',base:'base',busy:false,archived:false,perform:async()=>{},
+    modeSelect:React.createElement('select',{'aria-label':'Workbench reviewer picker'}),
+  })))
+  assert.equal(render('acceptance'), '')
+  const gate=render('gate')
+  assert.match(gate,/Return target \(required\)/)
+  assert.match(gate,/<label>Review mode<select aria-label="Workbench reviewer picker">/)
+  assert.match(gate,/<button disabled="">Connect return edge and create loop/)
+  assert.doesNotMatch(gate,/Approve review|Reject and create a new path/)
+})
 test('evidence parsing tolerates malformed legacy records without fabricating success', () => {
   for (const value of ['null', '[]', '{}', '{', '{"check":null,"results":[]}']) assert.equal(parseReviewMaterial(value), undefined)
   const malformed = parseReviewMaterial(JSON.stringify({check: material.check, results: [null, {id:'work',acceptanceResults:[{}, {criterion:'x',status:'unknown'}]}],files:{artifacts:[null,{}, {path:'missing'}]}}))
@@ -45,7 +59,7 @@ test('workbench renders escaped, localized evidence and no automatic approval', 
   const html=render()
   assert.match(html,/&lt;script&gt;unsafe/);assert.doesNotMatch(html,/<script>/)
   assert.doesNotMatch(html,/\p{Script=Han}/u)
-  assert.match(html,/Human checkpoint/);assert.match(html,/Return for changes/)
+  assert.match(html,/Acceptance node/);assert.match(html,/Reject and create a new path/)
   assert.doesNotMatch(html,/Confirm approval<\/button>/)
 })
 test('archive and decided legacy rounds are read-only and never show current evidence as historical', () => {
@@ -66,6 +80,7 @@ test('returned review offers reconsideration and repair; archives do not mutate'
  const archive=render({...props,archived:true});assert.doesNotMatch(archive,/Save instructions and rerun task|Review current results again/);
  const empty=render({...props,task:{...returned,dependencies:[]},team:{...team,tasks:[{...returned,dependencies:[]}]}});assert.match(empty,/No upstream task can be rerun/);assert.match(empty,/Review current results again/);
 });
+
 
 test('legacy policy exclusions render as unverified metadata rather than missing or unreadable evidence',()=>{
  const raw=JSON.stringify({check:{id:'gate',round:1},results:[],files:{artifacts:[

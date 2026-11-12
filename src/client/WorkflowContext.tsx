@@ -20,7 +20,7 @@ export function TaskRecord({ task, team, expanded = false, showContract = true }
     {!!task.verify?.length && <p><strong>{l("计划验证：")}</strong>{task.verify.join('；')}</p>}
     {!!task.deliverables?.length && <p><strong>{l("约定交付：")}</strong>{task.deliverables.join('、')}</p>}
     <p><strong>{l("已提交结果：")}</strong>{task.output || l("尚未提交结果")}</p>
-    {!!task.checkpoint?.history.length && <details><summary>{l("历轮人工验收记录")}</summary>{task.checkpoint.history.map((decision,i)=><p key={i}>{l("第 ")}{decision.round} {l(" 轮 · ")}{decision.decision==='approve'?l("通过"):l("退回")} · {decision.note || l("未填写意见")}</p>)}</details>}
+    {!!task.checkpoint?.history.length && <details><summary>{l("历轮人工验收记录")}</summary>{task.checkpoint.history.map((decision,i)=><p key={i}>{l("第 ")}{decision.round} {l(" 轮 · ")}{decision.decision==='approve'?l("通过"):decision.decision==='branch'?l('创建返工分支'):l("退回")} · {decision.note || l("未填写意见")}</p>)}</details>}
     {!!task.changedPaths?.length && <p><strong>{l("已报告变更：")}</strong>{task.changedPaths.join('、')}</p>}
     {task.commandsRun?.map((item, i) => <p key={`cmd:${i}`}><strong>{item.status === 'passed' ? l("报告通过") : l("报告失败")}：</strong>{item.command}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
     {task.acceptanceResults?.map((item, i) => <p key={`result:${i}`}>{item.criterion} · {item.status === 'passed' ? l("报告通过") : l("报告失败")}{item.evidence ? `\n${item.evidence}` : ''}</p>)}
@@ -42,7 +42,7 @@ export function WorkflowContext({ team, discussion, onSelect, openExecution }: {
   return <div className={css.contextInfo}>
     {member ? <>
       <section><h4>{member.name} {l(" · 当前配置")}</h4><p>{member.summary || member.role || l("尚未填写职责概述")}</p><dl>
-        <dt>{l("长期职责")}</dt><dd>{member.role || l("未单独设置")}</dd>
+        <dt>{l("角色职责")}</dt><dd>{member.role || l("未单独设置")}</dd>
         <dt>{l("PE · 成员执行指令")}</dt><dd>{member.executionPrompt || l("未单独设置；执行时可能沿用团队或插件指令")}</dd>
         <dt>{l("本次补充指令")}</dt><dd>{member.specificPrompt||l("未设置")}</dd><dt>{l("模型")}</dt><dd>{member.activeModel ?? member.model ?? l("未记录")}{member.fallbackActive ? l("（已切换备用模型）") : ''}</dd>
       </dl></section>

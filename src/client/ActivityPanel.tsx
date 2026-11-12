@@ -1,3 +1,4 @@
+import { isGateTask } from '../workflow-node-kind.ts'
 import { workflowRequest } from './workflow-request.ts'
 import { activityStatus } from './activity-status.ts'
 import { resolveActivitySession, type ActivitySessionOwner } from './activity-session.ts'
@@ -72,7 +73,7 @@ import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
 import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { StagingPlanEditor } from './StagingPlanEditor.tsx'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
-import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
+import type { AgentTeamsTranslate } from './locales.ts'
 import {
   DEFAULT_PANEL_LAYOUT,
   PANEL_LAYOUT_STORAGE_KEY,
@@ -316,10 +317,8 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
   const blocked = discarded ? 0 : team.tasks.filter(task => taskControlState(team,task).checked && taskControlState(team,task).waiting.length > 0).length
   const held = discarded ? 0 : team.tasks.filter(task => !taskControlState(team,task).terminal && !taskControlState(team,task).checked).length
   const completed = discarded ? 0 : team.tasks.filter((task) => task.status === 'completed').length
-  const settled = !discarded && team.tasks.length > 0 && team.tasks.every((task) => (
-    task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
-  ))
-  const summaryTone = discarded ? 'discarded' : blocked > 0 || team.tasks.some(task => task.status === 'failed' || task.status === 'cancelled') ? 'warning' : settled ? 'completed' : 'running'
+  const done = activityStatus(team).state === 'completed'
+  const summaryTone = discarded ? 'discarded' : done ? 'completed' : blocked > 0 || team.tasks.some(task => task.status === 'failed' || task.status === 'cancelled') ? 'warning' : 'running'
   return (
     <section className={css.progressOverview} aria-label={t('progress.aria')} data-progress-summary>
       <span className={css.progressTitle}>{t('progress.title')}</span>
@@ -337,7 +336,7 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
       </span>
       <span className={css.progressSummary} data-state={summaryTone}>
         <span className={css.progressSummaryDot} />
-        <span>{taskSummary(team, t, discarded)}</span>
+        <span>{summaryTone === 'completed' ? t('activity.state.completed') : taskSummary(team, t, discarded)}</span>
       </span>
     </section>
   )
@@ -479,19 +478,22 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               </svg>}
               {layout.nodes.map(({ task, x, y }) => {
                 const model = taskModelLabel(task, members)
+                const gate = isGateTask(task, team.workflow?.loops)
+                const aiReview = (team.workflow?.loops.find(loop => loop.gateId === task.id)?.mode ?? task.checkpoint?.mode) === 'ai'
                 const control = taskControlState(team,task,historic)
                 return (
                   <button
                     key={task.id}
                     type="button"
                     aria-pressed={pinnedTaskId === task.id}
-                    onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
+                    onClick={() => { if (gate) { onOpenTask(task, false); return }; const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
                     className={`${css.dagNode} ${taskStateNodeClass}`}
                     data-lifecycle={discarded ? 'notRun' : task.verdictStale ? 'stale' : control.visual}
                     style={parallel
                       ? { height: nodeHeight }
                       : { left: x, top: y, width: nodeWidth, height: nodeHeight }}
                     data-task-id={task.id}
+                    data-gate={gate || undefined}
                     data-checkpoint={!!task.checkpoint || undefined}
                     data-review-ready={control.reviewReady || undefined}
                     data-state={discarded ? 'cancelled' : taskTone(task.state, task.status)}
@@ -505,7 +507,8 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name="review" /> {t('task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    {gate && <svg className={css.dagGateShape} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M1 50 L50 1 L99 50 L50 99 Z" /></svg>}
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name={isGateTask(task, team.workflow?.loops) ? 'gate' : 'acceptance'} /> {t(aiReview ? 'task.control.ai' : 'task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
@@ -535,7 +538,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               {detailTask.checkpoint && <span className={css.reviewKind}> · {t('task.control.round',{round:detailTask.checkpoint.round})}</span>}
             </span>
             <div className={css.taskDetailControls}>
-              {(!control.terminal || control.canRerun) && <button type="button"
+              {(!control.terminal || control.canRerun || control.retryLoopTask) && <button type="button"
                 data-task-action={control.canRerun ? 'rerun' : control.stopping ? 'retry' : control.queued ? 'dequeue' : control.checked ? 'pause' : 'play'}
                 data-rerun-action={control.canRerun || undefined}
                 data-running={!control.stopping && detailTask.status === 'in_progress' || undefined}
@@ -549,7 +552,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                 </svg>
                 {t(control.canRerun ? 'task.control.rerun' : control.disabled ? control.label : control.actionLabel)}
               </button>}
-              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => onOpenTask(detailTask,control.reviewReady)}><WorkflowIcon name={control.reviewReady ? 'review' : 'properties'} />{t(control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
+              <button type="button" data-review-action={control.reviewReady || undefined} disabled={!!controlBusy} onClick={() => onOpenTask(detailTask,control.reviewReady)}><WorkflowIcon name={control.reviewReady ? isGateTask(detailTask, team.workflow?.loops) ? 'gate' : 'acceptance' : 'properties'} />{t(control.reviewReady ? 'task.control.review' : 'task.control.properties')}</button>
             </div>
             {!control.terminal && waitingOn.length > 0 && <p className={css.taskControlHint}>{t('task.detail.waitingOn',{tasks:formatTaskIds(waitingOn,t)})}</p>}
             {detailTask.checkpoint?.note && <span className={css.reviewNote}>{detailTask.checkpoint.note}</span>}
@@ -598,7 +601,8 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
     if (controlPending.current) return
     controlPending.current = true; setControlBusy('flow'); setControlError('')
     try {
-      const value = await workflowRequest<{activity?:ActivityTeam}>({action:team.phase === 'staged' ? 'start' : 'set_flow_enabled',sessionId:team.captainSessionId,teamId:team.teamId,enabled,version:flowControlVersion(team)})
+      const value = await workflowRequest<{activity?:ActivityTeam; skipped?:string[]}>({action:team.phase === 'staged' ? 'start' : 'set_flow_enabled',sessionId:team.captainSessionId,teamId:team.teamId,enabled,version:flowControlVersion(team)})
+      if (value.skipped?.length) setControlError(value.skipped.join('\n'))
       if (!value.activity) throw new Error(t('task.control.failed'))
       publishWorkflowActivity(value.activity)
     } catch (error) { setControlError(error instanceof Error ? error.message : t('task.control.failed')) }
@@ -618,8 +622,8 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
     && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
   const captainBusy = captainOwned.length > 0
   const captainTaskIds = formatTaskIds(captainOwned.map((task) => task.id), t)
-  const {completed:completedCount,total:progressTotal} = activityStatus(team)
-  const allCompleted = team.tasks.length > 0 && completedCount === progressTotal
+  const {completed:completedCount,total:progressTotal,state:progressState} = activityStatus(team)
+  const allCompleted = progressState === 'completed'
   const allSettled = team.tasks.length > 0 && team.tasks.every((task) => (
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
   ))

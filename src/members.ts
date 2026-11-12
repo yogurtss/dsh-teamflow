@@ -24,6 +24,7 @@ import { agentTeamsSource, observedSessionFormatVersion, type SessionFormatBeare
 import { markMailboxDelivered, appendMailbox, CAPTAIN_KEY, createMessage, readRetiredMemberIds, readTeamSync, readTeam, releaseMailboxDelivery, withTeamLock, writeTeam } from './state.ts'
 import { mailboxPrompt } from './mailbox.ts'
 import { nearestLiveLead } from './lineage.ts'
+import { reconcileLoops } from './workflow-loops.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import type { MemberToolFilter } from './tool-policies.ts'
 import { TERMINAL_TASK_STATUSES, type TeamMember, type TeamState, type TeamTask } from './types.ts'
@@ -354,6 +355,7 @@ export async function failMemberOpenAttempt(
       task.status = 'failed'
       task.output = summary
       task.updatedAt = Date.now()
+      reconcileLoops(team, task.updatedAt, task.id)
     }
     if (member !== undefined && ctx.agents.get(brandedSessionId(member.id))?.status !== 'running') member.status = 'idle'
     // Only a terminal record of the observed task may be described, and only a
@@ -815,11 +817,6 @@ export function installMemberSelectionRuntime(
       }
     },
   }
-}
-
-function configuredExecutionPrompt(member: TeamMember, config: MemberRuntimeConfig): string | undefined {
-  const prompt = member.executionPrompt?.trim() || config.executionPrompt?.trim()
-  return prompt === undefined || prompt === '' ? undefined : prompt
 }
 
 function assignedNonTerminalCount(team: TeamState, memberName: string): number {

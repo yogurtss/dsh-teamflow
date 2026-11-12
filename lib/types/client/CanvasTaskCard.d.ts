@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import type { TeamState, TeamTask } from '../types.ts';
 import { type ExecutionState } from './task-readiness.ts';
 import type { taskControlState } from './task-control.ts';
-export declare function CanvasTaskCard({ team, task, control, execution, archived, reviewing, adapting, draft, systemOwned }: {
+export declare function CanvasTaskCard({ team, task, control, execution, archived, reviewing, adapting, draft, systemOwned, playback, onMember, selectedMember }: {
     team: TeamState;
     task: TeamTask;
     control: ReturnType<typeof taskControlState>;
@@ -11,4 +12,7 @@ export declare function CanvasTaskCard({ team, task, control, execution, archive
     adapting: boolean;
     draft: boolean;
     systemOwned?: boolean;
+    playback?: ReactNode;
+    onMember: (name: string) => void;
+    selectedMember?: string;
 }): import("react").JSX.Element;

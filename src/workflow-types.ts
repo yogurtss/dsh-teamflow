@@ -14,22 +14,26 @@ export function parseMemberExecutionPrompt(value: unknown): string {
 
 /** Persistent human-controlled workflow and isolated discussion contracts. */
 export type WorkflowOperation =
+  | ({ action: 'configure_loop' } & import('./workflow-loop-types.ts').LoopConfig)
   | (GalleryAccess & { action: 'add_member'; name: string; summary: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | (GalleryAccess & { action: 'update_member'; name: string; summary?: string; role?: string; executionPrompt?: string; specificPrompt?: string; provider?: string; model?: string; reasoningEffort?: string })
   | { action: 'remove_member'; name: string }
-  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; configurationPending?: boolean }
-  | { action: 'update_task'; id: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean }
+  | { action: 'add_task'; id?: string; subject: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies: string[]; checkpoint?: boolean; checkpointKind?: 'gate'|'acceptance'; configurationPending?: boolean; kind?: 'work'|'archive'; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
+  | { action: 'update_task'; id: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; dependencies?: string[]; confirmConfiguration?: boolean; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'remove_task'; id: string }
-  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string }
+  | { action: 'rerun_task'; id: string; instructions?: string; subject?: string; description?: string; adaptationIssue?: string; assignee?: string; archive?: import('./task-archive-config.ts').TaskArchiveConfig }
   | { action: 'rework'; id: string; taskIds: string[]; instructions: string }
 
 export interface Checkpoint {
+  /** Legacy checkpoints are acceptance nodes unless referenced by a loop. */
+  kind?: 'gate' | 'acceptance'
+  mode?: 'ai' | 'human'
   decision?: 'approve' | 'reject'
   decidedAt?: number
   note?: string
   evidence?: string
   round: number
-  history: { round: number; decision: string; at: number; note: string; evidence: string; /** Exact approved/rejected snapshot; absent in legacy records. */ materials?: string }[]
+  history: { round: number; decision: string; at: number; note: string; evidence: string; /** Historical inputs, not scheduling dependencies. */ inputIds?: string[]; /** Exact approved/rejected snapshot; absent in legacy records. */ materials?: string }[]
 }
 export interface WorkflowProposal {
   id: string
@@ -56,6 +60,10 @@ export interface WorkflowDiscussion {
   materialsRound?: number
 }
 export interface WorkflowState {
+  loops?: import('./workflow-loop-types.ts').WorkflowLoop[]
+  loopRevision?: number
+  /** New canvases execute only explicitly configured review nodes. */
+  explicitQuality?: boolean
   templateDefinition?: import('./templates.ts').TemplateDefinition
   templateSource?: import('./templates.ts').TemplateSource
   /** Accepted for old saved teams; no longer controls behavior. */

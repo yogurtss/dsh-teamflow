@@ -10,7 +10,10 @@ try {
   for (const [language, label] of [['zh','使用指南'], ['en','User guide']]) {
     await page.getByLabel('Preview language').selectOption(language)
     const trigger = page.getByRole('button', {name:label, exact:true})
-    const inspectorVisible = await page.locator('[data-guide="inspector"]').isVisible()
+    const expected = []
+    for (const step of ['gallery','flow','roster','agent','task','edit','gate','check','inspector','run','archive','outcomes']) {
+      if (await page.locator(`[data-guide="${step}"]:visible`).count()) expected.push(step)
+    }
     await trigger.click()
     const popover = page.locator('dialog[open]')
     const visited = []
@@ -20,7 +23,7 @@ try {
       visited.push(anchor)
       await popover.getByRole('button', {name:'Got it', exact:true}).click()
     }
-    assert.deepEqual(visited, ['gallery','flow','agent','task','edit','check', ...(inspectorVisible ? ['inspector'] : []), 'run','outcomes'])
+    assert.deepEqual(visited, expected)
     await trigger.click()
     await page.keyboard.press('Escape')
     assert.equal(await popover.count(), 0)

@@ -35,7 +35,7 @@ async function mount(t, template = false) {
 
 test('normal planning proposes complete descriptions in one call without creating a reusable draft', async t => {
   const f = await mount(t), context = await f.context()
-  assert.deepEqual([...f.definitions.keys()].sort(), ['agent_teams_template_propose','agent_teams_workflow_context','agent_teams_workflow_propose'])
+  assert.deepEqual([...f.definitions.keys()].sort(), ['agent_teams_decide_acceptance','agent_teams_template_propose','agent_teams_workflow_context','agent_teams_workflow_propose'])
   const operations = [{action:'add_member',name:'worker',summary:'Implement and test'},
     {action:'add_task',id:'build',subject:'Port validation',assignee:'worker',dependencies:[],description:'Implement validatePort for integers 1–65535. Deliver validator and tests. Reject 0, 65536 and non-number inputs.'},
     {action:'add_task',id:'review',subject:'Human acceptance',checkpoint:true,dependencies:['build'],description:'Check the implementation and boundary-test evidence; approve only if all checks pass.'}]

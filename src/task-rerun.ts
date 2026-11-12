@@ -10,6 +10,9 @@ export function rerunImpact(tasks: readonly TeamTask[], id: string): { descendan
     active: descendants.filter(task => ['claimed','in_progress'].includes(task.status) || task.reassigning),
   }
 }
+export function taskIsExecuting(task: Pick<TeamTask, 'status' | 'reassigning'>): boolean {
+  return task.status === 'claimed' || task.status === 'in_progress' || !!task.reassigning
+}
 export function canRestartTask(task: Pick<TeamTask,'checkpoint'|'status'|'workflowPaused'|'workflowConfigPending'|'reassigning'|'attempt'|'stoppedAttempts'>): boolean {
   return !task.checkpoint && (['completed','failed','cancelled'].includes(task.status) || (task.status==='pending'&&!!task.workflowPaused&&!task.reassigning&&!task.workflowConfigPending&&((task.attempt??0)>0||!!task.stoppedAttempts?.length)))
 }
@@ -25,9 +28,10 @@ export function resetTaskForRerun(task: TeamTask, suspended: boolean, now: numbe
   }
   task.status='pending'; task.workflowPaused=suspended; task.workflowRerunRequired=suspended; task.updatedAt=now
   task.workflowAwaitingStart = false
+  delete task.workflowLoopTaskHold
   delete task.workflowRerunContext
   for (const key of ['output','attemptId','handoffId','handoffFromMemberId','reassigning','verdict','findings','changedPaths','acceptanceResults','commandsRun','supplementalEvidence','reviewedAttempt','reviewedArtifacts','reviewedGaps','reviewedScope','reviewedDuringDrift','verdictStartSnapshot'] as const) delete task[key]
-  if(task.checkpoint) task.checkpoint={round:task.checkpoint.round+1,history:task.checkpoint.history}
+  if(task.checkpoint) task.checkpoint={kind:task.checkpoint.kind,mode:task.checkpoint.mode,round:task.checkpoint.round+1,history:task.checkpoint.history}
 }
 import { taskNeedsConfiguration } from './task-description.ts'
 import type { TeamState } from './types.ts'
@@ -58,7 +62,7 @@ export function startWorkflowPath(team:TeamState,targetId:string,now=Date.now())
     if(['failed','cancelled'].includes(task.status)||task.checkpoint?.decision==='reject')throw new Error(`请先处理路径中的失败或退回节点：${task.subject}`)
     if(task.workflowRerunRequired && task.status!=='pending')throw new Error(`路径节点状态已变化，请刷新：${task.subject}`)
     if(task.workflowPaused && ['claimed','in_progress'].includes(task.status))throw new Error(`路径节点正在停止，请稍后重试：${task.subject}`)
-    if(!task.checkpoint && task.assignee!=='captain' && !team.members.some(m=>m.status!=='removed'&&(!task.assignee||m.name===task.assignee)))throw new Error(`路径节点缺少执行成员：${task.subject}`)
+    if(task.kind!=='archive' && !task.checkpoint && task.assignee!=='captain' && !team.members.some(m=>m.status!=='removed'&&(!task.assignee||m.name===task.assignee)))throw new Error(`路径节点缺少执行成员：${task.subject}`)
   }
   const beyond=rerunImpact(team.tasks,targetId)
   if(beyond.active.length)throw new Error('目标之后仍有任务运行，请先暂停这些任务再限定执行范围')

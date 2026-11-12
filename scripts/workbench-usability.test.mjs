@@ -91,7 +91,7 @@ test('bulk property save is atomic, preserves newer typing, and never confirms c
   assert.equal(pendingDrafts(updated,view.drafts).length,1)
   assert.doesNotThrow(()=>propertyOperation(updated,target,view.drafts[key]))
   const terminal=team();terminal.tasks[0].status='completed'
-  assert.throws(()=>propertyOperation(terminal,target,initialEditorDraft(terminal,target)),/不会自动重跑/)
+  assert.equal(propertyOperation(terminal,target,initialEditorDraft(terminal,target)).action,'update_task')
   const before=structuredClone(source)
   assert.throws(()=>applyWorkflowOperations(source,[{action:'update_member',name:'worker',role:'Should rollback'},{action:'update_task',id:'t1',subject:''}]),/不能为空/)
   assert.deepEqual(source,before)

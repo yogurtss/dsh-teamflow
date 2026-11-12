@@ -1116,6 +1116,10 @@
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
+.dagNode[data-gate], .team[data-workspace-team] .dagNode[data-gate][data-checkpoint] { isolation:isolate; border:0; background:transparent; box-shadow:none; align-items:center; }
+.dagGateShape { position:absolute; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none; }
+.dagGateShape path { fill:var(--dsw-alias-bg-layer-1); stroke:var(--dsw-alias-state-business-primary); vector-effect:non-scaling-stroke; }
+.dagNode[data-gate] .dagNodeHead, .dagNode[data-gate] .dagNodeLabel { max-width:65%; }
 .dagState { margin-top: 3px; font-size: 9px; line-height: 12px; padding: 1px 3px; }
 .team[data-workspace-team] .dagState { font-size: 10px; line-height: 14px; margin-top: 4px; }
 

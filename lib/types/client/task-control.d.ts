@@ -5,8 +5,12 @@ export interface ControlTeam {
     tasks: readonly ControlTask[];
     phase?: string;
     halted?: boolean;
+    workflow?: {
+        loops?: readonly (Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'round' | 'maxRounds'> & Partial<Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'queued' | 'failedExecutionTaskId' | 'reason' | 'lastDecision'>>)[];
+    };
 }
 export declare function taskControlState(team: ControlTeam, task: ControlTask, historic?: boolean): {
+    retryLoopTask: boolean;
     disabled: boolean;
     checked: boolean;
     label: "task.control.paused" | "task.control.awaitingStart" | "task.control.waiting" | "task.control.blocked" | "task.control.queued" | "task.control.staged" | "task.control.stopped" | "task.control.rerunRequired" | "task.control.rerunWaiting" | "task.control.reviewRequired" | "task.control.stopping" | "task.status.reviewPassed" | "task.status.configurationPending" | "task.status.reviewRejected" | "task.status.reviewReady" | "task.status.claimed" | "task.status.inProgress" | "task.status.completed" | "task.status.failed" | "task.status.cancelled";

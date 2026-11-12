@@ -65,7 +65,7 @@ export interface Config {
      * keyed by policy id. A member selects one by id (`tool_policy` on
      * `agent_teams_add_member`, a plan member, or a profile member row); the
      * Captain model can select an existing policy but never submit raw lists.
-     * `allow` keeps only the named global tools (the four coordination tools are
+     * `allow` keeps only the named global tools (the five coordination tools are
      * always added); `deny` removes the named global tools. Captain-only tools
      * stay denied either way.
      */
