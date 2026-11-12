@@ -468,15 +468,16 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }
   function beginNodeDrag(event: ReactPointerEvent<HTMLElement>, task: TeamTask): void {
     suppressNodeClick.current=false
-    if (panMode || event.button !== 0 || working || archiveView || !editing || (event.target as HTMLElement).closest('[data-connection-handle]')) return
-    const target = event.currentTarget, start = point(event), original = storedPoint(pos(task.id))
+    if (event.button !== 0 || working || archiveView || (event.target as Element).closest('[data-connection-handle], select')) return
+    const target = event.currentTarget, pressed = (event.target as Element).closest('button') ?? target
+    const start = point(event), original = storedPoint(canvasPos(task.id))
     let last = original, moved = false
-    target.setPointerCapture(event.pointerId)
-    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId) }
+    pressed.setPointerCapture(event.pointerId)
+    const cleanup = () => { target.onpointermove = null; target.onpointerup = null; target.onpointercancel = null; if (pressed.hasPointerCapture(event.pointerId)) pressed.releasePointerCapture(event.pointerId) }
     target.onpointermove = move => {
       const at = point(move)
       if (!moved && Math.hypot(at.x - start.x, at.y - start.y) < 4 / zoom) return
-      if(!moved) edit(task.checkpoint?'check':'task',task.id)
+      if (!moved && compactLoops) setShowLoopSteps(true)
       moved = true; suppressNodeClick.current = true
       last = { x: Math.min(10000, Math.max(0, original.x + storedPoint(at).x - storedPoint(start).x)), y: Math.min(10000, Math.max(0, original.y + storedPoint(at).y - storedPoint(start).y)) }
       setPositions(prev => ({ ...prev, [task.id]: last }))
@@ -560,6 +561,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }, [opened,zoom,team?.tasks])
   function beginPan(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0 && event.button !== 1) return
+    if (event.button === 0 && !archiveView && (event.target as Element).closest('[data-canvas-node]')) return
     const blank = event.target === event.currentTarget || (event.target as HTMLElement).classList.contains(css.plane!)
     if (event.button !== 1 && !panMode && !blank && editing && !archiveView) return
     if ((event.target as Element).closest('[data-connection-handle], [data-node-playback], [data-node-rerun]')) return
@@ -842,17 +844,17 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                   preparing ? (en?'Adapting workflow':'正在适配流程') + (task.assignee ? ' · '+task.assignee : '') : blocked && execution==='interrupted' ? (en?'Interrupted':'执行中断') :
                   waiting ? (en?'Awaiting decision':'待你决策') : undefined
                 const who = <span className={css.canvasActor} title={identity}>{portrait && <img src={portrait} alt=""/>}<b>{identity}</b></span>
-                return <article key={task.id} data-full-card={!gateNode(task) || undefined} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? task.checkpoint.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onPointerDown={event => beginNodeDrag(event, task)} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if (suppressNodeClick.current) { suppressNodeClick.current = false; return }; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
+                return <article key={task.id} data-task-selected={selectedTask===task.id || undefined} data-full-card={!gateNode(task) || undefined} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? task.checkpoint.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onDragStart={event=>event.preventDefault()} onPointerDown={event => beginNodeDrag(event, task)} onClickCapture={event=>{if(event.detail && suppressNodeClick.current){suppressNodeClick.current=false;event.preventDefault();event.stopPropagation()}}} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
                 {gateNode(task) && <svg className={css.gateShape} viewBox="0 0 225 150" aria-hidden="true"><path d={WORKFLOW_GATE_PATH} /></svg>}
                 <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{renderTaskControl(task)}</div>
                 {gateNode(task) ? <>
-                  <button className={css.gateBody} aria-label={`${loopLabel}：${task.subject}`}>
-                    {who}
-                    <strong title={task.subject}>{task.subject}</strong>
+                  <div className={css.gateBody}>
+                    {gateLoop?.mode === 'ai' && gateLoop.reviewer && !preparing ? <button type="button" className={css.gateMember} data-card-member={gateLoop.reviewer} aria-pressed={selection.type==='member' && selection.id===gateLoop.reviewer} aria-label={l.language==='en'?'View agent · '+gateLoop.reviewer:'查看 Agent · '+gateLoop.reviewer} onClick={e=>{e.stopPropagation();edit('member',gateLoop.reviewer!)}}>{who}</button> : who}
+                    <button type="button" className={css.gateTask} data-card-task={task.id} aria-label={`${loopLabel}：${task.subject}`}><strong title={task.subject}>{task.subject}</strong></button>
                     <TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} labelText={stateText} />
-                  </button>
+                  </div>
                   <span className={css.gateCaption}>{gateLoop ? (l.language === 'en' ? `Round ${gateLoop.round} / ${gateLoop.maxRounds}` : `第 ${gateLoop.round} / ${gateLoop.maxRounds} 轮`) : l('请连接返回线')}</span>
-                </> : <CanvasTaskCard team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
+                </> : <CanvasTaskCard onMember={name=>edit('member',name)} selectedMember={selection.type==='member'?selection.id:undefined} team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
                 {task.checkpoint && <span className={css.cardMode}>{reviewModeSelect(task)}</span>}
                 {gateNode(task) && <button type="button" className={css.returnPort} data-connection-handle aria-label="REJECT" disabled={working || archiveView || !editing || !!gateLoop?.historyCount}
                   onClick={()=>{ if (selectedTask !== task.id) choose({type:'check',id:task.id}) }}
@@ -908,7 +910,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? l("已吸附 · 松开连接") : l("拖到下游节点 · Esc 取消")) : l("{0} 个任务节点 · {1} · 滚轮缩放（以鼠标位置为中心）{2}", team.tasks.length, editing ? l("拖动空白处平移") : l("拖动画布平移"), editing ? l(" · 靠近节点显示圆点，拖动连线 · Delete 删除") : l(" · 单击节点查看详情"))}</footer>
         </main>
         <div className={css.resizeHandle} role="separator" aria-label={l("调整右侧面板宽度")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
-        <section className={css.inspector} aria-label={l("属性与讨论面板")}><header data-guide="inspector" className={css.inspectorHeader}><strong>{reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
+        <section className={css.inspector} aria-label={l("属性与讨论面板")}><header data-guide="inspector" className={css.inspectorHeader}><strong>{selection.type==='member' && selection.id ? 'Agent · '+selection.id : activeTask ? (gateNode(activeTask)?loopLabel:activeTask.checkpoint?l('验收节点'):l('任务'))+' · '+activeTask.subject : reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
           {activeTask?.checkpoint && !gateNode(activeTask) && !selectedEdge && <label>{l.language === 'en' ? 'Review mode' : '审核方式'} {reviewModeSelect(activeTask)}</label>}
           {activeTask && !selectedEdge && <LoopPanel key={team.id + ':' + activeTask.id} modeSelect={reviewModeSelect(activeTask)} returnDraft={returnDraft?.gate===activeTask.id ? returnDraft : undefined} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
           {selectedEdge && <aside className={css.editor} aria-label={l("交接详情")}><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>{l("上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。")}</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>{l("删除连线")}</button></aside>}

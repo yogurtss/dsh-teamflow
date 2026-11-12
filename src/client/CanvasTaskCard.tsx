@@ -6,9 +6,10 @@ import { TaskStateBadge } from './TaskStateBadge.tsx'
 import type { taskControlState } from './task-control.ts'
 import css from './CanvasTaskCard.module.css'
 
-export function CanvasTaskCard({team,task,control,execution,archived,reviewing,adapting,draft,systemOwned=false}: {
+export function CanvasTaskCard({team,task,control,execution,archived,reviewing,adapting,draft,systemOwned=false,onMember,selectedMember}: {
   team:TeamState; task:TeamTask; control:ReturnType<typeof taskControlState>; execution?:ExecutionState; archived:boolean
   reviewing:boolean; adapting:boolean; draft:boolean; systemOwned?:boolean
+  onMember:(name:string)=>void; selectedMember?:string
 }) {
   const l=useWorkflowText(), english=l.language==='en'
   const tr=(zh:string,en:string)=>english?en:zh
@@ -28,11 +29,16 @@ export function CanvasTaskCard({team,task,control,execution,archived,reviewing,a
   const footer=draft?tr('查看并确认本次任务要求','Review the proposed requirements'):adapting && task.assignee?tr('适配后由 ','Assigned after adaptation: ')+task.assignee:
     tone==='blocked'?latest||detail:tone==='decision'?tr('核对要求与结果，提交本轮决定。','Check the results and decide this round.'):latest||detail
   const caption=tone==='blocked'?tr('阻塞信息','Blocker'):tone==='decision'?tr('待你处理','Decision'):latest?tr('最近记录','Latest record'):tr('当前状态','Status')
-  return <button type="button" className={css.card} data-card-tone={tone} title={task.subject}>
-    <span className={css.header}><img className={css.avatar} src={portrait} alt=""/>
-      <span className={css.identity}><b title={actor}>{previous && previous+' → '}{actor}</b><small title={role}>{role}</small></span>
+  const identity=<><img className={css.avatar} src={portrait} alt="" draggable={false}/>
+    <span className={css.identity}><b title={actor}>{previous && previous+' → '}{actor}</b><small title={role}>{role}</small></span></>
+  return <div className={css.card} data-card-tone={tone}>
+    <span className={css.header}>{member && !captain && !task.checkpoint
+      ? <button type="button" className={css.memberLink} data-card-member={member.name} aria-pressed={selectedMember===member.name}
+          aria-label={tr('查看 Agent · ','View agent · ')+member.name}
+          onClick={e=>{e.stopPropagation();onMember(member.name)}}>{identity}</button>
+      : <span className={css.actor}>{identity}</span>}
       <TaskStateBadge control={control} className={css.badge} detail={detail} labelText={status}/></span>
-    <span className={css.body}><strong>{task.subject}</strong><span title={requirements}>{requirements||tr('待填写任务要求','Task requirements pending')}</span></span>
+    <button type="button" className={css.body} data-card-task={task.id} aria-label={tr('查看任务 · ','View task · ')+task.subject}><strong>{task.subject}</strong><span title={requirements}>{requirements||tr('待填写任务要求','Task requirements pending')}</span></button>
     <span className={css.footer} title={footer}><b>{caption}</b><span>{footer}</span></span>
-  </button>
+  </div>
 }

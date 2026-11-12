@@ -11,7 +11,7 @@ const steps = [
   ['edit', '编辑与连线', '进入编辑模式，从上游节点的输出端拖到下游输入端，即可设置执行顺序。', 'Edit and connect', 'In edit mode, drag from an upstream output to a downstream input to set execution order.'],
   ['gate', '循环门控', '需要反复改进时使用。设置 PASS 的下游、REJECT 的入口、审核方式和最多几轮。', 'Loop gate', 'For iterative work, configure the pass and return routes, reviewer and round limit.'],
   ['check', '验收节点', '连接输入和输出，然后在卡片或右侧面板选择人工或 AI 验收。返工路径保留原来的交付记录。', 'Acceptance node', 'Connect an input and output, then choose human or AI review on the card or in the inspector. Rework preserves the original delivery.'],
-  ['inspector', '右侧面板', '在左侧或画布选中节点后，在这里编辑要求并保存。选中循环门控可配置通过和退回路径、选择人工或 AI 审核。窄屏时打开「修改与验收」。', 'Inspector', 'Select a node to edit and save its requirements. For a loop gate, choose the pass and return routes and human or AI review. On narrow screens, open Edit and review.'],
+  ['inspector', '右侧面板', '点卡片上的成员头像或姓名查看 Agent，点中间的任务查看要求。按住卡片上任一区域拖动可调整位置。选中循环门控可配置通过和退回路径、选择人工或 AI 审核。窄屏时打开「修改与验收」。', 'Inspector', 'Click the member portrait or name to inspect the agent, or the task title to inspect the task. Drag either area to move the card. For a loop gate, choose the pass and return routes and human or AI review. On narrow screens, open Edit and review.'],
   ['run', '运行流程', '配置完成后，从这里启动流程。运行时可以查看节点状态。', 'Run the workflow', 'Start the configured workflow here and follow progress on the canvas.'],
   ['archive', '成果归档', '把归档节点接在交付任务之后，汇总上游成果。', 'Archive outputs', 'Connect an archive node after a delivery task to collect upstream outputs.'],
   ['outcomes', '交付内容', '打开这里查看交付结果，再定位到对应的任务。', 'Deliverables', 'Inspect delivered results here and locate their tasks.'],

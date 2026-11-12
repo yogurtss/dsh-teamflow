@@ -510,3 +510,10 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .guidePopup strong { display:block; }
 .guidePopup p { margin:6px 0 14px; }
 .guidePopup footer { display:flex; justify-content:space-between; gap:12px; }
+
+.workbench .gateBody button { padding:0 3px; border:0; border-radius:4px; background:transparent; color:inherit; }
+.workbench .gateBody button:is(:hover,:focus-visible,[aria-pressed=true]) { background:color-mix(in srgb,var(--wb-accent) 10%,var(--wb-bg)); }
+.gateMember b { text-decoration:underline; text-underline-offset:3px; }
+.inspectorHeader > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.inspectorHeader > button { flex:none; }
+.node { user-select:none; }
