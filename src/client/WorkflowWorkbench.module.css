@@ -55,7 +55,7 @@
 .title span { display: block; color: var(--wb-muted); font-size: 11px; }
 .header>div:last-child { display: flex; gap: 8px; flex: none; }
 .paneTabs { display: none; }
-.columns { display: grid; grid-template-columns: 224px minmax(0,1fr) 6px min(var(--inspector-width, 360px), 45%); flex: 1; min-height: 0; }
+.columns { display: grid; grid-template-columns: 224px minmax(0,1fr) 6px min(var(--inspector-width, 540px), 45%); flex: 1; min-height: 0; }
 .workbench[data-maximized='true'] { inset: 0; border-radius: 0; }
 .commandBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--wb-border); background: var(--wb-bg); }
 .commandBar>strong { font-size: 11px; color: var(--wb-muted); margin-right: 4px; }
@@ -74,7 +74,7 @@
 .taskDiscussionAction button { display:flex; align-items:center; justify-content:center; gap:6px; }
 .inspectorHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--wb-border); flex: none; }
 .inspector>.editor, .inspector>.discussion { flex: 1; min-height: 0; border: 0; width: 100%; }
-.resizeHandle { cursor: col-resize; touch-action: none; background: var(--wb-border); }
+.resizeHandle { cursor: col-resize; touch-action: none; background: linear-gradient(to right, transparent 2px, var(--wb-border) 2px 3px, transparent 3px); }
 .resizeHandle:hover, .resizeHandle:focus-visible { background: var(--wb-accent); outline: 0; }
 .libraryTabs { position: sticky; top: -16px; z-index: 2; background: var(--wb-bg); display: flex; gap: 4px; margin: -16px -12px 16px; padding: 16px 12px 12px; border-bottom: 1px solid var(--wb-border); }
 .libraryTabs button { flex: 1; white-space: nowrap; }
@@ -149,17 +149,20 @@
 .details>div { display: flex; flex-wrap: wrap; gap: 6px; }
 .discussion { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--wb-border); background: var(--wb-bg); }
 .discussion>header { display: flex; align-items: center; gap: 9px; padding: 14px 16px; border-bottom: 1px solid var(--wb-border); }
-.discussion>header img { width: 32px; height: 32px; flex: none; }.discussion>header h3 { margin: 0; font-size: 12px; font-weight: 600; }.discussion small { color: var(--wb-muted); font-size: 11px; }
+.discussion>header img { width: 32px; height: 32px; flex: none; }.discussion>header h3 { margin: 0; font-size: 15px; font-weight: 600; }.discussion small { color: var(--wb-muted); font-size: 11px; }
 .messages { flex: 1; min-height: 80px; overflow: auto; overscroll-behavior: contain; padding: 16px; }
 .messages p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 5px 0; font-size: 12px; line-height: 1.85; }
 .materials { margin: 10px 0 16px; padding: 12px; border: 1px solid var(--wb-border); border-radius: 8px; background: var(--wb-base); }
 .materials section { margin: 12px 0; padding-bottom: 10px; border-bottom: 1px solid var(--wb-border); }.materials strong { font-size: 12px; }.materials .hint { font-size: 11px; }
-.userMessage,.assistantMessage { padding: 10px 12px; border-radius: 10px; margin-bottom: 14px; }
-.userMessage { background: color-mix(in srgb, var(--wb-accent) 7%, var(--wb-bg)); margin-left: 20px; }
-.assistantMessage { background: var(--wb-base); margin-right: 8px; }
+.userMessage,.assistantMessage { min-width: 0; margin: 0 0 18px; }
+.userMessage { width: fit-content; max-width: 88%; margin-left: auto; padding: 9px 14px; border-radius: 12px 12px 4px 12px; background: color-mix(in srgb, var(--wb-accent) 8%, var(--wb-bg)); }
+.assistantMessage { padding: 0 2px; }
+.userMessage>strong,.assistantMessage>strong { display: block; margin-bottom: 4px; font-size: 11px; line-height: 1.4; font-weight: 600; color: var(--wb-muted); }
+.embeddedTranscript .userMessage>p { margin: 0; font-size: 14px; line-height: 1.65; }
+
 .embeddedTranscript { max-height: 45vh; overflow: auto; padding: 8px 0; }
 .embeddedTranscript p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.embeddedComposer { display: grid; gap: 6px; margin: 8px 0 16px; }
+.embeddedComposer { display: grid; gap: 8px; margin: 8px 0 16px; padding-top: 10px; border-top: 1px solid var(--wb-border); }
 .embeddedComposer label { display: grid; gap: 4px; }
 .embeddedComposer textarea { width: 100%; min-height: 68px; resize: vertical; }
 .embeddedComposer button { justify-self: end; }
@@ -240,7 +243,8 @@
 /* Keep the canvas and its inspector usable without overlaying the object library. */
 @media(max-width:1100px) {
   .workbench { inset: 8px; }
-  .columns, .columns[data-inspector-expanded='true'] { grid-template-columns: 190px minmax(0,1fr) 6px min(var(--inspector-width,360px),40%); }
+  .columns { grid-template-columns: 190px minmax(0,1fr) 6px min(var(--inspector-width, 540px), 45%); }
+  .columns[data-inspector-expanded='true'] { grid-template-columns: 190px minmax(0,1fr) 6px min(720px, 58%); }
   .columns[data-inspector-hidden='true'] { grid-template-columns: 190px minmax(0,1fr); }
   .header { padding: 10px 12px; }
 }
@@ -357,7 +361,9 @@ form.editor { display: flex; flex-direction: column; padding: 0; }
 .embeddedChat>.embeddedTranscript{flex:1;min-height:60px;max-height:45vh;overscroll-behavior:contain;overflow-anchor:none}
 .embeddedChat>.embeddedComposer{flex:none;margin:4px 0;grid-template-columns:minmax(0,1fr) auto;align-items:center}
 .embeddedComposer>label{grid-column:1/-1}
-.embeddedComposer>small{min-width:0}
+.embeddedComposer>small{min-width:0;color:var(--wb-muted);font-size:11px;line-height:1.5}
+.embeddedComposer>label{font-size:12px;font-weight:600}
+.embeddedComposer>label>textarea{font-size:14px;font-weight:400;line-height:1.6}
 .embeddedComposer>button{grid-column:2}
 .embeddedChat>.discussionGenerating{flex:none}
 .messages:has(>.embeddedChat)>:not(.embeddedChat){flex:none}
@@ -519,7 +525,7 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .inspectorHeader > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .inspectorHeader > button { flex:none; }
 .node { user-select:none; }
-.replyBody { min-width: 0; max-width: 100%; overflow-x: auto; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+.replyBody { min-width: 0; max-width: 100%; overflow-x: auto; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; }
 .embeddedTranscript .replyBody p { white-space: normal; font-size: inherit; line-height: inherit; margin: .5em 0; }
 .replyBody pre:where(:not([data-code-block-content] pre)) { max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; }
 .replyBody img { max-width: 100%; height: auto; }
