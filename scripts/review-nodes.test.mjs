@@ -9,6 +9,7 @@ import { isCheckpoint } from '../lib/workflow-validation.js'
 import { isGateTask } from '../lib/workflow-node-kind.js'
 import { reviewHistoryEdges } from '../lib/client/workflow-layout.js'
 import { resetTaskForRerun } from '../lib/task-rerun.js'
+import { activityStatus } from '../lib/client/activity-status.js'
 
 const task = (id, dependencies = []) => ({ id, subject:id, description:`Do and verify ${id}`, dependencies, assignee:'worker', status:'pending', attempt:0, createdAt:1, updatedAt:1 })
 const fixture = () => ({ id:'reviews', name:'Review nodes', captainSessionId:'captain', phase:'running', taskSeq:5, createdAt:1,
@@ -47,6 +48,28 @@ test('human and AI gates preserve node identities on return, then release the sa
     finish(team);decide(team,loop,'pass')
     assert.equal(team.tasks.find(t=>t.id==='review').status,'completed')
     assert.equal(loop.status,'passed')
+  }
+})
+
+test('outer card follows PASS exits across loop rounds and never treats REJECT as an endpoint',()=>{
+  for(const mode of ['human','ai']) for(const hasExit of [false,true]){
+    const team=add(fixture(),'gate')
+    const exit=task('after',['review'])
+    if(hasExit)team.tasks.push(exit)
+    const loop=configureLoop(team,{...config,mode,reviewer:mode==='ai'?'reviewer':undefined})
+    const done=()=>activityStatus(team).state==='completed'
+    startLoop(team,loop.id);finish(team)
+    assert.equal(done(),false,'finishing the body still requires gate approval')
+    decide(team,loop,'revise')
+    assert.equal(done(),false,'a return begins another round')
+    if(hasExit){
+      exit.status='completed'
+      assert.equal(done(),false,'an old downstream result cannot complete an active loop')
+      exit.status='pending'
+    }
+    finish(team);decide(team,loop,'pass')
+    assert.equal(done(),!hasExit,'a terminal gate completes on PASS, a downstream exit must still deliver')
+    if(hasExit){exit.status='completed';assert.equal(done(),true)}
   }
 })
 
