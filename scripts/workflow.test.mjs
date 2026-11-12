@@ -32,6 +32,7 @@ async function lifecycleFixture(t, source, options = {}) {
   const stateRoot = join(root, '.agent-teams')
   await createTeamDir(stateRoot, source)
   const captain = {id:'captain-id',status:'idle',session:{header:{cwd:root},ownEvents:()=>[]}}
+  Object.assign(captain, options.captain)
   const dispatched = []
   let route
   const ctx = {agents:{get:id=>id===captain.id?captain:options.liveAgents?.get(id)}, on(){}, effect:fn=>fn(), logger:{warn(){},debug(){}}, subagents:{drainChildren:options.drain ?? (async()=>{})}}
@@ -1467,4 +1468,74 @@ test('conditional discussion history retains streaming and busy changes without 
  chat={messages:[...chat.messages,{id:'stream',role:'assistant',text:'partial',streaming:true}],busy:true}
  const changed=await f.call('conversation_state',{discussion:'member:worker',conditionalState:true,knownRevision:initial.revision});assert.equal(changed.busy,true);assert.equal(changed.messages.at(-1).text,'partial');assert.notEqual(changed.revision,initial.revision)
  assert.equal(f.dispatched.length,0);assert.equal((await f.read()).tasks[0].status,'pending')
+})
+
+test('confirmed force end drains work, records the matching captain report, then archives exactly once', async t => {
+  const source = withGate()
+  source.tasks[0].status = 'completed'
+  source.tasks[0].output = 'Verified design'
+  source.members[0].id = 'worker-session'
+  const prompts = [], drained = []
+  const f = await lifecycleFixture(t, source, {
+    drain: async (_parent, ids) => drained.push(...ids),
+    captain: {
+      cancel() {},
+      followup(message) {
+        prompts.push(message)
+        this.session.ownEvents = () => [
+          {type:'user/message', data:message},
+          {type:'assistant/message', data:{message:{content:[{type:'text',text:'Design verified. Review remains unfinished.'}]}}},
+          {type:'turn/end'},
+          {type:'assistant/message', data:{message:{content:[{type:'text',text:'Unrelated conversation'}]}}},
+        ]
+      },
+      async whenIdle() {
+        const pending = await f.read()
+        assert.ok(pending.halted)
+        assert.ok(pending.closeout)
+        assert.deepEqual(drained, ['worker-session'])
+      },
+    },
+  })
+  const fields = {requestId:'close-1', createdAt:source.createdAt, confirmed:true}
+  assert.equal((await f.call('force_end', {...fields, confirmed:false})).code, 409)
+  assert.equal((await f.call('force_end', {...fields, createdAt:-1})).code, 409)
+  assert.equal(prompts.length, 0)
+  assert.equal((await f.read()).halted, undefined)
+  const results = await Promise.all([f.call('force_end', fields), f.call('force_end', fields)])
+  for (const result of results) {
+    assert.equal(result.code, 200, result.error)
+    assert.equal(result.team.closeout.source, 'captain')
+    assert.equal(result.team.closeout.report, 'Design verified. Review remains unfinished.')
+    assert.deepEqual(result.team.tasks.map(task=>task.status), ['completed','cancelled','cancelled'])
+    assert.equal(result.team.tasks[0].output, 'Verified design')
+  }
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0].content[0].text, /Verified design/)
+  assert.equal(await f.read(), undefined)
+  assert.equal((await f.call('archive_state')).team.closeout.source, 'captain')
+  assert.equal((await f.call('restore_archive')).team.closeout, undefined)
+})
+
+test('an unresponsive captain does not hold the workflow open', async t => {
+  const source = withGate()
+  const realTimeout = globalThis.setTimeout
+  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) =>
+    realTimeout(callback, delay === 90000 ? 1 : delay, ...args))
+  const f = await lifecycleFixture(t, source, {captain:{cancel(){}, followup(){}, whenIdle:()=>new Promise(()=>{})}})
+  const result = await f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'timed-out'})
+  assert.equal(result.code, 200, result.error)
+  assert.equal(result.team.closeout.source, 'snapshot')
+  assert.equal(await f.read(), undefined)
+})
+
+test('force end archives a clearly attributed task record if captain reporting fails', async t => {
+  const source = withGate()
+  source.tasks[0].output = 'Partial result from worker'
+  const f = await lifecycleFixture(t, source, {captain:{cancel(){}, followup(){throw Error('model unavailable')}}})
+  const result = await f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'close-2'})
+  assert.equal(result.code, 200, result.error)
+  assert.equal(result.team.closeout.source, 'snapshot')
+  assert.match(result.team.closeout.report, /Partial result from worker/)
+  assert.equal(await f.read(), undefined)
 })

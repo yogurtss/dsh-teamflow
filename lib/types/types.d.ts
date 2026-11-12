@@ -392,6 +392,11 @@ export interface TeamState {
     halted?: boolean;
     /** Timestamp of the latest human halt, when present. */
     haltedAt?: number;
+    closeout?: {
+        requestId: string;
+        report?: string;
+        source?: 'captain' | 'snapshot';
+    };
     /** Review-loop policy snapshot copied from the creating profile, when present. */
     reviewPolicy?: ReviewPolicy;
     /** Set when an automatic review/repair loop hits its configured ceiling. */

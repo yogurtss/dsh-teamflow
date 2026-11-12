@@ -21,7 +21,7 @@ const reads = new Set(['state','archive_state','conversation_state','template_li
 type Pending = { controller: AbortController; promise: Promise<unknown>; consumers: number }
 const requests = new WeakMap<typeof fetch, Map<string, Pending>>()
 let generation = 0
-export function workflowRequest<T>(payload: Record<string,unknown>, fetcher: typeof fetch = fetch, timeoutMs = reads.has(String(payload['action'])) ? 12000 : 45000, signal?: AbortSignal): Promise<T> {
+export function workflowRequest<T>(payload: Record<string,unknown>, fetcher: typeof fetch = fetch, timeoutMs = reads.has(String(payload['action'])) ? 12000 : payload['action'] === 'force_end' ? 150000 : 45000, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException('Aborted','AbortError'))
   if (!reads.has(String(payload['action']))) {
     generation++

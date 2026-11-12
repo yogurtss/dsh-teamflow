@@ -1,5 +1,10 @@
 /** Source-message catalog for workflow UI. Never apply to user-authored content. */
 export const workflowEnglish: Record<string, string> = {
+  "强制结束": "Force end",
+  "正在收尾…": "Wrapping up…",
+  "强制结束「{0}」？未完成的任务将被取消。Captain 将整理收尾报告，随后归档流程。": "Force end “{0}”? Unfinished tasks will be cancelled. The captain will prepare a final report, then the workflow will be archived.",
+  "Captain 收尾报告": "Captain’s final report",
+  "收尾记录（Captain 未返回报告）": "Closeout record (no captain report received)",
   "启动循环": "Start loop",
   "继续循环": "Resume loop",
   "{0} 负责「{1}」，请选择独立审核成员": "{0} owns “{1}”. Choose an independent reviewer.",

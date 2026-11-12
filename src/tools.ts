@@ -269,11 +269,13 @@ async function requireFreshCaptainTeam(
   stateRoot: string,
   teamId: string,
   captainId: string,
+  closing = false,
 ): Promise<TeamState> {
   const fresh = await requireFreshTeam(stateRoot, teamId)
   if (!(await sessionLeadsTeamAsync(ctx, fresh, captainId))) {
     throw new Error(`only the captain of team "${fresh.name}" (session ${fresh.captainSessionId}) or one of its fork descendants may perform this operation`)
   }
+  if (fresh.closeout && !closing) throw new Error('流程正在强制结束')
   return fresh
 }
 
@@ -574,10 +576,16 @@ export async function haltTeamWork(input: {
   teamId: string
   captain: Agent
   signal?: AbortSignal
+  closeout?: { requestId: string; createdAt: number }
 }): Promise<{ teamName: string; captainSessionId: string; cancelledTasks: number; alreadyHalted: boolean }> {
   const halted = await withTeamLock(teamLockKey(input.stateRoot, input.teamId), async () => {
-    const fresh = await requireFreshCaptainTeam(input.ctx, input.stateRoot, input.teamId, input.captain.id)
+    const fresh = await requireFreshCaptainTeam(input.ctx, input.stateRoot, input.teamId, input.captain.id, !!input.closeout)
+    if (input.closeout) {
+      if (fresh.createdAt !== input.closeout.createdAt) throw new Error('流程已变化，请重新确认')
+      fresh.closeout ??= { requestId: input.closeout.requestId }
+    }
     if (fresh.halted === true) {
+      if (input.closeout) await writeTeam(input.stateRoot, fresh)
       return {
         teamName: fresh.name,
         captainSessionId: fresh.captainSessionId,
@@ -590,7 +598,7 @@ export async function haltTeamWork(input: {
     let cancelledTasks = 0
     for (const task of fresh.tasks) {
       if (TERMINAL_TASK_STATUSES.includes(task.status)) continue
-      cancelUnfinishedTask(task, 'Stopped from the captain chat.')
+      cancelUnfinishedTask(task, input.closeout ? undefined : 'Stopped from the captain chat.')
       cancelledTasks += 1
     }
     for (const member of fresh.members) {
