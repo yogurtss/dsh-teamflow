@@ -219,6 +219,9 @@ for (const legacy of [false, true]) test(`task discussion carries saved context,
   let saved=await readTeam(stateRoot,'demo');const proposal=saved.workflow.discussions['discussion:task:t1'].proposal
   assert.equal(saved.tasks[0].description,'Saved requirements','AI suggestion does not mutate task')
   await call('open_discussion');assert.equal(response.openedSessionId,id);assert.equal(prompts.length,1,'reopen preserves native history without another introduction')
+  const longMessage = '讨'.repeat(63_999) + '末'
+  await call('conversation_send', {message:longMessage}); assert.equal(status,200); assert.equal(prompts.at(-1).content[0].text,longMessage)
+  await call('conversation_send', {message:longMessage+'超'}); assert.equal(status,409); assert.equal(prompts.at(-1).content[0].text,longMessage)
   await call('conversation_send',{message:'Explain the dependencies'});assert.equal(status,200);assert.equal(prompts.at(-1).content[0].text,'Explain the dependencies')
   await call('conversation_state');assert.equal(status,200);assert.equal(response.messages.at(-1).text,'Explain the dependencies')
   await call('conversation_state',{discussion:'member:worker'});assert.equal(status,409,'another scope cannot reuse the task session')

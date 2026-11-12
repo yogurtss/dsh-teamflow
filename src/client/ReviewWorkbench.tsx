@@ -1,3 +1,4 @@
+import { MAX_WORKFLOW_TEXT_LENGTH } from '../workflow-types.ts'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { TeamState, TeamTask } from '../types.ts'
 import type { WorkflowDiscussion } from '../workflow-types.ts'
@@ -108,7 +109,7 @@ export function ReviewWorkbench({ team, task, conversation, ready, archived, bus
     </div>
     {!historical && <details className={css.discussion} open={!!conversation?.native && !archived}><summary>{l('与 AI 讨论验收')}</summary>{archived ? <p>{l('恢复并编辑流程后可继续讨论。')}</p> : <>{discussion ?? <button disabled={busy} onClick={onDiscuss}><WorkflowIcon name="chat" />{l(conversation?.native ? '继续在此处讨论' : '在此处开始讨论')}</button>}<p className={css.hint}>{l('讨论使用整个检查点的上下文；聊天不会写入审批决定。')}</p>{onRestart && <details><summary>{l('重新开始讨论')}</summary><p>{l('新建独立讨论会归档当前讨论，从当前资料重新开始。')}</p><button disabled={busy || discussionBusy} onClick={onRestart}>{l('新建独立讨论')}</button></details>}</>}</details>}
     {!historical && !archived && proposal}
-    {!historical && !archived && !checkpoint.decision && <footer className={css.decision}><div className={css.footerTitle}><strong>{l('你的验收决定')}</strong><button disabled={busy || !ready} onClick={onRefresh}>{l('刷新验收材料')}</button></div><label>{l('验收意见（随决定保存）')}<textarea aria-label={l('验收意见')} value={note} maxLength={16000} onChange={e => { onNote(e.target.value); setConfirm(undefined) }} placeholder={l('记录通过或退回的原因…')} /></label><p className={css.hint}>{l('通过后，下游仍按依赖与暂停状态调度：')}{downstream.map(t => t.subject).join('、') || l('无')}</p>
+    {!historical && !archived && !checkpoint.decision && <footer className={css.decision}><div className={css.footerTitle}><strong>{l('你的验收决定')}</strong><button disabled={busy || !ready} onClick={onRefresh}>{l('刷新验收材料')}</button></div><label>{l('验收意见（随决定保存）')}<textarea aria-label={l('验收意见')} value={note} maxLength={MAX_WORKFLOW_TEXT_LENGTH} onChange={e => { onNote(e.target.value); setConfirm(undefined) }} placeholder={l('记录通过或退回的原因…')} /></label><p className={css.hint}>{l('通过后，下游仍按依赖与暂停状态调度：')}{downstream.map(t => t.subject).join('、') || l('无')}</p>
       {decisionBlock && <p className={css.notice} role="status">{decisionBlock}</p>}
       {issues > 0 && <p className={css.notice}>{l('当前材料有 {0} 项失败记录或文件读取缺口，请核实后决定。', issues)}</p>}
       {error && <p role="alert" className={css.notice}>{error}</p>}
@@ -136,7 +137,7 @@ function RejectedReview({team,task,busy,blocked,onRerun,onReopen,onBack,onDiscus
     {onReopen&&<div className={css.notice}><p>{l('如果退回有误，或当前结果已经可以接受，可重新验收当前结果。退回记录会保留，不会自动通过或启动任务。')}</p><button type="button" disabled={busy||!!blocked||team.halted||team.phase==='staged'} onClick={onReopen}>{l('重新验收当前结果')}</button></div>}
     {!!candidates.length && onRerun ? <form onSubmit={event=>{event.preventDefault();if(busy||submitting.current||issue||!source||!instructions.trim())return;submitting.current=true;void onRerun(source.id,instructions.trim()).finally(()=>{submitting.current=false})}}>
       <label>{l('需要返工的任务')}<select aria-label={l('需要返工的任务')} value={source?.id??''} onChange={e=>setSelected(e.target.value)}>{!source&&<option value="">{l('请选择任务')}</option>}{candidates.map(t=><option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
-      <label>{l('返工要求')}<textarea aria-label={l('返工要求')} required maxLength={16000} value={instructions} onChange={e=>setInstructions(e.target.value)}/></label>
+      <label>{l('返工要求')}<textarea aria-label={l('返工要求')} required maxLength={MAX_WORKFLOW_TEXT_LENGTH} value={instructions} onChange={e=>setInstructions(e.target.value)}/></label>
       <p className={css.hint}>{l('受影响的后续节点：')}{impact?.descendants.map(t=>t.subject).join('、')||l('无')}</p>
       <p className={css.hint}>{l('保存后先重跑所选任务，再点击「运行到此节点」确认后续路径。新结果仍需人工验收，其他受影响分支保持暂停。')}</p>
       {issue&&<p role="alert">{issue}</p>}<button type="submit" className={css.primary} disabled={busy||!!issue||!source||!instructions.trim()}>{l('保存要求并重跑任务')}</button>

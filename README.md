@@ -51,7 +51,7 @@ TeamFlow first proposes roles, dependencies, and reusable task requirements, the
 
 ### 2. Review the plan
 
-Open the canvas and select tasks to check their **requirements, deliverables, and acceptance criteria**. Check each member's role, instructions, model, and thinking level. Each member’s execution instructions (PE) can contain up to 64,000 characters in the workbench and reusable templates. A member can own more than one task.
+Open the canvas and select tasks to check their **requirements, deliverables, and acceptance criteria**. Check each member's role, instructions, model, and thinking level. Member responsibilities, execution instructions (PE), run-specific instructions, task descriptions, template task requirements, and individual workbench discussion messages each support 64,000 characters. Members receive the full team protocol at startup. Template goal prefill and new workflow planning discussions carry over the latest 64,000 characters of user requirements and flag omissions. AI workflow and template proposals each allow 4,000,000 serialized JSON characters. Workbench requests allow 16,000,000 bytes. A member can own more than one task.
 
 Tasks distinguish **general requirements** (the reusable process) from **current requirements** (the complete task for this run). Execution agents receive the current task text, so it must include all applicable constraints—not just additions to the template. Resolve any adaptation issues before starting.
 

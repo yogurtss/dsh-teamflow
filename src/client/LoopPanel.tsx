@@ -1,3 +1,4 @@
+import { MAX_WORKFLOW_TEXT_LENGTH } from '../workflow-types.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { TeamState, TeamTask, ArtifactDigest } from '../types.ts'
 import type { LoopHistoryRecord } from '../workflow-loop-types.ts'
@@ -93,7 +94,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
           {materials.files?.map(file => <details key={file.path}><summary>{file.path} · {file.skipped ? tr('按策略跳过内容审计，请在本机检查', 'Content audit skipped by policy; check this file locally') : !file.present ? tr('文件不存在', 'File does not exist') : tr('已读取摘要', 'Digest recorded')}</summary>{file.size !== undefined && <p>{file.size.toLocaleString()} bytes</p>}{file.reason && <p>{file.reason}</p>}{file.sha256 && <code>{file.sha256}</code>}</details>)}
           <p>{task.description}</p>
           <RoundComparison {...materials}/>
-          <label>{tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')}<textarea aria-label={tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')} rows={5} maxLength={16000} value={note} onChange={e => setNote(e.target.value)} /></label>
+          <label>{tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')}<textarea aria-label={tr('审核意见、修改要求与复验条件', 'Findings, required changes and revalidation')} rows={5} maxLength={MAX_WORKFLOW_TEXT_LENGTH} value={note} onChange={e => setNote(e.target.value)} /></label>
           {!loop.rejectToEntry && <fieldset><legend>{tr('需要改进的任务（其下游也会重跑）', 'Tasks to revise (their descendants rerun too)')}</legend>{loop.bodyIds.map(id => <label key={id} className={css.check}><input type="checkbox" checked={targets.includes(id)} onChange={e => setTargets(value => e.target.checked ? [...value, id] : value.filter(v => v !== id))} />{team.tasks.find(t => t.id === id)?.subject}</label>)}</fieldset>}
           <div className={css.controls}>{(['pass', 'revise', 'blocked'] as const).map(decision => <button key={decision} disabled={blocked || !note.trim() || decision === 'revise' && !loop.rejectToEntry && !targets.length} onClick={() => void guarded(async () => {
             const result = await perform('loop_decide', { loopId: loop.id, decisionId: crypto.randomUUID(), runId: materials.runId, round: materials.round, fingerprint: materials.fingerprint, artifactEvidence: materials.artifactEvidence, decision, note, taskIds: targets })

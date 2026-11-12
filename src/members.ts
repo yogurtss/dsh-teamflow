@@ -29,8 +29,6 @@ import { appendTeamEvent, captainSessionOf } from './events.ts'
 import type { MemberToolFilter } from './tool-policies.ts'
 import { TERMINAL_TASK_STATUSES, type TeamMember, type TeamState, type TeamTask } from './types.ts'
 
-/** Persona snapshot of a profile protocol; the full text lives on team.json. */
-export const PERSONA_PROTOCOL_MAX_CHARS = 400
 
 /**
  * Restore the SessionId brand on a value that round-tripped through the
@@ -826,12 +824,6 @@ function configuredExecutionPrompt(member: TeamMember, config: MemberRuntimeConf
   return prompt === undefined || prompt === '' ? undefined : prompt
 }
 
-function truncatedPersonaProtocol(protocol: string | undefined): string {
-  if (protocol === undefined || protocol.trim() === '') return '(none)'
-  if (protocol.length <= PERSONA_PROTOCOL_MAX_CHARS) return protocol
-  return `${protocol.slice(0, PERSONA_PROTOCOL_MAX_CHARS)}… [truncated]`
-}
-
 function assignedNonTerminalCount(team: TeamState, memberName: string): number {
   return team.tasks.filter(task => (
     task.assignee === memberName && !TERMINAL_TASK_STATUSES.includes(task.status)
@@ -850,7 +842,7 @@ function assignedNonTerminalCount(team: TeamState, memberName: string): number {
 export function memberPersona(team: TeamState, member: TeamMember, stateDir: string, executionPrompt?: string): string {
   const goal = team.description?.trim() || '(not provided)'
   const injectedPrompt = member.executionPrompt?.trim() || executionPrompt?.trim()
-  const protocol = truncatedPersonaProtocol(team.profile?.protocol)
+  const protocol = team.profile?.protocol?.trim() || '(none)'
   return `You are ${member.name}, a member of the multi-agent team "${team.name}" running inside DeepSeek Harness AgentTeams. The captain leads the team; you are a worker member${member.role ? ` with the role: ${member.role}` : ''}.
 
 Team context:

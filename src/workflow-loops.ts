@@ -1,3 +1,4 @@
+import { MAX_WORKFLOW_TEXT_LENGTH } from './workflow-types.ts'
 import { excerpt, reviewResult } from './review-results.ts'
 import { deriveLoop, gateRouteTasks, parseLoopConfig, validateLoopGraph as validateLoopStructure } from './workflow-loop-config.ts'
 export { parseLoopConfig } from './workflow-loop-config.ts'
@@ -222,7 +223,7 @@ export function decideLoop(team: TeamState, id: string, input: { decisionId: str
   if (loop.lastDecisionId === input.decisionId) return
   reconcileLoops(team, now)
   if (loop.status !== 'reviewing' || team.halted || team.phase === 'staged' || input.runId !== loop.runId || input.round !== loop.round || input.fingerprint !== loopInputFingerprint(team, loop)) throw new Error('评审轮次或材料已变化，请刷新后重试')
-  if (!input.decisionId || !['pass', 'revise', 'blocked'].includes(input.decision) || !input.note.trim() || input.note.length > 16000) throw new Error('请提交有效决定和具体审核意见')
+  if (!input.decisionId || !['pass', 'revise', 'blocked'].includes(input.decision) || !input.note.trim() || input.note.length > MAX_WORKFLOW_TEXT_LENGTH) throw new Error('请提交有效决定和具体审核意见')
   const gate = taskOf(team, loop.gateId), tasks = loop.bodyIds.map(t => taskOf(team, t))
   if (tasks.some(active)) throw new Error('仍有任务执行，不能切换轮次')
   if (input.decision === 'pass' && tasks.some(t => t.status !== 'completed' || t.commandsRun?.some(c => c.status === 'failed') || t.acceptanceResults?.some(c => c.status === 'failed'))) throw new Error('必需任务或验证未通过，不能放行')

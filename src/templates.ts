@@ -2,7 +2,7 @@ import { parseGalleryAccess, type GalleryAccess } from "./gallery-access.ts"
 import { parseTaskArchive, taskArchiveParameter, type TaskArchiveConfig } from './task-archive-config.ts'
 /** Runtime-independent template format. Only explicitly portable fields are exported. */
 import type { TeamState } from './types.ts'
-import { parseMemberExecutionPrompt, type WorkflowOperation } from './workflow-types.ts'
+import { MAX_WORKFLOW_TEXT_LENGTH, parseMemberExecutionPrompt, type WorkflowOperation } from './workflow-types.ts'
 import { emptyBrief, parseBrief, type TaskBrief } from './template-brief.ts'
 import { deriveLoop, parseLoopConfig, validateLoopGraph } from './workflow-loop-config.ts'
 import type { LoopConfig } from './workflow-loop-types.ts'
@@ -62,7 +62,7 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   const v = object(value)
   const members = array(v['members'], 32).map(raw => {
     const m = object(raw)
-    return {name:text(m['name'],true,80), summary:text(m['summary']), role:text(m['role']), executionPrompt:parseMemberExecutionPrompt(m['executionPrompt']), ...parseGalleryAccess(m)}
+    return {name:text(m['name'],true,80), summary:text(m['summary'],false,MAX_WORKFLOW_TEXT_LENGTH), role:text(m['role'],false,MAX_WORKFLOW_TEXT_LENGTH), executionPrompt:parseMemberExecutionPrompt(m['executionPrompt']), ...parseGalleryAccess(m)}
   })
   if (members.some(m => !/^[\p{L}\p{N}_-]+$/u.test(m.name) || m.name.toLowerCase() === 'captain') || new Set(members.map(m=>m.name.toLowerCase())).size !== members.length) throw new Error('模板成员名称重复或无效')
   const tasks = array(v['tasks'], 32).map(raw => {
