@@ -3,36 +3,15 @@ import { workflowRequest } from './workflow-request.ts'
 import { activityStatus } from './activity-status.ts'
 import { resolveActivitySession, type ActivitySessionOwner } from './activity-session.ts'
 import { WorkflowLocale } from './workflow-i18n.tsx'
-/**
- * AgentTeams activity panel: the top-right floater monitoring every team.
- *
- * Modeled on the Claude Code desktop SessionActivityPanel: a shell-overlay
- * panel that docks at the conversation's top-right edge by default, can be
- * dragged into a floating window, resized, and folded into an activity badge.
- * On wide viewports the docked panel makes the conversation column yield
- * space; narrow viewports keep a simple inset overlay. It
- * polls the host `/plugins/dsh-agent-teams/state` route for
- * server-side snapshots (durable files + live subagent activity), with a
- * badge that opens the workflow canvas on demand. Archived
- * teams stay available for the owning conversation after live work ends.
- *
- * The floater mounts in ui-layout's additive `shell.overlay`; it is not a
- * conversation node — the in-conversation panel was removed in favor of this
- * always-available monitor.
- * @module dsh-agent-teams/client/activity
- */
-
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
 import { TaskStateBadge, taskStateNodeClass } from './TaskStateBadge.tsx'
 import { QuickMemberEditor } from './QuickMemberEditor.tsx'
-import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
-  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
-  type CSSProperties, type PointerEvent as ReactPointerEvent,
+  useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
 } from 'react'
 import {
-  IconBranchOutline16, IconChevronDownOutline14, IconPanelLeftOutline16,
+  IconBranchOutline16,
   IconStopFill16, IconWarningOutline16,
   WorkflowIcon,
 } from './icons.tsx'
@@ -44,7 +23,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
-  activityPanelExpandedForSession,
   compactDagLayout,
   COMPACT_DAG_NODE_WIDTH,
   COMPACT_DAG_NODE_HEIGHT,
@@ -70,82 +48,11 @@ import {
   type ActivityTeam,
 } from './activity-monitor.ts'
 import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
-import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { StagingPlanEditor } from './StagingPlanEditor.tsx'
-import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
-import {
-  DEFAULT_PANEL_LAYOUT,
-  PANEL_LAYOUT_STORAGE_KEY,
-  compactPanelForBounds,
-  dockPanelLayout,
-  floatPanelLayout,
-  movePanelLayout,
-  panelMaximumHeight,
-  panelUsesAutoHeight,
-  parsePanelLayout,
-  resizePanelLayout,
-  resolvePanelGeometry,
-  type PanelBounds,
-  type PanelLayout,
-  type PanelResizeEdge,
-} from './panel-geometry.ts'
 import css from './ActivityPanel.module.css'
 
-/** Grace before the panel collapses once no team remains. */
-const AUTOCLOSE_GRACE_MS = 2000
-/** Root marker shared with the panel CSS while the shell overlay is expanded. */
-const PANEL_OPEN_ATTRIBUTE = 'data-agent-teams-panel-open'
-/** Shared width concession consumed by the conversation root CSS. */
-const PANEL_SHIFT_PROPERTY = '--agent-teams-panel-shift'
-const PANEL_CONVERSATION_GAP = 14
-const MOVE_THRESHOLD = 4
 const CAPTAIN_ASSIGNEE = 'captain'
-
-type PanelGesture = {
-  readonly kind: 'move' | 'resize'
-  readonly edge?: PanelResizeEdge
-  readonly pointerId: number
-  readonly originX: number
-  readonly originY: number
-  readonly start: PanelLayout
-  activated: boolean
-}
-
-function initialPanelLayout(): PanelLayout {
-  if (typeof window === 'undefined') return DEFAULT_PANEL_LAYOUT
-  return parsePanelLayout(window.localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY))
-}
-
-function initialPanelBounds(): PanelBounds {
-  if (typeof window === 'undefined') return { width: 1440, height: 900, anchorRight: 1440 }
-  return { width: window.innerWidth, height: window.innerHeight, anchorRight: window.innerWidth }
-}
-
-/** Initial-letter fallback for unmatched roles. */
-function memberInitial(name: string): string {
-  return name.trim().slice(0, 1).toUpperCase() || '?'
-}
-
-function stableHash(value: string): number {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0
-  }
-  return Math.abs(hash)
-}
-
-const ACCENTS = [
-  'var(--dsw-alias-state-business-primary)',
-  'var(--dsw-alias-state-success-primary)',
-  'var(--dsw-alias-state-error-primary)',
-  'var(--dsw-alias-state-warn-primary)',
-  'var(--dsw-alias-label-tertiary)',
-] as const
-
-function accentOf(id: string): string {
-  return ACCENTS[stableHash(id) % ACCENTS.length] ?? ACCENTS[0]
-}
 
 function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
   return ids.join(t('format.listSeparator'))
@@ -190,23 +97,22 @@ function WorkGlyph({ active }: { readonly active: boolean }) {
 }
 
 /** Workflow status card remains visible in the corner while any team exists. */
-function CollapsedBadge({ count, busy, onClick, t, team, archived }: {
+function CollapsedBadge({ count, onClick, t, team, archived }: {
   readonly count: number
-  readonly team?: ActivityTeam
+  readonly team: ActivityTeam
   readonly archived?: boolean
-  readonly busy: boolean
   readonly onClick: () => void
   readonly t: AgentTeamsTranslate
 }) {
   const status=activityStatus(team,archived)
   const label=t(('activity.state.'+status.state) as Parameters<AgentTeamsTranslate>[0])
   const detail=t('activity.summary',{done:status.completed,total:status.total,running:status.running,review:status.reviews,attention:status.attention})
-  const title=[team?.name,label,status.total?status.percent+'%':undefined,detail,t('activity.badgeAria',{count})].filter(Boolean).join(' · ')
-  return <button type="button" className={css.badge} data-agent-teams-collapsed data-busy={busy} data-status={status.state} onClick={onClick} aria-label={title} title={title}>
+  const title=[team.name,label,status.total?status.percent+'%':undefined,detail,t('activity.badgeAria',{count})].filter(Boolean).join(' · ')
+  return <button type="button" className={css.badge} data-agent-teams-collapsed data-status={status.state} onClick={onClick} aria-label={title} title={title}>
     <span className={css.statusRing} aria-hidden><svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="7.5" className={css.ringTrack}/><circle cx="10" cy="10" r="7.5" className={css.ringValue} pathLength="100" strokeDasharray={status.percent+' 100'}/></svg>{status.state==='completed'?<i>✓</i>:status.state==='paused'?<i>Ⅱ</i>:status.attention>0?<i>·</i>:null}</span>
     <span className={css.statusBody}>
       <span className={css.statusHeading}><span>Workflow</span><span aria-hidden>↗</span></span>
-      {team?.name && <strong className={css.statusTeam}>{team.name}</strong>}
+      {team.name && <strong className={css.statusTeam}>{team.name}</strong>}
       <span className={css.statusLine}>
         <span className={css.statusLabel}>{label}</span>
         {status.total>0&&<span className={css.statusPercent}>{status.percent}<small>%</small></span>}
@@ -263,12 +169,6 @@ function memberStatusText(
   if (owned.some((task) => task.status === 'failed')) return t('task.detail.failed')
   if (owned.length > 0 && owned.every((task) => task.status === 'completed' || task.status === 'cancelled')) return t('member.status.settled')
   return t(member.activity === 'idle' ? 'member.status.idle' : 'member.status.unknown')
-}
-
-function compactTaskLabel(subject: string): string {
-  const withoutVerb = subject.replace(/^开发\s*/u, '').replace(/^\d+[-_.、\s]*/u, '')
-  const head = withoutVerb.split(/[（(·：:]/u)[0]?.trim() ?? withoutVerb
-  return head.length > 18 ? `${head.slice(0, 17)}…` : head
 }
 
 function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate, discarded = false): string {
@@ -378,7 +278,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
             const member = team.members.find(candidate => candidate.name === message.from)
             const art = message.from === CAPTAIN_ASSIGNEE ? LEAD_ART : memberArtUrl(message.from, member?.role ?? '')
             return <li key={`${index}:${message.from}`}>
-              {art === null ? <span className={css.inboxInitial} aria-hidden>{memberInitial(message.from)}</span> : <img src={art} alt="" aria-hidden />}
+              <img src={art} alt="" aria-hidden />
               <div><strong>{message.from}</strong><p>{message.content}</p></div>
             </li>
           })}
@@ -388,7 +288,7 @@ function WorkspaceSummary({ team, t, discarded }: { readonly team: ActivityTeam;
   )
 }
 
-function DependencyMap({ tasks, members, t, discarded = false, workspace = false, onSelectTask, team, historic = false, onToggle, onOpenTask, controlBusy }: {
+function DependencyMap({ tasks, members, t, discarded = false, onSelectTask, team, historic = false, onToggle, onOpenTask, controlBusy }: {
   readonly team: ActivityTeam
   readonly historic?: boolean
   readonly controlBusy?: string
@@ -398,7 +298,6 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   readonly members: readonly ActivityMember[]
   readonly t: AgentTeamsTranslate
   readonly discarded?: boolean
-  readonly workspace?: boolean
   readonly onSelectTask?: (id: string | null) => void
 }) {
   const [open, setOpen] = useState(true)
@@ -407,10 +306,9 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focusedTaskId = dependencyFocusTaskId(pinnedTaskId, keyboardTaskId, hoverTaskId)
-  const nodeWidth = workspace ? 164 : COMPACT_DAG_NODE_WIDTH
-  const nodeHeight = workspace ? 94 : COMPACT_DAG_NODE_HEIGHT
-  const layout = useMemo(() => compactDagLayout(tasks,
-    workspace ? { nodeWidth: 164, nodeHeight: 94, columnGap: 36, rowGap: 16 } : undefined), [tasks, workspace])
+  const nodeWidth = COMPACT_DAG_NODE_WIDTH
+  const nodeHeight = COMPACT_DAG_NODE_HEIGHT
+  const layout = useMemo(() => compactDagLayout(tasks), [tasks])
   const parallel = useMemo(() => usesParallelTaskGrid(tasks), [tasks])
   const related = useMemo(
     () => focusedTaskId === null ? null : relatedTaskIds(focusedTaskId, tasks),
@@ -459,7 +357,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
           <Chevron open={open} /><IconBranchOutline16 /> {t(parallel ? 'dependency.parallel' : 'dependency.title')}
         </button>
         <span className={css.sectionHint}>{pinnedTaskId === null
-          ? t(parallel ? 'dependency.hint.parallel' : workspace ? 'workspace.dependencies' : 'dependency.hint.chain')
+          ? t(parallel ? 'dependency.hint.parallel' : 'workspace.dependencies')
           : t('dependency.hint.pinned', { taskId: pinnedTaskId })}</span>
       </header>
       {open && (
@@ -508,9 +406,9 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
                     {gate && <svg className={css.dagGateShape} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M1 50 L50 1 L99 50 L50 99 Z" /></svg>}
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name={isGateTask(task, team.workflow?.loops) ? 'gate' : 'acceptance'} /> {t(aiReview ? 'task.control.ai' : 'task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name={isGateTask(task, team.workflow?.loops) ? 'gate' : 'acceptance'} /> {t(aiReview ? 'task.control.ai' : 'task.control.human')}</span> : <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
-                      {workspace ? task.subject : compactTaskLabel(task.subject)}
+                      {task.subject}
                     </span>
                     <TaskStateBadge control={control} t={t} className={css.dagState} discarded={discarded} stale={!!task.verdictStale} detail={task.status === 'claimed' ? t('task.control.claimedHint') : undefined} />
                     {task.state === 'running' && (
@@ -570,16 +468,15 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
   )
 }
 
-function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDiscarded, onNavigate, t, historic = false, workspace = false }: {
+function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDiscarded, onNavigate, t, historic = false }: {
   readonly team: ActivityTeam
   readonly modelDirectory?: ModelDirectory
   readonly onContinuePlanning?: () => void
   readonly onDiscarded?: () => void
-  /** Navigate to a member transcript (floater hides immediately). */
+  /** Navigate to a member transcript. */
   readonly onNavigate: (parentId: SessionId, childId: SessionId) => void
   readonly t: AgentTeamsTranslate
   readonly historic?: boolean
-  readonly workspace?: boolean
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [controlBusy,setControlBusy] = useState<string>()
@@ -610,7 +507,7 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
   }
   const [editingMember, setEditingMember] = useState<string>()
   const selectedAssignee = team.tasks.find(task => task.id === selectedTaskId)?.assignee
-  const [membersOpen, setMembersOpen] = useState(workspace)
+  const [membersOpen, setMembersOpen] = useState(true)
   const [stopOpen, setStopOpen] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [stopError, setStopError] = useState('')
@@ -659,7 +556,7 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
   }
   return (
     <>
-      <section className={css.team} data-team-id={team.teamId} data-workspace-team={workspace || undefined}>
+      <section className={css.team} data-team-id={team.teamId} data-workspace-team>
         <header className={css.teamHead}>
           <span className={css.teamName} title={team.name}>{team.name}</span>
           {historic && <span className={css.historicPill}>{t(discarded ? 'team.discarded' : 'team.ended')}</span>}
@@ -765,7 +662,7 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
                   const owned = team.tasks.filter((task) => task.assignee === member.name)
                   const memberModel = memberRouteLabel(member)
                   return (
-              <div key={member.id || member.name} className={css.memberBlock} data-activity={member.activity} data-selected-member={(editingMember === member.name || workspace && selectedAssignee === member.name) || undefined}>
+              <div key={member.id || member.name} className={css.memberBlock} data-activity={member.activity} data-selected-member={(editingMember === member.name || selectedAssignee === member.name) || undefined}>
                 <span className={css.memberBranch} aria-hidden><span /></span>
                 <button
                   type="button"
@@ -780,11 +677,7 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
                   }}
                 >
                   <span className={css.memberAvatar} data-unread={member.unread > 0}>
-                    {memberArtUrl(member.name, member.role) !== null ? (
-                      <img className={css.memberArt} src={memberArtUrl(member.name, member.role) ?? ''} alt="" aria-hidden />
-                    ) : (
-                      <span className={css.memberInitial} style={{ background: accentOf(member.id) }}>{memberInitial(member.name)}</span>
-                    )}
+                    <img className={css.memberArt} src={memberArtUrl(member.name, member.role)} alt="" aria-hidden />
                     <img className={css.stateArt} data-activity={member.activity} src={ACTION_ART[member.activity]} alt="" aria-hidden />
                   </span>
                   <span className={css.memberInfo}>
@@ -864,9 +757,9 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
 
       {controlBusy && <p role="status" className={css.taskControlHint}>{t('task.control.saving')}</p>}
       {controlError && <p role="alert" className={css.stopModalError}>{controlError}</p>}
-      <DependencyMap team={team} tasks={team.tasks} members={team.members} t={t} historic={historic} discarded={discarded} workspace={workspace} onSelectTask={setSelectedTaskId} controlBusy={controlBusy} onToggle={(task,enabled)=>void toggleTask(task,enabled)} onOpenTask={(task,review,rerun)=>setTaskEntry({taskId:task.id,review,rerun})} />
+      <DependencyMap team={team} tasks={team.tasks} members={team.members} t={t} historic={historic} discarded={discarded} onSelectTask={setSelectedTaskId} controlBusy={controlBusy} onToggle={(task,enabled)=>void toggleTask(task,enabled)} onOpenTask={(task,review,rerun)=>setTaskEntry({taskId:task.id,review,rerun})} />
       {taskEntry && <WorkflowWorkbench key={taskEntry.taskId} sessionId={team.captainSessionId} teamId={team.teamId} archived={historic} entryTarget={taskEntry} onClose={()=>setTaskEntry(undefined)} modelDirectory={modelDirectory} t={t} openExecution={(id,parent)=>onNavigate((parent??team.captainSessionId) as SessionId,id as SessionId)} openConversation={id=>openWorkflowConversation(onNavigate,id as SessionId)} />}
-      {workspace && <WorkspaceSummary team={team} t={t} discarded={discarded} />}
+      <WorkspaceSummary team={team} t={t} discarded={discarded} />
       </section>
       <Modal
         open={stopOpen}
@@ -890,65 +783,17 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
   )
 }
 
-/** Legacy conversation cards may outlive their host archive. Project their
- * durable roster through the same rebuilt panel instead of a second UI. */
-export function historicCardTeam(data: AgentTeamsCardData, owner: string): ActivityTeam {
-  return {
-    workspace: '',
-    teamId: data.teamId,
-    name: data.teamName,
-    captainSessionId: data.captainSessionId || owner,
-    phase: 'running',
-    members: data.members.map((member) => ({
-      ...member,
-      status: 'removed',
-      activity: 'idle',
-      progress: 0,
-      done: 0,
-      total: 0,
-      currentTask: '',
-      unread: 0,
-    })),
-    tasks: [],
-    messageCount: 0,
-    captainInbox: [],
-  }
-}
-
-/** The top-right activity floater. Teams follow the current session: live
- * snapshots and historic card summaries are only shown while their captain
- * session is the one currently open. */
+/** Shared session inputs for the canvas shortcut and blank-session entry. */
 export type ActivityPanelProps = {
   readonly onMonitorStatus?: (sessionId: SessionId, status: 'loading' | 'ready' | 'error') => void
-  readonly onRememberTeam?: (sessionId: SessionId, data: AgentTeamsCardData) => void
   readonly conversationVisible?: boolean
   readonly sessionsList: ObservableSnapshot<SessionListState>
   readonly modelDirectories: ModelDirectoryResolver
   readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>
 } & PropsLocale<'agentTeams'>
 
-export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true, onMonitorStatus, onRememberTeam }: ActivityPanelProps) {
-  // Navigating to a member's subagent transcript is an explicit departure:
-  // hide the floater immediately instead of waiting out the autocollapse
-  // grace, so the panel never lingers over the member session.
-  const navigateToSession = (parentId: SessionId, childId: SessionId): void | Promise<void> => {
-    setOpen(false)
-    setWasActive(false)
-    return openMember(parentId, childId)
-  }
-  const [open, setOpen] = useState(false)
-  const [openOwner, setOpenOwner] = useState<SessionId | undefined>()
+export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true, onMonitorStatus }: ActivityPanelProps) {
   const [canvasEntry, setCanvasEntry] = useState<{ owner: SessionId; teamId: string; archived: boolean }>()
-  const [wasActive, setWasActive] = useState(false)
-  const [historic, setHistoric] = useState<ReadonlyMap<string, { data: AgentTeamsCardData; owner: string }>>(new Map())
-  const [layout, setLayout] = useState<PanelLayout>(initialPanelLayout)
-  const [bounds, setBounds] = useState<PanelBounds>(initialPanelBounds)
-  const [interaction, setInteraction] = useState<'dragging' | 'resizing' | null>(null)
-  const panelRef = useRef<HTMLElement | null>(null)
-  const boundsRef = useRef(bounds)
-  const gestureRef = useRef<PanelGesture | null>(null)
-  const frameRef = useRef<number | null>(null)
-  const pendingLayoutRef = useRef<PanelLayout | null>(null)
   const selectedSession = currentSessionId(useSyncExternalStore(
     sessionsList.subscribe,
     sessionsList.getSnapshot,
@@ -969,15 +814,6 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     subscribeActivityMonitorTargets,
     getActivityMonitorTargetsSnapshot,
   )
-  const returnToComposer = (): void => {
-    setOpen(false)
-    setOpenOwner(undefined)
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(
-        '[data-composer-card] [contenteditable="true"][role="textbox"], [data-composer-card] textarea',
-      )?.focus()
-    })
-  }
   const { teams, archivedTeams } = useSyncExternalStore(
     subscribeActivitySnapshots,
     getActivitySnapshotsSnapshot,
@@ -986,91 +822,9 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     () => current === undefined ? [] : monitorTargets.filter((target) => target.sessionId === current),
     [current, monitorTargets],
   )
-  const currentRef = useRef(current)
-  useEffect(() => { currentRef.current = current }, [current])
-  const expanded = conversationVisible && activityPanelExpandedForSession(open, openOwner, current)
-  const geometry = useMemo(() => resolvePanelGeometry(layout, bounds), [layout, bounds])
-  const compact = compactPanelForBounds(bounds)
-
-  const commitLayout = useCallback((next: PanelLayout): void => {
-    setLayout(next)
-  }, [])
-
-  useEffect(() => {
-    window.localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout))
-  }, [layout])
-
-  // The slot sits inside AppFrame, so all geometry is measured against the
-  // shell overlay rather than the browser viewport. The conversation's real
-  // right edge is the dock anchor and naturally follows sidebar/details
-  // concessions without importing their hashed implementation classes.
   useLayoutEffect(() => {
-    const overlay = document.querySelector<HTMLElement>('[data-shell-overlay]')
-    if (overlay === null) return
-    const conversation = document.querySelector<HTMLElement>("[data-phase='active']")
-    let frame: number | null = null
-    const measure = (): void => {
-      frame = null
-      const overlayRect = overlay.getBoundingClientRect()
-      const conversationRect = conversation?.getBoundingClientRect()
-      const next: PanelBounds = {
-        width: overlayRect.width,
-        height: overlayRect.height,
-        anchorRight: conversationRect === undefined
-          ? overlayRect.width
-          : Math.min(Math.max(conversationRect.right - overlayRect.left, 0), overlayRect.width),
-      }
-      const previous = boundsRef.current
-      if (previous.width === next.width
-        && previous.height === next.height
-        && previous.anchorRight === next.anchorRight) return
-      boundsRef.current = next
-      setBounds(next)
-    }
-    const scheduleMeasure = (): void => {
-      frame ??= requestAnimationFrame(measure)
-    }
-    measure()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleMeasure)
-    observer?.observe(overlay)
-    if (conversation !== null) observer?.observe(conversation)
-    window.addEventListener('resize', scheduleMeasure)
-    return () => {
-      if (frame !== null) cancelAnimationFrame(frame)
-      observer?.disconnect()
-      window.removeEventListener('resize', scheduleMeasure)
-    }
+    setCanvasEntry(entry => entry?.owner === current ? entry : undefined)
   }, [current])
-
-  // This shell overlay survives conversation route changes. Gate expansion by its
-  // owning session during render, then clear stale state before paint. This
-  // removes the old panel immediately instead of waiting for the no-team
-  // autoclose grace period on the destination page.
-  useLayoutEffect(() => {
-    if (canvasEntry && canvasEntry.owner !== current) setCanvasEntry(undefined)
-    if (openOwner === undefined || openOwner === current) return
-    setOpen(false)
-    setOpenOwner(undefined)
-  }, [current, openOwner, canvasEntry])
-
-  // Only the wide docked mode asks the conversation column to yield. Floating
-  // and compact modes are intentionally true overlays. The width is written as
-  // one shared variable so the panel and the concession cannot drift apart.
-  useLayoutEffect(() => {
-    const root = document.documentElement
-    const shouldYield = expanded && geometry.mode === 'docked' && !compact
-    if (shouldYield) {
-      root.setAttribute(PANEL_OPEN_ATTRIBUTE, '')
-      root.style.setProperty(PANEL_SHIFT_PROPERTY, `${geometry.width + PANEL_CONVERSATION_GAP + 18}px`)
-    } else {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
-    return () => {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
-  }, [compact, expanded, geometry.mode, geometry.width])
 
   useEffect(() => {
     if (current === undefined) return
@@ -1082,50 +836,11 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     return () => controller.stop()
   }, [current, currentTargets, onMonitorStatus])
 
-  useEffect(() => {
-    const onOpenPanel = (event: Event): void => {
-      const activeSession = currentRef.current
-      if (activeSession === undefined) return
-      const detail = (event as CustomEvent<AgentTeamsCardData>).detail
-      if (detail?.captainSessionId && detail.captainSessionId !== activeSession) return
-      setOpenOwner(activeSession)
-      setOpen(true)
-      if (detail?.teamId !== undefined) {
-        onRememberTeam?.(activeSession, detail)
-        // A card from a log that predates captainSessionId belongs to the
-        // session that activated it (the current one at injection time).
-        const owner = detail.captainSessionId || activeSession
-        const teamKey = `${owner}:${detail.teamId}`
-        setHistoric((previous) => {
-          const next = new Map(previous)
-          next.set(teamKey, { data: detail, owner })
-          return next
-        })
-      }
-    }
-    window.addEventListener(OPEN_PANEL_EVENT, onOpenPanel)
-    return () => {
-      window.removeEventListener(OPEN_PANEL_EVENT, onOpenPanel)
-    }
-  }, [onRememberTeam])
-
-  // Teams follow the current session: live snapshots and historic card
-  // summaries are visible only while their captain session is current.
   const visibleTeams = useMemo(
     // No current session (initial load): show nothing until one is picked,
-    // so cross-session teams never leak into the floater.
+    // so the shortcut never points to another session.
     () => (current === undefined ? [] : teams.filter((team) => team.captainSessionId === current)),
     [teams, current],
-  )
-  const visibleHistoric = useMemo(
-    () => (current === undefined ? [] : [...historic.values()].filter(({ data, owner }) =>
-      owner === current && !teams.some((live) =>
-        live.captainSessionId === current && live.teamId === data.teamId,
-      ) && !archivedTeams.some((archived) =>
-        archived.captainSessionId === current && archived.teamId === data.teamId,
-      ),
-    )),
-    [historic, current, teams, archivedTeams],
   )
   const visibleArchived = useMemo(
     () => (current === undefined ? [] : archivedTeams.filter((team) =>
@@ -1135,304 +850,19 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     )),
     [archivedTeams, current, teams],
   )
-  const visibleCount = visibleTeams.length + visibleArchived.length + visibleHistoric.length
-  useEffect(() => {
-    if (visibleCount > 0) { setWasActive(true); return }
-    if (!wasActive) return
-    const timer = setTimeout(() => {
-      setOpen(false)
-      setOpenOwner(undefined)
-      setWasActive(false)
-    }, AUTOCLOSE_GRACE_MS)
-    return () => { clearTimeout(timer) }
-  }, [visibleCount, wasActive, current])
-
-  const busy = useMemo(
-    () => visibleTeams.some((team) => team.members.some((member) => member.activity === 'working')),
-    [visibleTeams],
-  )
-  const hasTeams = visibleCount > 0
-
-  // Auto-height panels do not store their live content height. Capture the
-  // rendered box when a pointer gesture starts so movement and a first manual
-  // resize clamp against what the user actually sees.
-  const panelGeometryForGesture = useCallback((): PanelLayout => {
-    const measuredHeight = panelRef.current?.getBoundingClientRect().height
-    if (measuredHeight === undefined || measuredHeight <= 0) return geometry
-    return { ...geometry, height: measuredHeight }
-  }, [geometry])
-
-  const flushScheduledLayout = useCallback((): void => {
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current)
-      frameRef.current = null
-    }
-    const pending = pendingLayoutRef.current
-    pendingLayoutRef.current = null
-    if (pending !== null) commitLayout(pending)
-  }, [commitLayout])
-
-  const scheduleLayout = useCallback((next: PanelLayout): void => {
-    pendingLayoutRef.current = next
-    frameRef.current ??= requestAnimationFrame(() => {
-      frameRef.current = null
-      const pending = pendingLayoutRef.current
-      pendingLayoutRef.current = null
-      if (pending !== null) commitLayout(pending)
-    })
-  }, [commitLayout])
-
-  useEffect(() => () => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
-  }, [])
-
-  const beginMove = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    if (compact || event.button !== 0 || (event.target as Element).closest('button') !== null) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    gestureRef.current = {
-      kind: 'move',
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      start: panelGeometryForGesture(),
-      activated: false,
-    }
-  }, [compact, panelGeometryForGesture])
-
-  const beginResize = useCallback((edge: PanelResizeEdge, event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (compact || event.button !== 0 || (geometry.mode === 'docked' && edge !== 'left')) return
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    gestureRef.current = {
-      kind: 'resize',
-      edge,
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      start: panelGeometryForGesture(),
-      activated: true,
-    }
-    setInteraction('resizing')
-  }, [compact, geometry.mode, panelGeometryForGesture])
-
-  const updateGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId
-      || !event.currentTarget.hasPointerCapture(event.pointerId)) return
-    const dx = event.clientX - gesture.originX
-    const dy = event.clientY - gesture.originY
-    const activeBounds = boundsRef.current
-    if (gesture.kind === 'move') {
-      if (!gesture.activated && Math.hypot(dx, dy) < MOVE_THRESHOLD) return
-      if (!gesture.activated) {
-        gesture.activated = true
-        setInteraction('dragging')
-      }
-      scheduleLayout(movePanelLayout(
-        floatPanelLayout(gesture.start, activeBounds),
-        dx,
-        dy,
-        activeBounds,
-      ))
-      return
-    }
-    scheduleLayout(resizePanelLayout(
-      gesture.start,
-      gesture.edge ?? 'left',
-      dx,
-      dy,
-      activeBounds,
-    ))
-  }, [scheduleLayout])
-
-  const endGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId) return
-    updateGesture(event)
-    flushScheduledLayout()
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    gestureRef.current = null
-    setInteraction(null)
-  }, [flushScheduledLayout, updateGesture])
-
-  const cancelGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId) return
-    flushScheduledLayout()
-    gestureRef.current = null
-    setInteraction(null)
-  }, [flushScheduledLayout])
-
-  const toggleDock = useCallback((): void => {
-    const liveGeometry = panelGeometryForGesture()
-    commitLayout(liveGeometry.mode === 'docked'
-      ? floatPanelLayout(liveGeometry, boundsRef.current)
-      : dockPanelLayout(liveGeometry, boundsRef.current))
-  }, [commitLayout, panelGeometryForGesture])
-
-  const autoHeight = panelUsesAutoHeight(geometry, bounds)
-
-  const panelStyle: CSSProperties = {
-    width: geometry.width,
-    height: autoHeight ? 'auto' : geometry.height,
-    maxHeight: panelMaximumHeight(geometry, bounds),
-    transform: `translate3d(${geometry.x}px, ${geometry.y}px, 0)`,
-  }
-
-  if (!conversationVisible || (!hasTeams && !expanded && !canvasEntry)) return null
-
+  const team = visibleTeams[0] ?? visibleArchived[0]
+  if (!conversationVisible || !current) return null
   return (
     <>
-      {!expanded && (
-        <CollapsedBadge count={visibleCount} busy={busy} team={visibleTeams[0]??visibleArchived[0]} archived={!visibleTeams.length&&!!visibleArchived.length} t={t} onClick={() => {
-          if (current === undefined) return
-          const team = visibleTeams[0] ?? visibleArchived[0]
-          if (team) setCanvasEntry({ owner: current, teamId: team.teamId, archived: visibleArchived.includes(team) })
-          else { setOpenOwner(current); setOpen(true) }
-        }} />
-      )}
+      {team && <CollapsedBadge count={visibleTeams.length + visibleArchived.length}
+        team={team} archived={!visibleTeams.length} t={t}
+        onClick={() => setCanvasEntry({ owner: current, teamId: team.teamId, archived: !visibleTeams.length })} />}
       {canvasEntry && canvasEntry.owner === current && <WorkflowWorkbench
         key={canvasEntry.owner + ':' + canvasEntry.teamId} initiallyOpen sessionId={canvasEntry.owner}
         teamId={canvasEntry.teamId} archived={canvasEntry.archived} t={t}
         modelDirectory={modelDirectories.directoryFor(canvasEntry.owner)}
-        openExecution={(id, parent) => navigateToSession((parent ?? canvasEntry.owner) as SessionId, id as SessionId)}
-        onShowActivity={() => { setCanvasEntry(undefined); setOpenOwner(current); setOpen(true) }}
+        openExecution={(id, parent) => openMember((parent ?? canvasEntry.owner) as SessionId, id as SessionId)}
         onClose={() => setCanvasEntry(undefined)} />}
-      {expanded && (
-        <aside
-          ref={panelRef}
-          className={css.panel}
-          style={panelStyle}
-          data-agent-teams-activity
-          data-panel-mode={geometry.mode}
-          data-height-mode={autoHeight ? 'auto' : 'manual'}
-          data-compact={compact || undefined}
-          data-dragging={interaction === 'dragging' || undefined}
-          data-resizing={interaction === 'resizing' || undefined}
-          aria-label={t('activity.panelAria')}
-        >
-          <header
-            className={css.panelHead}
-            onPointerDown={beginMove}
-            onPointerMove={updateGesture}
-            onPointerUp={endGesture}
-            onPointerCancel={cancelGesture}
-            data-drag-handle={!compact || undefined}
-          >
-            <span className={css.panelTitle}>
-              {t('activity.title')}
-              <span className={css.panelDot} data-busy={busy} aria-hidden />
-            </span>
-            <span className={css.panelControls}>
-              {!compact && (
-                <button
-                  type="button"
-                  className={css.iconButton}
-                  data-control="dock"
-                  data-mode={geometry.mode}
-                  onClick={toggleDock}
-                  aria-label={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
-                  title={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
-                >
-                  <IconPanelLeftOutline16 />
-                </button>
-              )}
-              <button
-                type="button"
-                className={css.iconButton}
-                data-control="collapse"
-                onClick={() => {
-                  setOpen(false)
-                  setOpenOwner(undefined)
-                }}
-                aria-label={t('activity.collapse')}
-                title={t('activity.collapse')}
-              >
-                <IconChevronDownOutline14 />
-              </button>
-            </span>
-          </header>
-          <div className={css.teams}>
-            <div className={css.workflowLaunchers}>
-              {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current} modelDirectory={modelDirectories.directoryFor(current)} t={t}
-                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
-                openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
-              {[...visibleTeams,...visibleArchived].map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} archived={visibleArchived.includes(team)} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
-                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
-                openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
-              {visibleHistoric.map(({ data, owner }) => <WorkflowHistory key={data.teamId} name={data.teamName}>
-                <TeamSection team={historicCardTeam(data, owner)} workspace historic onNavigate={navigateToSession} t={t} />
-              </WorkflowHistory>)}
-            </div>
-            {visibleCount === 0
-              ? <span className={css.emptyHint}>{t('activity.empty')}</span>
-              : (
-                <>
-                  {visibleTeams.map((team) => (
-                    <TeamSection
-                      key={team.teamId}
-                      team={team}
-                      modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)}
-                      onContinuePlanning={returnToComposer}
-                      onDiscarded={returnToComposer}
-                      onNavigate={navigateToSession}
-                      t={t}
-                    />
-                  ))}
-                  {visibleArchived.map((team) => (
-                    <div key={`${team.captainSessionId}:${team.teamId}`} data-team-id={team.teamId} data-historic className={css.archivedWrap}>
-                      <span className={css.archiveLabel}>{t(team.phase === 'staged' ? 'archive.discardedLabel' : 'archive.label')}</span>
-                      <TeamSection team={team} onNavigate={navigateToSession} t={t} historic />
-                    </div>
-                  ))}
-                  {visibleHistoric.map(({ data: team, owner }) => {
-                    const teamKey = `${owner}:${team.teamId}`
-                    return (
-                      <TeamSection key={teamKey} team={historicCardTeam(team, owner)} onNavigate={navigateToSession} t={t} historic />
-                    )
-                  })}
-                </>
-              )}
-          </div>
-          {!compact && (
-            <div
-              className={css.resizeHandle}
-              data-resize-edge="left"
-              onPointerDown={(event) => { beginResize('left', event) }}
-              onPointerMove={updateGesture}
-              onPointerUp={endGesture}
-              onPointerCancel={cancelGesture}
-              aria-hidden
-            />
-          )}
-          {!compact && geometry.mode === 'floating' && (
-            <>
-              <div
-                className={css.resizeHandle}
-                data-resize-edge="bottom"
-                onPointerDown={(event) => { beginResize('bottom', event) }}
-                onPointerMove={updateGesture}
-                onPointerUp={endGesture}
-                onPointerCancel={cancelGesture}
-                aria-hidden
-              />
-              <div
-                className={css.resizeHandle}
-                data-resize-edge="corner"
-                onPointerDown={(event) => { beginResize('corner', event) }}
-                onPointerMove={updateGesture}
-                onPointerUp={endGesture}
-                onPointerCancel={cancelGesture}
-                aria-hidden
-              />
-            </>
-          )}
-        </aside>
-      )}
     </>
   )
 }

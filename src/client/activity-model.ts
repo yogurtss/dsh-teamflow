@@ -36,10 +36,10 @@ export interface CompactDagLayout<T extends RelationshipTask> {
 }
 
 /** Reference-panel geometry: narrow nodes with enough room for curved edges. */
-export const COMPACT_DAG_NODE_WIDTH = 112
-export const COMPACT_DAG_NODE_HEIGHT = 56
-export const COMPACT_DAG_COLUMN_GAP = 26
-export const COMPACT_DAG_ROW_GAP = 8
+export const COMPACT_DAG_NODE_WIDTH = 164
+export const COMPACT_DAG_NODE_HEIGHT = 94
+const COMPACT_DAG_COLUMN_GAP = 36
+const COMPACT_DAG_ROW_GAP = 16
 
 /** Compact `provider/model` route, or just the model when the provider is absent. */
 export function memberRouteLabel(member: { readonly provider?: string; readonly model?: string } | undefined): string {
@@ -69,16 +69,6 @@ export function compactModelLabel(route: string): string {
   if (trimmed === '') return ''
   const slash = trimmed.lastIndexOf('/')
   return slash === -1 ? trimmed : trimmed.slice(slash + 1)
-}
-
-/** A live team the current captain still owns and has not halted. */
-export function liveCaptainTeam<T extends { readonly captainSessionId: string; readonly halted?: boolean }>(
-  teams: readonly T[],
-  sessionId: string | undefined,
-): T | undefined {
-  const owner = sessionId?.trim() ?? ''
-  if (owner === '') return undefined
-  return teams.find((team) => team.captainSessionId === owner && team.halted !== true)
 }
 
 /** Minimal member shape needed to order the delegation list (issue #192). */
@@ -174,75 +164,11 @@ export function teamIsActive(team: {
   return team.members.length > 0 && team.tasks.length === 0
 }
 
-/** Compact banner copy: running members, otherwise the current planning state. */
-export function teamProgressSummary(
-  team: {
-    readonly members: readonly { readonly name: string; readonly status?: string; readonly activity?: string; readonly currentTask?: string }[]
-    readonly tasks: readonly { readonly id: string; readonly subject: string; readonly status: string }[]
-  },
-  separator: string,
-): { readonly working: number; readonly detail: string } {
-  const workingMembers = team.members.filter((member) => member.activity === 'working' || member.status === 'working')
-  const runningTasks = team.tasks.filter((task) => task.status === 'claimed' || task.status === 'in_progress')
-  const labels = runningTasks.map((task) => task.subject.trim() || task.id).filter((label) => label !== '')
-  if (workingMembers.length > 0 || labels.length > 0) {
-    return {
-      working: Math.max(workingMembers.length, labels.length),
-      detail: labels.slice(0, 2).join(separator),
-    }
-  }
-  if (team.tasks.length === 0) return { working: 0, detail: '' }
-  return { working: 0, detail: '' }
-}
-
 /** Use a fill-width grid when the task graph has no real dependency edges. */
 export function usesParallelTaskGrid<T extends RelationshipTask>(tasks: readonly T[]): boolean {
   if (tasks.length === 0) return false
   const taskIds = new Set(tasks.map((task) => task.id))
   return tasks.every((task) => task.dependencies.every((dependency) => !taskIds.has(dependency)))
-}
-
-/**
- * Whether an expanded activity panel still belongs to the current session.
- *
- * The panel is mounted in the root-scoped shell overlay, so React does not
- * remount it when the conversation route changes. Ownership keeps an expanded
- * panel from leaking onto the new-session screen (or another conversation)
- * while its local open state is being reset.
- */
-export function activityPanelExpandedForSession(
-  open: boolean,
-  owner: string | undefined,
-  current: string | undefined,
-): boolean {
-  return open && owner !== undefined && owner === current
-}
-
-/** Inputs for deciding whether genuinely new live work may expand the panel. */
-export interface ActivityPanelAutoExpandInput {
-  readonly alreadyAutoOpened: boolean
-  readonly pageSettled: boolean
-  readonly restoreComplete: boolean
-  readonly previousLiveTeamIds: ReadonlySet<string>
-  readonly currentLiveTeamIds: readonly string[]
-}
-
-/**
- * Auto-expand only for live teams that appear after the current session's
- * initial restore pass. Replayed cards, archived teams, and live teams restored
- * while reopening a conversation must remain behind the collapsed badge.
- */
-export function activityPanelShouldAutoExpand({
-  alreadyAutoOpened,
-  pageSettled,
-  restoreComplete,
-  previousLiveTeamIds,
-  currentLiveTeamIds,
-}: ActivityPanelAutoExpandInput): boolean {
-  return !alreadyAutoOpened
-    && pageSettled
-    && restoreComplete
-    && currentLiveTeamIds.some((teamId) => !previousLiveTeamIds.has(teamId))
 }
 
 /**
@@ -284,13 +210,11 @@ export function taskStages<T extends RelationshipTask>(tasks: readonly T[]): rea
  * each stage. Edges use cubic curves so fan-in remains readable without
  * turning every task into a large card.
  */
-export function compactDagLayout<T extends RelationshipTask>(tasks: readonly T[], dimensions?: {
-  readonly nodeWidth: number; readonly nodeHeight: number; readonly columnGap: number; readonly rowGap: number
-}): CompactDagLayout<T> {
-  const nodeWidth = dimensions?.nodeWidth ?? COMPACT_DAG_NODE_WIDTH
-  const nodeHeight = dimensions?.nodeHeight ?? COMPACT_DAG_NODE_HEIGHT
-  const columnGap = dimensions?.columnGap ?? COMPACT_DAG_COLUMN_GAP
-  const rowGap = dimensions?.rowGap ?? COMPACT_DAG_ROW_GAP
+export function compactDagLayout<T extends RelationshipTask>(tasks: readonly T[]): CompactDagLayout<T> {
+  const nodeWidth = COMPACT_DAG_NODE_WIDTH
+  const nodeHeight = COMPACT_DAG_NODE_HEIGHT
+  const columnGap = COMPACT_DAG_COLUMN_GAP
+  const rowGap = COMPACT_DAG_ROW_GAP
   const stages = taskStages(tasks)
   const positions = new Map<string, { x: number; y: number }>()
   const nodes: CompactDagNode<T>[] = []

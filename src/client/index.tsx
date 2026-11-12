@@ -1,4 +1,4 @@
-/** Browser plugin for the TeamFlow activity floater and conversation card. */
+/** Browser plugin for the TeamFlow canvas shortcut and conversation card. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -57,11 +57,6 @@ function HiddenAgentTeamsCommand(): null {
   return null
 }
 
-/**
- * Register the activity monitor in the shell's additive overlay and the
- * in-conversation team card. The card's activity button re-opens a folded
- * monitor via a window event — the recovery path for an old session.
- */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => installDiscussionSessionPresentation(ctx.sessions.list), 'teamflow: workflow-only discussions')
   // Refresh existing clients as well as initial/cold catalogs; no session opens.

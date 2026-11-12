@@ -1,19 +1,6 @@
-/* AgentTeams top-right command panel. Relationship lines are semantic: captain
+/* Workflow shortcut and team workspace. Relationship lines are semantic: captain
    delegation runs vertically through member rows; task dependencies run left
    to right by precomputed depth. All surfaces follow DSH design tokens. */
-
-:global(html) {
-  --agent-teams-panel-shift: 420px;
-}
-.workflowLaunchers { position: sticky; top: 0; z-index: 3; background: var(--dsw-alias-bg-layer-1, light-dark(#fff, #202226)); }
-
-/* The panel lives in shell.overlay. Only its wide docked mode marks the page,
-   allowing the center conversation to concede the exact measured width while
-   the shell's sidebar and details tracks keep their own geometry. */
-:global(html[data-agent-teams-panel-open]) :global([data-phase='active']) {
-  box-sizing: border-box;
-  padding-right: var(--agent-teams-panel-shift);
-}
 
 /* Consume the host's semantic tokens directly. ui-layout applies the resolved
    theme to body, so cards, overlays, and portaled dialogs inherit live colors
@@ -53,7 +40,6 @@
 }
 
 .badge:focus-visible,
-.iconButton:focus-visible,
 .memberRow:focus-visible,
 .membersToggle:focus-visible,
 .sectionToggleTitle:focus-visible,
@@ -62,240 +48,11 @@
   outline-offset: 2px;
 }
 
-.badgeDot,
-.panelDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dsw-alias-label-tertiary);
-}
-
-.badgeDot[data-busy='true'],
-.panelDot[data-busy='true'] {
-  background: var(--dsw-alias-state-business-primary);
-  animation: agentTeamsPulse 1.25s ease-in-out infinite;
-}
-
-.badgeCount,
 .memberCount,
 .teamStats,
 .stageLabel,
 .taskId {
   font-variant-numeric: tabular-nums;
-}
-
-/* panel shell */
-.panel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l3) 58%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 95%, transparent);
-  backdrop-filter: blur(20px) saturate(1.08);
-  box-shadow:
-    0 12px 32px color-mix(in srgb, var(--dsw-alias-bg-mask-3) 25%, transparent),
-    0 32px 72px color-mix(in srgb, var(--dsw-alias-bg-mask-3) 33%, transparent);
-  animation: agentTeamsPanelIn 160ms ease-out;
-  will-change: transform;
-}
-
-.panel[data-dragging],
-.panel[data-resizing] {
-  user-select: none;
-  box-shadow:
-    0 16px 38px color-mix(in srgb, var(--dsw-alias-bg-mask-3) 29%, transparent),
-    0 36px 78px color-mix(in srgb, var(--dsw-alias-bg-mask-3) 38%, transparent);
-}
-
-@keyframes agentTeamsPanelIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes agentTeamsPulse {
-  0%, 100% { opacity: 0.42; }
-  50% { opacity: 1; }
-}
-
-.panelHead {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: 0 14px 0 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  cursor: grab;
-  touch-action: none;
-}
-
-.panelHead:active,
-.panel[data-dragging] .panelHead {
-  cursor: grabbing;
-}
-
-.panel[data-compact] .panelHead {
-  cursor: default;
-  touch-action: auto;
-}
-
-.panelTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-}
-
-.panelControls {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
-
-.iconButton {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
-}
-
-.iconButton:hover {
-  background: var(--dsw-alias-button-ghost-active-fill);
-  color: var(--dsw-alias-label-primary);
-}
-
-.iconButton:active {
-  transform: scale(0.94);
-}
-
-.iconButton[data-control='dock'][data-mode='docked'] svg {
-  transform: scaleX(-1);
-}
-
-.resizeHandle {
-  position: absolute;
-  z-index: 5;
-  touch-action: none;
-  pointer-events: auto;
-}
-
-.resizeHandle[data-resize-edge='left'] {
-  top: 44px;
-  bottom: 14px;
-  left: 0;
-  width: 14px;
-  cursor: ew-resize;
-}
-
-.resizeHandle[data-resize-edge='left']::after {
-  position: absolute;
-  top: 50%;
-  left: 4px;
-  width: 3px;
-  height: 48px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 42%, transparent);
-  content: '';
-  opacity: 0.45;
-  transform: translateY(-50%);
-  transition: background-color 120ms ease, opacity 120ms ease;
-}
-
-.resizeHandle[data-resize-edge='bottom'] {
-  right: 20px;
-  bottom: 0;
-  left: 20px;
-  height: 14px;
-  cursor: ns-resize;
-}
-
-.resizeHandle[data-resize-edge='bottom']::after {
-  position: absolute;
-  bottom: 4px;
-  left: 50%;
-  width: 48px;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 42%, transparent);
-  content: '';
-  opacity: 0.45;
-  transform: translateX(-50%);
-  transition: background-color 120ms ease, opacity 120ms ease;
-}
-
-.resizeHandle[data-resize-edge='corner'] {
-  right: 0;
-  bottom: 0;
-  width: 28px;
-  height: 28px;
-  cursor: nwse-resize;
-}
-
-.resizeHandle[data-resize-edge='corner']::after {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 10px;
-  height: 10px;
-  border-right: 2px solid var(--dsw-alias-label-tertiary);
-  border-bottom: 2px solid var(--dsw-alias-label-tertiary);
-  content: '';
-  opacity: 0.58;
-  transition: border-color 120ms ease, opacity 120ms ease;
-}
-
-.resizeHandle:hover::after,
-.panel[data-resizing] .resizeHandle::after {
-  background-color: var(--dsw-alias-state-business-primary);
-  border-color: var(--dsw-alias-state-business-primary);
-  opacity: 0.95;
-}
-
-.teams {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-color: color-mix(in srgb, var(--dsw-alias-label-tertiary) 28%, transparent) transparent;
-  scrollbar-width: thin;
-}
-
-.teams::-webkit-scrollbar {
-  width: 6px;
-}
-
-.teams::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.teams::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 28%, transparent);
-  background-clip: padding-box;
-}
-
-.teams:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 44%, transparent);
-  background-clip: padding-box;
 }
 
 /* team */
@@ -877,20 +634,6 @@
 @keyframes agentTeamsUnreadPulse {
   0%, 100% { opacity: 0.78; transform: scale(0.92); }
   50% { opacity: 1; transform: scale(1.16); }
-}
-
-.memberInitial {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-label-primary-inverted);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
 }
 
 .stateArt {
@@ -2062,10 +1805,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel,
   .badge,
-  .badgeDot,
-  .panelDot,
   .workGlyph rect,
   .stateArt,
   .memberAvatar[data-unread='true']::after {
@@ -2085,12 +1825,6 @@
   .planNewTask input {
     animation: none;
     transition: none;
-  }
-}
-
-@media (max-width: 960px) {
-  :global(html[data-agent-teams-panel-open]) :global([data-phase='active']) {
-    padding-right: 0;
   }
 }
 
@@ -2287,8 +2021,7 @@
 .inboxCard > header > span { font-size: 10px; color: var(--dsw-alias-label-secondary); }
 .inboxMessages { list-style: none; margin: 14px 0 0; padding: 0; max-height: 260px; overflow: auto; }
 .inboxMessages li { display: flex; align-items: start; gap: 9px; margin: 0 0 12px; }
-.inboxMessages img, .inboxInitial { width: 30px; height: 30px; object-fit: contain; flex: none; }
-.inboxInitial { display: grid; place-items: center; border-radius: 9px; background: var(--dsw-alias-bg-module-platform); font-size: 12px; }
+.inboxMessages img { width: 30px; height: 30px; object-fit: contain; flex: none; }
 .inboxMessages li > div { min-width: 0; flex: 1; }
 .inboxMessages strong { font-size: 11px; font-weight: 550; overflow-wrap: anywhere; }
 .inboxMessages p { margin: 5px 0 0; padding: 9px 11px; border-radius: 0 10px 10px; background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-module-platform)); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {createWorkspaceState,createTeamDiscovery} from '../lib/client/workspace-state.js'
+import {createWorkspaceState} from '../lib/client/workspace-state.js'
 import {startActivityPolling,publishWorkflowActivity,getActivitySnapshotsSnapshot,updateActivitySnapshots,subscribeActivitySnapshots} from '../lib/client/activity-monitor.js'
 
 test('unchanged network snapshots do not notify or rerender all mounted cards',()=>{
@@ -20,26 +20,13 @@ test('live and archive polls request only the current owner scope',async()=>{
  assert.equal(urls.length,2);assert.ok(urls.every(url=>url.searchParams.get('sessionId')==='captain & one'));assert.equal(urls[1].searchParams.get('archived'),'1')
 })
 
-test('restored, closed, updated and newly created teams have distinct discovery semantics',()=>{
- const discover=createTeamDiscovery()
- const a={teamId:'a'},b={teamId:'b'}
- assert.equal(discover([a]),undefined)
- assert.equal(discover([{...a,phase:'running'}]),undefined)
- assert.equal(discover([a,b]),'b')
- assert.equal(discover([a,b]),undefined)
- assert.equal(discover([]),undefined)
-})
-test('historical cards and selected teams remain bound to their owner',()=>{
+test('selected teams and connection status stay scoped to their sessions',()=>{
  const state=createWorkspaceState();let count=0;const off=state.subscribe(()=>count++)
- const old={teamId:'old',captainSessionId:'',teamName:'Old',members:[]}
- state.remember('a',old)
- state.select('b','new')
- state.remember('a',{...old,teamId:'foreign',captainSessionId:'b'})
- assert.equal(state.getSnapshot().history.size,1)
- assert.equal(state.getSnapshot().history.get('a:old').captainSessionId,'a')
+ state.select('a','old');state.select('b','new');state.select('b','new')
  assert.equal(state.getSnapshot().selected.get('a'),'old')
  assert.equal(state.getSnapshot().selected.get('b'),'new')
  state.status('a','ready');state.status('a','ready')
+ assert.equal(state.getSnapshot().statuses.get('b'),undefined)
  assert.equal(count,3)
  off();state.status('a','error');assert.equal(count,3)
 })
@@ -61,10 +48,10 @@ test('disposal prevents a late failed request from updating a different session'
 test('workspace DAG keeps real dependency endpoints aligned with restored compact nodes',async()=>{
  const {compactDagLayout}=await import('../lib/client/activity-model.js')
  const tasks=[{id:'implement',depth:0,dependencies:[]},{id:'review',depth:1,dependencies:['implement']}]
- const layout=compactDagLayout(tasks,{nodeWidth:164,nodeHeight:76,columnGap:36,rowGap:16})
+ const layout=compactDagLayout(tasks)
  assert.equal(layout.width,364)
  assert.equal(layout.nodes[1].x,200)
- assert.equal(layout.edges[0].path,'M164 38C178 38,186 38,200 38')
+ assert.equal(layout.edges[0].path,'M164 47C178 47,186 47,200 47')
 })
 
 test('restoration and human approval publish live state without changing other team owners',()=>{

@@ -1,5 +1,4 @@
 /** Shared, deterministic role portraits for every AgentTeams surface. */
-export const ART_BASE = '/plugins/dsh-agent-teams/assets/'
 
 // Small vector glyphs stay legible at roster size and need no image downloads.
 function portrait(path: string, color = '#4c6b91', background = '#edf2f8'): string {
