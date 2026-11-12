@@ -148,7 +148,7 @@ export async function assembleTeamSnapshot(
   state: TeamState,
   options: TeamSnapshotOptions = {},
 ): Promise<TeamActivitySnapshot> {
-  const superseded = replacedTaskIds(state.tasks)
+  const superseded = replacedTaskIds(state.tasks, state.workflow)
   const tasks = state.tasks
   const depths = taskDepthsById(tasks)
   const roster = options.includeRemoved === true

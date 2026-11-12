@@ -192,10 +192,9 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       updateDescription(task,op)
       if (op.assignee !== undefined) task.assignee = op.assignee || undefined
       if (op.dependencies !== undefined) {
-        if (op.dependencies.some(id => !task.dependencies.includes(id))) {
-          const replaced = task.dependencies.filter(id => !op.dependencies!.includes(id))
-          if (replaced.length) task.replacesTaskIds = [...new Set([...task.replacesTaskIds ?? [], ...replaced])]
-        }
+        // Canvas disconnect and reconnect are separate edits, in either order.
+        const removed = task.dependencies.filter(id => !op.dependencies!.includes(id))
+        if (removed.length) task.replacesTaskIds = [...new Set([...task.replacesTaskIds ?? [], ...removed])]
         task.dependencies = op.dependencies
       }
       if (op.archive !== undefined) { if(task.kind !== 'archive') throw new Error('仅归档节点可以配置归档'); task.archive=parseTaskArchive(op.archive) }
