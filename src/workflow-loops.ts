@@ -7,7 +7,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { TeamState, TeamTask } from './types.ts'
 import { resetTaskForRerun } from './task-rerun.ts'
 
-import type { LoopConfig, WorkflowLoop, LoopHistoryRecord } from './workflow-loop-types.ts'
+import { canChangeGateReview, type LoopConfig, type WorkflowLoop, type LoopHistoryRecord } from './workflow-loop-types.ts'
 export type { LoopConfig, WorkflowLoop, LoopHistoryRecord } from './workflow-loop-types.ts'
 const pending = new WeakMap<TeamState, LoopHistoryRecord[]>()
 export const loopRetryInstructions = '按原任务要求重试本轮，保留先前的执行记录。'
@@ -66,6 +66,27 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
   for (const id of [...body, gate.id]) { const task = taskOf(team, id); task.workflowPaused = true; task.workflowAwaitingStart = true }
   return loop
 }
+function assignGateReviewer(gate: TeamTask, loop: WorkflowLoop): void {
+  gate.assignee = loop.mode === 'ai' ? loop.reviewer : undefined
+  gate.checkpoint!.mode = loop.mode
+  if (loop.contracts) loop.contracts[gate.id] = loopTaskContract(gate)
+}
+
+export function updateGateReview(team: TeamState, gateId: string, mode: LoopConfig['mode'], reviewer?: string): void {
+  const draft = structuredClone(team)
+  const loop = loopsOf(draft).find(item => item.gateId === gateId)
+  const gate = taskOf(draft, gateId)
+  if (draft.halted || !loop || !canChangeGateReview(loop, gate)) throw new Error('当前门控不能修改审核方式')
+  if (mode === 'ai' && !draft.members.some(member => member.name === reviewer && member.status !== 'removed')) throw new Error('请选择有效的 AI 审核成员')
+  validateLoopGraph(draft)
+  loop.mode = mode
+  loop.reviewer = mode === 'ai' ? reviewer : undefined
+  assignGateReviewer(gate, loop)
+  validateLoopGraph(draft)
+  team.tasks = draft.tasks
+  team.workflow = draft.workflow
+}
+
 /** Validate edits to both branches before applying either one. */
 export function saveGateSettings(team: TeamState, config: LoopConfig, passTargets: unknown, loopId?: unknown): void {
   const draft = structuredClone(team)
@@ -79,9 +100,7 @@ export function saveGateSettings(team: TeamState, config: LoopConfig, passTarget
     validateLoopGraph(draft)
     const gate = taskOf(draft, config.gateId)
     Object.assign(previous, config, { rejectToEntry: config.rejectToEntry, reviewer: config.mode === 'ai' ? config.reviewer : undefined })
-    gate.assignee = previous.reviewer
-    gate.checkpoint!.mode = config.mode
-    if (previous.contracts) previous.contracts[gate.id] = loopTaskContract(gate)
+    assignGateReviewer(gate, previous)
   } else {
     if (previous) draft.workflow!.loops = loopsOf(draft).filter(loop => loop !== previous)
     const updated = configureLoop(draft, config)

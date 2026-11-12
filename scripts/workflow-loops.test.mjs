@@ -655,6 +655,44 @@ test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
  }finally{Date.now=clock}
 })
 
+for (const target of ['human','ai']) test('running loop switches to '+target+' review before reaching the gate', async t => {
+  const {team,loop} = fixture(target === 'ai' ? 'human' : 'ai')
+  startLoop(team, loop.id)
+  beginTaskAttempt(team.tasks[0], 'worker')
+  team.tasks[0].status = 'in_progress'
+  const f = await routeFixture(t, team)
+  const before = await f.read(), fields = {taskId:'gate', base:workflowFingerprint(before)}
+  assert.equal((await f.call('checkpoint_mode', {...fields, mode:'ai', reviewer:'worker'})).code, 409)
+  const result = await f.call('checkpoint_mode', {...fields, mode:target, reviewer:'reviewer'})
+  assert.equal(result.code, 200, result.error)
+  const saved = await f.read(), current = saved.workflow.loops[0], gate = saved.tasks.find(task => task.id === 'gate')
+  assert.equal(current.mode, target)
+  assert.equal(gate.checkpoint.mode, target)
+  assert.equal(gate.assignee, target === 'ai' ? 'reviewer' : undefined)
+  assert.deepEqual(saved.tasks[0], before.tasks[0])
+  for (const key of ['status','round','runId','historyHead','externalInputs']) assert.deepEqual(current[key], before.workflow.loops[0][key])
+  finish(saved)
+  await writeTeam(f.stateRoot, saved)
+  const review = await f.read()
+  assert.equal(review.workflow.loops[0].status, 'reviewing')
+  assert.equal(loopCanExecute(review, review.tasks.find(task => task.id === 'gate')), target === 'ai')
+  assert.equal((await f.call('checkpoint_mode', {...fields, base:workflowFingerprint(review), mode:target === 'human' ? 'ai' : 'human', reviewer:'reviewer'})).code, 409)
+})
+
+test('changing a queued gate reviewer preserves the pending start', async t => {
+  const {team,loop} = fixture()
+  team.tasks.unshift(task('input')); team.tasks.find(task => task.id === 'a').dependencies = ['input']
+  startLoop(team, loop.id)
+  const f = await routeFixture(t, team)
+  const result = await f.call('checkpoint_mode',{taskId:'gate', mode:'ai', reviewer:'reviewer', base:workflowFingerprint(await f.read())})
+  assert.equal(result.code, 200, result.error)
+  const saved = await f.read()
+  assert.equal(saved.workflow.loops[0].queued, true)
+  finish(saved, ['input'])
+  assert.equal(saved.workflow.loops[0].status, 'running')
+  assert.equal(saved.workflow.loops[0].reviewer, 'reviewer')
+})
+
 test('IF settings update both routes atomically and retain the run across reviewer changes', () => {
   const {team, loop} = fixture()
   const config = {gateId:'gate', entryId:'b', mode:'ai', reviewer:'reviewer', maxRounds:4, timeoutMinutes:20, rejectToEntry:true}

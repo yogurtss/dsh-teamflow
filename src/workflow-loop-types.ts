@@ -32,6 +32,10 @@ export interface WorkflowLoop extends LoopConfig {
   contracts?: Record<string, string>
   executionRounds?: Record<string, number>
 }
+export function canChangeGateReview(loop: WorkflowLoop, gate: TeamTask): boolean {
+  return ['ready', 'running', 'paused'].includes(loop.status) && gate.status === 'pending'
+    && !gate.reassigning && !gate.checkpoint?.decision
+}
 // Older saved runs identify a user pause through these persisted control reasons.
 export function canStartLoopWithFlow(loop: Pick<WorkflowLoop, 'status' | 'reason' | 'queued' | 'lastDecision' | 'failedExecutionTaskId'>): boolean {
   if (loop.status === 'ready') return !loop.queued

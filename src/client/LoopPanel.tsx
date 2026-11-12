@@ -58,6 +58,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const statuses = { ready: tr('等待启动', 'Ready'), running: tr('执行中', 'Running'), reviewing: tr('审核中', 'Reviewing'), paused: tr('已暂停', 'Paused'), passed: tr('已通过', 'Passed'), cancelled: tr('已结束', 'Cancelled') }
   return <section className={css.panel} data-loop-panel aria-label={tr('门控节点', 'Gate node')}>
     <h3>{tr('门控节点', 'Gate node')}</h3>
+    <label>{tr('审核方式', 'Review mode')}{modeSelect}</label>
     {loop?.gateId === task.id && <nav className={css.steps} aria-label={tr('循环任务', 'Loop tasks')}>
       <strong>{tr('循环任务', 'Loop tasks')}</strong>
       {loop.bodyIds.map(id => <button key={id} type="button" onClick={() => onSelectTask(id)}>{team.tasks.find(item => item.id === id)?.subject ?? id}</button>)}
@@ -70,8 +71,7 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
       </fieldset>
       <label>REJECT · {tr('返回连线目标（必选）', 'Return target (required)')}<select disabled={!!loop?.historyCount} aria-label={tr('返回连线目标（必选）', 'Return target (required)')} value={entry} onChange={e => setEntry(e.target.value)}><option value="">{tr('选择上游任务', 'Select an upstream task')}</option>{team.tasks.filter(t => !t.checkpoint && ancestors.has(t.id)).map(t => <option key={t.id} value={t.id}>{t.subject}</option>)}</select></label>
       <label className={css.check}><input type="checkbox" checked={rejectToEntry} onChange={e => setRejectToEntry(e.target.checked)} />{tr('退回时从所选入口重跑；取消勾选可在审核时指定返工任务', 'Restart at the selected entry on reject. Uncheck to choose tasks during review.')}</label>
-      <label>{tr('审核方式', 'Review mode')}{modeSelect}</label>
-      {mode === 'ai' && <label>{tr('独立审核成员', 'Independent reviewer')}<select aria-label={tr('独立审核成员', 'Independent reviewer')} value={reviewer} onChange={e => setReviewer(e.target.value)}><option value="">{tr('选择审核成员', 'Choose reviewer')}</option>{team.members.filter(m => m.status !== 'removed').map(m => {
+      {!loop && mode === 'ai' && <label>{tr('独立审核成员', 'Independent reviewer')}<select aria-label={tr('独立审核成员', 'Independent reviewer')} value={reviewer} onChange={e => setReviewer(e.target.value)}><option value="">{tr('选择审核成员', 'Choose reviewer')}</option>{team.members.filter(m => m.status !== 'removed').map(m => {
         const owned = reviewerConflicts(team, preview.bodyIds, m.name).map(t => t.subject)
         return <option key={m.name} value={m.name} disabled={!!owned.length}>{m.name}{owned.length ? ' · ' + tr('负责', 'Owns') + ' ' + owned.join(', ') : ''}</option>
       })}</select></label>}

@@ -1,4 +1,4 @@
-import { canStartLoopWithFlow } from '../workflow-loop-types.ts'
+import { canChangeGateReview, canStartLoopWithFlow } from '../workflow-loop-types.ts'
 import { upstreamIds } from '../workflow-loop-config.ts'
 import { draftTaskId } from './workflow-draft.ts'
 import { WorkbenchGuide } from './WorkbenchGuide.tsx'
@@ -640,12 +640,12 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     const result = await perform('layout', { positions: defaultPositions })
     if (result) { setPositions({}); setFeedback(l("已按任务依赖整理布局。")) }
   }
-  function reviewModeSelect(task:TeamTask) {
-    if (!task.checkpoint || !team) return null
+  function reviewModeSelect(task:TeamTask | undefined) {
+    if (!task?.checkpoint || !team) return null
     const loop = team.workflow?.loops?.find(item => item.gateId === task.id)
     const mode = loop?.mode ?? task.checkpoint.mode ?? 'human'
     const members = loop ? team.members.filter(m => m.status !== 'removed' && !team.tasks.some(t => loop.bodyIds.includes(t.id) && t.assignee === m.name)) : []
-    const disabled = working || archiveView || team.halted || task.status !== 'pending' || !!task.checkpoint.decision || !!loop && (loop.queued || !['ready','paused'].includes(loop.status))
+    const disabled = working || archiveView || team.halted || task.status !== 'pending' || !!task.checkpoint.decision || !!loop && !canChangeGateReview(loop, task)
     return <select aria-label={l.language === 'en' ? 'Review mode' : '审核方式'} value={mode === 'ai' && loop ? 'ai:'+loop.reviewer : mode} disabled={disabled}
       onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onChange={event=>{
         const value=event.target.value
@@ -957,7 +957,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
             {currentDirty && <small className={css.hint}>{l("讨论使用已保存的资料；当前草稿会保留。")}</small>}
           </div>}
           {activeTask?.checkpoint && !gateNode(activeTask) && !selectedEdge && <label>{l.language === 'en' ? 'Review mode' : '审核方式'} {reviewModeSelect(activeTask)}</label>}
-          {activeTask && !selectedEdge && <LoopPanel onSelectTask={locateTask} key={team.id + ':' + activeTask.id} modeSelect={reviewModeSelect(activeTask)} returnDraft={returnDraft?.gate===activeTask.id ? returnDraft : undefined} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
+          {activeTask && !selectedEdge && <LoopPanel onSelectTask={locateTask} key={team.id + ':' + activeTask.id} modeSelect={reviewModeSelect(activeLoop ? team.tasks.find(task => task.id === activeLoop.gateId) : activeTask)} returnDraft={returnDraft?.gate===activeTask.id ? returnDraft : undefined} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
           {selectedEdge && <aside className={css.editor} aria-label={l("交接详情")}><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>{l("上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。")}</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>{l("删除连线")}</button></aside>}
           {activeTask && !editor && !selectedEdge && <aside className={css.editor} aria-label={activeTask.checkpoint ? gateNode(activeTask) ? loopLabel : l('验收节点') : l("任务属性")}><header className={css.taskHeading}>
             <small>{activeTask.checkpoint ? gateNode(activeTask) ? loopLabel : l('验收节点') : l("任务属性")} · {activeTask.id}</small>

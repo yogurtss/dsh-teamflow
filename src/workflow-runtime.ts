@@ -5,7 +5,7 @@ import { resumeTeamState } from './quality-gates.ts'
 import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import { readTaskArchive, cancelTaskArchive, archiveRunning } from './task-archive.ts'
 import { branchCheckpoint } from './workflow.ts'
-import { saveGateSettings, configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
+import { updateGateReview, saveGateSettings, configureLoop, decideLoop, loopForTask, loopInputFingerprint, loopsOf, parseLoopConfig, pauseLoop, reconcileLoops, startLoop } from './workflow-loops.ts'
 import { previousReview, readLoopHistory } from './workflow-loop-history.ts'
 import { cp } from 'node:fs/promises'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
@@ -442,7 +442,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const mode = body['mode']
             if (!task?.checkpoint || task.status !== 'pending' || task.checkpoint.decision || team.halted || mode !== 'human' && mode !== 'ai') throw new Error('当前节点不能修改审核方式')
             const loop = loopsOf(team).find(item => item.gateId === task.id)
-            if (loop) saveGateSettings(team, {...loop, mode, reviewer:mode === 'ai' ? string(body['reviewer'], 'reviewer') : undefined}, team.tasks.filter(t => t.dependencies.includes(task.id)).map(t => t.id), loop.id)
+            if (loop) updateGateReview(team, task.id, mode, mode === 'ai' ? string(body['reviewer'], 'reviewer') : undefined)
             else if ((task.checkpoint.mode ?? 'human') !== mode) {
               task.checkpoint.mode = mode
               const slot = 'discussion:check:'+task.id

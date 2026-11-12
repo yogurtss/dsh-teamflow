@@ -1,6 +1,6 @@
 export { parseLoopConfig } from './workflow-loop-config.ts';
 import type { TeamState, TeamTask } from './types.ts';
-import type { LoopConfig, WorkflowLoop, LoopHistoryRecord } from './workflow-loop-types.ts';
+import { type LoopConfig, type WorkflowLoop, type LoopHistoryRecord } from './workflow-loop-types.ts';
 export type { LoopConfig, WorkflowLoop, LoopHistoryRecord } from './workflow-loop-types.ts';
 export declare const loopRetryInstructions = "\u6309\u539F\u4EFB\u52A1\u8981\u6C42\u91CD\u8BD5\u672C\u8F6E\uFF0C\u4FDD\u7559\u5148\u524D\u7684\u6267\u884C\u8BB0\u5F55\u3002";
 export declare const pendingLoopHistory: (team: TeamState) => readonly LoopHistoryRecord[];
@@ -12,6 +12,7 @@ export declare function loopInputFingerprint(team: TeamState, loop: WorkflowLoop
 /** The ordinary DAG is validated independently, including external paths. */
 export declare function validateLoopGraph(team: TeamState): void;
 export declare function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop;
+export declare function updateGateReview(team: TeamState, gateId: string, mode: LoopConfig['mode'], reviewer?: string): void;
 /** Validate edits to both branches before applying either one. */
 export declare function saveGateSettings(team: TeamState, config: LoopConfig, passTargets: unknown, loopId?: unknown): void;
 export declare function loopCanExecute(team: TeamState, task: TeamTask): boolean;
