@@ -2,7 +2,7 @@ import { type GalleryAccess } from "./gallery-access.ts";
 import { type TaskArchiveConfig } from './task-archive-config.ts';
 /** Runtime-independent template format. Only explicitly portable fields are exported. */
 import type { TeamState } from './types.ts';
-import type { WorkflowOperation } from './workflow-types.ts';
+import { type WorkflowOperation } from './workflow-types.ts';
 import { type TaskBrief } from './template-brief.ts';
 import type { LoopConfig } from './workflow-loop-types.ts';
 export interface TemplateMember extends GalleryAccess {
