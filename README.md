@@ -87,7 +87,7 @@ Use **Save as template** to have AI extract reusable requirements, review the dr
 
 On hosts with native plugin records, watched reviews, proposals and blockers are delivered proactively to the global conversation. The reminder opens the card. Open its evidence or ask a question in context. Review decisions update the original card, and ordinary progress shares one card per workflow.
 
-The picker identifies workflows by project, captain conversation and workflow name. Enable **Node progress** to see starts, completions, failures and cancellations during the subscription. A start names its completed direct dependencies. Activity links open the node and progress is counted separately from pending human decisions.
+Watch settings opens with all watched workflows across projects. Each row shows the project, captain conversation, workflow name and notification types. Select a row to edit its subscription. Enable **Node progress** to see starts, completions, failures and cancellations during the subscription. A start names its completed direct dependencies. Activity links open the node and progress is counted separately from pending human decisions.
 
 Open **Super Agent** in the Harness Web sidebar to enter the shared conversation across projects. Its badge counts unread assistant replies and workflow cards. Opening the current chat marks messages as read. A pending review stays actionable until handled in the original workbench. In **Watch settings**, choose a workspace, individual workflows and notification types. Subscriptions start empty.
 

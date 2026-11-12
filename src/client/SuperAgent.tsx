@@ -117,25 +117,22 @@ function useWorkspace(props:Props, owner?:string) {
   return {workspaces,selected,choose,sessionRows:list.byId}
 }
 
-type WatchView = {rows:WatchRow[]; error?:string}
-type Feed = {subscribe:(fn:()=>void)=>()=>void; read:()=>WatchView|undefined}
-const feeds=new Map<string,Feed>()
-const emptyFeed:Feed={subscribe:()=>()=>{},read:()=>undefined}
+type WatchView<T> = {rows:T[]; error?:string}
+type Feed<T> = {subscribe:(fn:()=>void)=>()=>void; read:()=>WatchView<T>|undefined}
+const feeds=new Map<string,Feed<WatchRow>>()
+const emptyFeed:Feed<WatchRow>={subscribe:()=>()=>{},read:()=>undefined}
 
 /** The icon, panel and transient visits share one scoped read and one timer. */
-function workspaceFeed(workspaceId:string,catalog:boolean):Feed {
-  const key=JSON.stringify([workspaceId,catalog])
-  const existing=feeds.get(key)
-  if(existing)return existing
+function createFeed<T>(workspaceId:string,action:'catalog'|'overview'|'subscriptions',onActive?:(active:boolean)=>void):Feed<T> {
   const listeners=new Set<()=>void>()
-  let data:WatchView|undefined, pending:AbortController|undefined, timer:ReturnType<typeof setTimeout>
+  let data:WatchView<T>|undefined, pending:AbortController|undefined, timer:ReturnType<typeof setTimeout>
   async function refresh(){
     clearTimeout(timer)
     pending?.abort()
     const current=new AbortController()
     pending=current
     try {
-      const value=await request<WatchView>(workspaceId,catalog?'catalog':'overview',{},AbortSignal.any([current.signal,AbortSignal.timeout(12000)]))
+      const value=await request<WatchView<T>>(workspaceId,action,{},AbortSignal.any([current.signal,AbortSignal.timeout(12000)]))
       if(current.signal.aborted)return
       data=value
     } catch(error){
@@ -143,12 +140,12 @@ function workspaceFeed(workspaceId:string,catalog:boolean):Feed {
       data={rows:data?.rows??[],error:String(error)}
     }
     for(const notify of listeners)notify()
-    if(listeners.size&&!catalog)timer=setTimeout(refresh,data.rows.length?6000:60000)
+    if(listeners.size&&action!=='catalog')timer=setTimeout(refresh,data.rows.length||action==='subscriptions'?6000:60000)
   }
-  const feed:Feed={read:()=>data,subscribe(fn){
+  return {read:()=>data,subscribe(fn){
     listeners.add(fn)
     if(listeners.size===1){
-      feeds.set(key,feed)
+      onActive?.(true)
       window.addEventListener(changed,refresh)
       void refresh()
     }
@@ -158,9 +155,19 @@ function workspaceFeed(workspaceId:string,catalog:boolean):Feed {
       pending?.abort()
       clearTimeout(timer)
       window.removeEventListener(changed,refresh)
-      if(feeds.get(key)===feed)feeds.delete(key)
+      data=undefined
+      onActive?.(false)
     }
   }}
+}
+function workspaceFeed(workspaceId:string,catalog:boolean):Feed<WatchRow> {
+  const key=JSON.stringify([workspaceId,catalog])
+  const existing=feeds.get(key)
+  if(existing)return existing
+  const feed=createFeed<WatchRow>(workspaceId,catalog?'catalog':'overview',active=>{
+    if(active)feeds.set(key,feed)
+    else if(feeds.get(key)===feed)feeds.delete(key)
+  })
   feeds.set(key,feed)
   return feed
 }
@@ -261,8 +268,39 @@ export function SuperAgentOverlay(props:Props) {
   return createPortal(<div className={css.overlay} role="dialog" aria-modal="true" aria-label="Super Agent"><SuperAgentPanel {...props} visit={visit} back={back}/></div>,document.body)
 }
 
+type Subscription=Pick<WatchRow,'teamId'|'captainSessionId'|'name'|'conversationTitle'> & {workspaceId:string;project:string;watch:WorkflowWatch}
+const subscriptions=createFeed<Subscription>('','subscriptions')
+type SessionRows=ReturnType<typeof useWorkspace>['sessionRows']
+function conversationName(row:Pick<WatchRow,'conversationTitle'|'captainSessionId'>,sessions:SessionRows,en:boolean){
+  return row.conversationTitle?.trim()||sessions[row.captainSessionId as SessionId]?.title?.trim()||(en?'Untitled conversation':'未命名对话')
+}
+function watchKindLabel(kind:WatchKind,en:boolean){
+  return (en?{review:'Human review',proposal:'Pending proposal',block:'Human intervention',progress:'Node progress'}:
+    {review:'人工验收',proposal:'待确认提案',block:'人工介入',progress:'节点状态变化'})[kind]
+}
+function WatchedWorkflows({en,sessions,onEdit}:{en:boolean;sessions:SessionRows;onEdit:(workspaceId:string,teamId:string)=>void}){
+  const view=useSyncExternalStore(subscriptions.subscribe,subscriptions.read,subscriptions.read)
+  return <section className={css.watched} aria-label={en?'Watched workflows':'正在监听的流程'}>
+    <h2>{en?'Watched workflows':'正在监听的流程'} {view&&!view.error&&<small>{view.rows.length}</small>}</h2>
+    {!view?<p role="status">{en?'Loading subscriptions…':'正在读取监听范围…'}</p>:<>
+      {view.error&&<p role="alert">{en?'Could not refresh subscriptions.':'监听列表刷新失败。'} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{en?'Retry':'重试'}</button></p>}
+      {!view.error&&!view.rows.length&&<p>{en?'No subscriptions. Choose a project and workflow below to start watching.':'尚未监听任何流程。可在下方选择项目和流程，开启监听。'}</p>}
+      <ul>{view.rows.map(r=>{
+        const chat=conversationName(r,sessions,en)
+        const duplicate=view.rows.some(other=>other!==r&&other.project===r.project&&other.name===r.name&&conversationName(other,sessions,en)===chat)
+        return <li key={JSON.stringify([r.workspaceId,r.teamId])}><button onClick={()=>onEdit(r.workspaceId,r.teamId)}>
+          <span><small>{r.project} / {chat}</small><strong>{r.name}</strong>{duplicate&&<small>{r.workspaceId} / {r.teamId}</small>}</span>
+          <span className={css.watchKinds}>{r.watch.kinds.map(k=>watchKindLabel(k,en)).join(' · ')||(en?'No alerts selected':'未选择提醒类型')}</span>
+          <span aria-hidden="true">›</span></button></li>
+      })}</ul></>}
+  </section>
+}
+
 export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>void}) {
   const [settings,setSettings]=useState(false)
+  const [editing,setEditing]=useState(true)
+  const [selection,setSelection]=useState({workspaceId:props.visit?.workspaceId,teamId:props.visit?.teamId??''})
+  const editor=useRef<HTMLDivElement>(null)
   useEffect(()=>{
     const open=()=>setSettings(false)
     window.addEventListener(openCurrentChat,open)
@@ -270,22 +308,28 @@ export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>
   },[])
   const picker=useWorkspace(props,props.visit?.sessionId)
   const {workspaces,choose}=picker
-  const selected=props.visit?.workspaceId?workspaces.find(w=>w.workspaceId===props.visit!.workspaceId):picker.selected
+  const selected=workspaces.find(w=>w.workspaceId===selection.workspaceId)??picker.selected
   const en=props.t('language.code')==='en'
-  return <><div hidden={settings} className={css.chatPage}><GlobalConversation {...props} inline visible={!settings} settings={()=>setSettings(true)} close={props.back}/></div>{settings&&<main className={css.panel}>
-    <header className={css.hero}><div className={css.identity}><span className={css.mark}><BrandIcon size={36}/></span><div><small>{en?'Workspace coordinator':'工作区协调'}</small><h1>Super Agent</h1></div></div>
-      {props.visit&&selected?<span>{selected.title}</span>:<select aria-label={en?'Workspace':'工作区'} value={selected?.workspaceId??''} onChange={e=>choose(e.target.value)}>
-        <option value="" disabled>{en?'Choose a workspace':'选择工作区'}</option>
-        {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select>}
+  return <><div hidden={settings} className={css.chatPage}><GlobalConversation {...props} inline visible={!settings} settings={()=>{setEditing(true);setSettings(true)}} close={props.back}/></div>{settings&&<main className={css.panel}>
+    <header className={css.hero}><div className={css.identity}><span className={css.mark}><BrandIcon size={36}/></span><div><small>Super Agent</small><h1>{en?'Watch settings':'监听设置'}</h1></div></div>
       <button onClick={()=>setSettings(false)}>{en?'Back to chat':'返回对话'}</button>
       {props.back&&<button onClick={props.back}>{props.visit?.workspaceId?(en?'Close':'关闭'):(en?'Back to Workflow':'返回原工作台')}</button>}
     </header>
-    {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} project={selected.title} sessionRows={picker.sessionRows} en={en}/>:<p>{en?'Select a workspace to view subscriptions.':'请选择工作区查看监听设置。'}</p>}
+    <div className={css.content}>
+      <WatchedWorkflows en={en} sessions={picker.sessionRows} onEdit={(workspaceId,teamId)=>{
+        setSelection({workspaceId,teamId});setEditing(true);requestAnimationFrame(()=>editor.current?.focus())
+      }}/>
+      <div ref={editor} tabIndex={-1} className={css.projectBar}><label>{en?'Project':'项目'} <select aria-label={en?'Workspace':'工作区'} value={selected?.workspaceId??''} onChange={e=>{choose(e.target.value);setSelection({workspaceId:e.target.value,teamId:''})}}>
+        <option value="" disabled>{en?'Choose a workspace':'选择工作区'}</option>
+        {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select></label>
+        {selected&&<button onClick={()=>setEditing(!editing)}>{editing?(en?'Project overview':'项目概览'):(en?'Configure workflow':'配置流程')}</button>}
+      </div>
+      {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} project={selected.title} sessionRows={picker.sessionRows} en={en} settings={editing} setSettings={setEditing} selection={selection.teamId} select={teamId=>setSelection({workspaceId:selected.workspaceId,teamId})}/>:<p>{en?'Select a project to configure workflows.':'请选择项目以配置流程。'}</p>}
+    </div>
   </main>}</>
 }
 
-function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,modelDirectories,t,openMember}:Props & {workspaceId:string;project:string;sessionRows:ReturnType<typeof useWorkspace>['sessionRows'];en:boolean;visit?:SupervisorVisit;back?:()=>void}) {
-  const [settings,setSettings]=useState(true),[selection,select]=useState(visit?.teamId??'')
+function WorkspacePanel({workspaceId,project,sessionRows,en,settings,setSettings,selection,select,sessions,modelDirectories,t,openMember}:Props & {workspaceId:string;project:string;sessionRows:SessionRows;en:boolean;settings:boolean;setSettings:(value:boolean)=>void;selection:string;select:(id:string)=>void}) {
   const result=useRows(workspaceId,settings)
   const [busy,setBusy]=useState(false),[error,setError]=useState('')
   const [target,setTarget]=useState<{row:WatchRow;item:WatchItem}>()
@@ -297,9 +341,9 @@ function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,
   const watching=rows.filter(r=>r.watch)
   const items=watching.flatMap(r=>r.items.map(item=>({row:r,item})))
   const label=(zh:string,english:string)=>en?english:zh
-  const kindLabel=(kind:WatchKind)=>({review:label('人工验收','Human review'),proposal:label('待确认提案','Pending proposal'),block:label('人工介入','Human intervention'),progress:label('节点状态变化','Node progress')})[kind]
+  const kindLabel=(kind:WatchKind)=>watchKindLabel(kind,en)
   const identity=(r:WatchRow)=>{
-    const title=r.conversationTitle?.trim() || sessionRows[r.captainSessionId as SessionId]?.title?.trim() || label('未命名对话','Untitled conversation')
+    const title=conversationName(r,sessionRows,en)
     return [project,title,...(r.name!==title?[r.name]:[])].join(' / ')
   }
   const progress=watching.flatMap(r=>(r.progress??[]).map(change=>({r,change}))).sort((a,b)=>b.change.at-a.change.at)
@@ -332,11 +376,9 @@ function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,
     })
   }
   function close(){setTarget(undefined);handle.current?.release();handle.current=undefined;window.dispatchEvent(new Event(changed));requestAnimationFrame(()=>focus.current?.focus())}
-  return <section className={css.content} aria-busy={busy}>
-    <div className={css.actions}><button onClick={()=>{setSettings(!settings);setError('')}}>{settings?label('← 返回概览','← Overview'):label('监听设置','Watch settings')}</button>
-    </div>
+  return <section aria-busy={busy}>
     {(error||result?.error)&&<p role="alert">{error||result?.error} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{label('刷新','Refresh')}</button></p>}
-    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('监听设置','Watch settings')}</h2>
+    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('配置流程','Configure workflow')}</h2>
       {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{identity(r)}{rows.some(other=>other.teamId!==r.teamId&&identity(other)===identity(r))?' · '+r.teamId:''}</option>)}</select></label>
         <div className={css.row}><span>{row.watch?label('正在监听','Watching'):label('未监听','Not watched')}{row.complete?' · '+label('已完成','Completed'):''}</span>
           <button disabled={busy} onClick={()=>save(row.watch?null:{kinds:[...defaultWatchKinds],keep:row.complete})}>{row.watch?label('取消监听','Unsubscribe'):row.complete?label('监听后续重开','Watch future reopens'):label('监听此流程','Watch workflow')}</button></div>

@@ -275,6 +275,19 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
           ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()],messages:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
       }
       const spaces=registry.list()
+      const titles=ctx.get('sessionTitle') as {get(session:import('@deepseek-ai/dsh-session').Session):{title:string}|undefined}|undefined
+      const conversationTitle=(row:WatchRow)=>{
+        const captain=ctx.agents.get(row.captainSessionId as SessionId)
+        return captain&&titles?titles.get(captain.session)?.title:undefined
+      }
+      if(body['action']==='subscriptions'){
+        const groups=await Promise.all(spaces.map(async space=>{
+          const rows=await listWatchRows(join(space.path,stateDir))
+          return rows.map(row=>({workspaceId:space.id,project:space.title,teamId:row.teamId,name:row.name,
+            captainSessionId:row.captainSessionId,conversationTitle:conversationTitle(row),watch:row.watch}))
+        }))
+        reply(200,{rows:groups.flat()});return
+      }
       const workspace=spaces.find(w=>w.id===body['workspaceId'])
       if(!workspace){reply(404,{error:'Workspace unavailable'});return}
       const root=join(workspace.path,stateDir)
@@ -291,11 +304,7 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
         }
         case 'catalog':case 'overview':{
           const rows=await listWatchRows(root,body['action']==='catalog')
-          const titles=ctx.get('sessionTitle') as {get(session:import('@deepseek-ai/dsh-session').Session):{title:string}|undefined}|undefined
-          for(const row of rows){
-            const captain=ctx.agents.get(row.captainSessionId as SessionId)
-            if(captain && titles)row.conversationTitle=titles.get(captain.session)?.title
-          }
+          for(const row of rows)row.conversationTitle=conversationTitle(row)
           reply(200,{rows});return
         }
         case 'set':{
