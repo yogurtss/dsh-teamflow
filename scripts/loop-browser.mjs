@@ -24,7 +24,7 @@ try {
     assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1501 && bounds.y + bounds.height <= 1051)
     await guide.getByRole('button', {name:'Got it', exact:true}).click()
   }
-  assert.ok(['agent','task','gate','check','archive','outcomes'].every(id => visited.includes(id)))
+  assert.ok(['roster','inspector','agent','task','gate','check','archive','outcomes'].every(id => visited.includes(id)))
   await guideButton.click()
   await page.keyboard.press('Escape')
   assert.equal(await guide.count(), 0)
@@ -57,8 +57,8 @@ try {
     const card = node.getBoundingClientRect()
     return [...node.querySelectorAll('[data-connection-handle]')].map(port => { const r = port.getBoundingClientRect(); return { x: (r.left + r.width / 2 - card.left) / card.width, y: (r.top + r.height / 2 - card.top) / card.height } })
   })
-  assert.ok(Math.abs(ports[0].x) < .01 && Math.abs(ports[1].x - 1) < .01)
-  assert.ok(ports.every(p => Math.abs(p.y - .5) < .01), 'Decision ports must touch the diamond vertices')
+  assert.equal(ports.length,3)
+  for (const [x,y] of [[0,.5],[1,.5],[.5,1]]) assert.ok(ports.some(p => Math.abs(p.x-x)<.02 && Math.abs(p.y-y)<.02),'Missing decision port at '+[x,y])
   await page.getByRole('button', { name: '开始全部', exact: true }).click()
   const review = async (round, pass = false) => {
     await panel.getByText(new RegExp('审核中 · 第 ' + round + '/')).waitFor({timeout:20000})
@@ -75,9 +75,7 @@ try {
   }
   if (human) { await review(1); await review(2) }
   await panel.getByText('已达轮次上限，等待人工追加轮数或结束', { exact: true }).waitFor({ timeout: 20000 })
-  assert.equal(await page.locator('[data-canvas-node]').count(), 2)
-  await page.getByRole('button', {name:'展开循环任务'}).click()
-  assert.equal(await page.locator('[data-canvas-node]').count(), 4)
+  assert.equal(await page.locator('[data-canvas-node]').count(), 4, 'Loop steps start expanded')
   await page.getByRole('button', {name:'收起循环任务'}).click()
   assert.equal(await page.locator('[data-canvas-node="after"]').getAttribute('data-status'), 'pending')
   await panel.getByRole('button', { name: /查看多轮历史/ }).click()

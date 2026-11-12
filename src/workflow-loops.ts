@@ -59,6 +59,7 @@ export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop
   team.workflow = candidate.workflow
   gate.assignee = assignee
   gate.checkpoint!.kind = 'gate'
+  gate.checkpoint!.mode = loop.mode
   if (gate.description?.trim() && !gate.adaptationIssue?.trim()) gate.workflowConfigPending = false
   for (const id of [...body, gate.id]) { const task = taskOf(team, id); task.workflowPaused = true; task.workflowAwaitingStart = true }
   return loop
@@ -77,6 +78,7 @@ export function saveGateSettings(team: TeamState, config: LoopConfig, passTarget
     const gate = taskOf(draft, config.gateId)
     Object.assign(previous, config, { rejectToEntry: config.rejectToEntry, reviewer: config.mode === 'ai' ? config.reviewer : undefined })
     gate.assignee = previous.reviewer
+    gate.checkpoint!.mode = config.mode
     if (previous.contracts) previous.contracts[gate.id] = contract(gate)
   } else {
     if (previous) draft.workflow!.loops = loopsOf(draft).filter(loop => loop !== previous)

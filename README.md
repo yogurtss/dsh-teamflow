@@ -132,6 +132,8 @@ Flow, task, member, and review discussions stay inside Workflow. The main conver
 
 Manual property edits save directly; AI proposals require confirmation. **Save all properties** saves drafts without starting tasks or confirming reruns. Unsaved property and discussion drafts are backed up in the current browser tab; they are not a cross-device backup.
 
+In the development workbench, use the selector on a loop gate or acceptance card, or in its inspector, to switch between human and AI review. A loop gate has an input, a PASS output and a REJECT return port. Connect the upstream task first, drag REJECT back to it and save the loop settings. Select an independent team reviewer for an AI loop gate. Loops open expanded. An acceptance node has an input and output, and its AI mode uses its own acceptance agent to decide against the current evidence.
+
 ## Installation and updates
 
 ### Desktop

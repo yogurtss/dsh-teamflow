@@ -589,6 +589,36 @@ test('connection magnet accepts node interiors and rejects duplicate, cyclic and
   assert.equal(connectionIssue(tasks,'a','c'),undefined,'suspended downstream nodes remain editable with drawio connections')
 })
 
+test('AI acceptance is bound to the selected mode, current evidence, round and native session',async t=>{
+  const source=withGate()
+  source.tasks[0].status='completed'
+  const nativeId='session-at-discussion-'+createHash('sha256').update('demo').digest('hex').slice(0,16)+'-00000000-0000-0000-0000-000000000003'
+  workflowDiscussion(source,'check:gate').native={sessionId:nativeId,label:'acceptance'}
+  const f=await lifecycleFixture(t,source)
+  const defs=new Map(), kicks=[]
+  installWorkflowConversations({tools:{register:d=>defs.set(d.name,d)},subagents:{registerContinuableSetup(){}}},{stateDir:'.agent-teams',maxMembers:8},workflowMaterials,async(...args)=>kicks.push(args))
+  const exec={agent:{id:nativeId,session:{header:{cwd:f.workspace},ownEvents:()=>[]}}}
+  const read=async()=>JSON.parse(await defs.get('agent_teams_workflow_context').execute({},exec))
+  const decide=(fields)=>defs.get('agent_teams_decide_acceptance').execute(fields,exec)
+  const ctx=await read(), args={round:1,evidence:ctx.evidence,decision:'approve',note:'Checked the delivery.'}
+  await assert.rejects(decide(args))
+  const state=await f.call('state')
+  const changed=await f.call('checkpoint_mode',{taskId:'gate',mode:'ai',base:state.base})
+  assert.equal(changed.team.tasks.find(t=>t.id==='gate').checkpoint.mode,'ai')
+  await assert.rejects(decide(args),'The old session loses its authority')
+  const next=await f.read()
+  exec.agent.id=nativeId.replace(/3$/,'4')
+  workflowDiscussion(next,'check:gate').native={sessionId:exec.agent.id,label:'ai-acceptance'}
+  await f.save(next)
+  await read()
+  await assert.rejects(decide({...args,round:2}))
+  await assert.rejects(decide({...args,evidence:'stale'}))
+  await decide(args)
+  await assert.rejects(decide(args))
+  assert.equal(kicks.length,1)
+  assert.match((await f.call('state')).team.tasks.find(t=>t.id==='gate').output,/AI/)
+})
+
 test('native discussion and return-to-captain navigation open ordinary sessions', async () => {
   const seen = []
   await openAgentTeamMember({}, 'discussion', 'discussion', { selectPanel: value => seen.push(value) }, { openSession: value => seen.push(value) })

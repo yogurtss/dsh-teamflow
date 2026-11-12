@@ -15,10 +15,18 @@ export function parseLoopConfig(raw: unknown): LoopConfig {
 import type { TeamState, TeamTask } from './types.ts'
 const loopsOf = (team: TeamState) => team.workflow?.loops ?? []
 function taskOf(team: TeamState, id: string): TeamTask { const task = team.tasks.find(t => t.id === id); if (!task) throw new Error(`循环节点不存在：${id}`); return task }
+export function upstreamIds(tasks:readonly TeamTask[], gateId:string):Set<string> {
+  const ancestors = new Set<string>()
+  function visit(id:string) {
+    if (ancestors.has(id)) return
+    ancestors.add(id)
+    tasks.find(task=>task.id===id)?.dependencies.forEach(visit)
+  }
+  tasks.find(task=>task.id===gateId)?.dependencies.forEach(visit)
+  return ancestors
+}
 export function deriveLoop(team: TeamState, config: LoopConfig, id: string, runId: string): WorkflowLoop {
-  const gate = taskOf(team, config.gateId), ancestors = new Set<string>()
-  const visit = (id: string) => { if (ancestors.has(id)) return; ancestors.add(id); taskOf(team, id).dependencies.forEach(visit) }
-  gate.dependencies.forEach(visit)
+  const ancestors = upstreamIds(team.tasks,config.gateId)
   if (!ancestors.has(config.entryId)) throw new Error('循环入口必须位于门控上游')
   const body = new Set([config.entryId]); let changed = true
   while (changed) { changed = false; for (const task of team.tasks) if (ancestors.has(task.id) && !body.has(task.id) && task.dependencies.some(id => body.has(id))) { body.add(task.id); changed = true } }

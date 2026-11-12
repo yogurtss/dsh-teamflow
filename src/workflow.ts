@@ -207,7 +207,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       }
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
-      if (reconnectRejected && task.checkpoint) task.checkpoint = { kind: task.checkpoint.kind, round: task.checkpoint.round + 1, history: task.checkpoint.history }
+      if (reconnectRejected && task.checkpoint) task.checkpoint = { kind: task.checkpoint.kind, mode: task.checkpoint.mode, round: task.checkpoint.round + 1, history: task.checkpoint.history }
       task.updatedAt = now
     } else if (op.action === 'remove_task') {
       const task = taskOf(team, op.id); editable(task)
@@ -269,7 +269,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
           status: 'pending', attempt: 0, createdAt: now, updatedAt: now })
       }
       gate.dependencies = gate.dependencies.map(id => mapping.get(id) ?? id)
-      gate.checkpoint = { kind: gate.checkpoint.kind, round: gate.checkpoint.round + 1, history: gate.checkpoint.history }
+      gate.checkpoint = { kind: gate.checkpoint.kind, mode: gate.checkpoint.mode, round: gate.checkpoint.round + 1, history: gate.checkpoint.history }
       gate.updatedAt = now
     }
   }
@@ -300,7 +300,7 @@ export function decideCheckpoint(team: TeamState, id: string, decision: 'approve
   gate.decision = decision; gate.decidedAt = at; gate.note = note; gate.evidence = evidence
   gate.history.push({ round: gate.round, decision, at, note, evidence, inputIds: [...task.dependencies], ...(materials === undefined ? {} : { materials }) })
   task.updatedAt = at
-  if (decision === 'approve') { task.status = 'completed'; task.output = `人工验收通过：${note}` }
+  if (decision === 'approve') { task.status = 'completed'; task.output = `${gate.mode === 'ai' ? 'AI' : '人工'}验收通过：${note}` }
 }
 
 /** One atomic human action: preserve reviewed evidence and create the complete rework branch. */

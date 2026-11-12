@@ -221,7 +221,10 @@ export function apply(ctx: Context, config: Config): void {
   // member spawn (`spawnMember`), the earliest point the provider list is
   // settled, rather than here.
 
-  const workflowConversations = installWorkflowConversations(ctx, resolved, workflowMaterials)
+  const workflowConversations = installWorkflowConversations(ctx, resolved, workflowMaterials, async (workspace, teamId, captainId): Promise<void> => {
+    const captain = ctx.agents.get(captainId as import('@deepseek-ai/dsh-session').SessionId)
+    if (captain) await agentTeamsRuntime.kickTeam(workspace, teamId, captain)
+  })
   const agentTeamsRuntime = registerAgentTeamsTools(ctx, resolved, workflowConversations.open)
   installTeamCapabilities(ctx, {
     stateDir: resolved.stateDir,

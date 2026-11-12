@@ -61,7 +61,7 @@ export function isWorkflowState(value: unknown): boolean {
     && Array.isArray(value['history']) && value['history'].every(proposal)
 }
 export function isCheckpoint(value: unknown): boolean {
-  return record(value) && [undefined,'gate','acceptance'].includes(value['kind'] as string | undefined) && positive(value['round']) && [undefined, 'approve', 'reject'].includes(value['decision'] as string | undefined)
+  return record(value) && [undefined,'ai','human'].includes(value['mode'] as string | undefined) && [undefined,'gate','acceptance'].includes(value['kind'] as string | undefined) && positive(value['round']) && [undefined, 'approve', 'reject'].includes(value['decision'] as string | undefined)
     && optionalString(value['note']) && optionalString(value['evidence']) && (value['decidedAt'] === undefined || number(value['decidedAt']))
     && Array.isArray(value['history']) && value['history'].every(item => record(item) && positive(item['round'])
       && ['approve', 'reject', 'branch'].includes(item['decision'] as string) && number(item['at']) && string(item['note']) && string(item['evidence']) && optionalString(item['materials']) && (item['inputIds'] === undefined || strings(item['inputIds'])))

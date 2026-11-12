@@ -14,6 +14,7 @@ export type WorkflowOperation =
 export interface Checkpoint {
   /** Legacy checkpoints are acceptance nodes unless referenced by a loop. */
   kind?: 'gate' | 'acceptance'
+  mode?: 'ai' | 'human'
   decision?: 'approve' | 'reject'
   decidedAt?: number
   note?: string

@@ -480,19 +480,22 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               </svg>}
               {layout.nodes.map(({ task, x, y }) => {
                 const model = taskModelLabel(task, members)
+                const gate = isGateTask(task, team.workflow?.loops)
+                const aiReview = (team.workflow?.loops.find(loop => loop.gateId === task.id)?.mode ?? task.checkpoint?.mode) === 'ai'
                 const control = taskControlState(team,task,historic)
                 return (
                   <button
                     key={task.id}
                     type="button"
                     aria-pressed={pinnedTaskId === task.id}
-                    onClick={() => { const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
+                    onClick={() => { if (gate) { onOpenTask(task, false); return }; const next = pinnedTaskId === task.id ? null : task.id; setPinnedTaskId(next); onSelectTask?.(next) }}
                     className={`${css.dagNode} ${taskStateNodeClass}`}
                     data-lifecycle={discarded ? 'notRun' : task.verdictStale ? 'stale' : control.visual}
                     style={parallel
                       ? { height: nodeHeight }
                       : { left: x, top: y, width: nodeWidth, height: nodeHeight }}
                     data-task-id={task.id}
+                    data-gate={gate || undefined}
                     data-checkpoint={!!task.checkpoint || undefined}
                     data-review-ready={control.reviewReady || undefined}
                     data-state={discarded ? 'cancelled' : taskTone(task.state, task.status)}
@@ -506,7 +509,8 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
                     onFocus={() => { setKeyboardTaskId(task.id) }}
                     onBlur={() => { setKeyboardTaskId(null) }}
                   >
-                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name={isGateTask(task, team.workflow?.loops) ? 'gate' : 'acceptance'} /> {t('task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
+                    {gate && <svg className={css.dagGateShape} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M1 50 L50 1 L99 50 L50 99 Z" /></svg>}
+                    <span className={css.dagNodeHead}><span className={css.dagNodeDot} />{task.id}{task.checkpoint ? <span className={css.reviewKind} title={t('task.control.round',{round:task.checkpoint.round})}><WorkflowIcon name={isGateTask(task, team.workflow?.loops) ? 'gate' : 'acceptance'} /> {t(aiReview ? 'task.control.ai' : 'task.control.human')}</span> : workspace && <span className={css.dagOwner}>{task.assignee || t('task.assignee.unclaimed')}</span>}</span>
                     <span className={css.dagNodeLabel}>
                       {workspace ? task.subject : compactTaskLabel(task.subject)}
                     </span>
