@@ -73,7 +73,7 @@ import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
 import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { StagingPlanEditor } from './StagingPlanEditor.tsx'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
-import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
+import type { AgentTeamsTranslate } from './locales.ts'
 import {
   DEFAULT_PANEL_LAYOUT,
   PANEL_LAYOUT_STORAGE_KEY,

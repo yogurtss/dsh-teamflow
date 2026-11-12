@@ -819,11 +819,6 @@ export function installMemberSelectionRuntime(
   }
 }
 
-function configuredExecutionPrompt(member: TeamMember, config: MemberRuntimeConfig): string | undefined {
-  const prompt = member.executionPrompt?.trim() || config.executionPrompt?.trim()
-  return prompt === undefined || prompt === '' ? undefined : prompt
-}
-
 function assignedNonTerminalCount(team: TeamState, memberName: string): number {
   return team.tasks.filter(task => (
     task.assignee === memberName && !TERMINAL_TASK_STATUSES.includes(task.status)

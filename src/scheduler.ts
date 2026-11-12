@@ -324,10 +324,10 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
     } finally { drainingLoops.delete(key) }
   }
   let checkingLoops = false
-  const watchdog = setInterval(() => {
+  const watchdog = setInterval(async () => {
     if (checkingLoops) return
     checkingLoops = true
-    void (async () => {
+    try {
       for (const [key, value] of watchedLoops) {
         try {
           const root = stateRootOf(value.workspace, config)
@@ -339,7 +339,7 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           await drainPausedLoops(root, value.teamId)
         } catch (error) { ctx.logger.warn(`agent-teams: loop watchdog for ${value.teamId}: ${String(error)}`) }
       }
-    })().catch(error => ctx.logger.warn(`agent-teams: loop watchdog: ${String(error)}`)).finally(() => { checkingLoops = false })
+    } finally { checkingLoops = false }
   }, 15000)
   watchdog.unref()
   ctx.effect(() => () => { clearInterval(watchdog); watchedLoops.clear() })

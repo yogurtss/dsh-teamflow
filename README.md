@@ -23,12 +23,12 @@ When configuring an IF gate, select the return target to preview the loop and se
 
 **Continue and rerun**: Start all resumes unfinished, paused, or interrupted work and preserves completed results. Run through a node resumes its required ancestors and pauses later descendants; human checkpoints still require approval. Continuing needs no new input. An explicit rerun requires a reason in the card editor. Reconnection reads current state without replaying mutations. Blockers and recovery explains configuration, dependencies, review, and execution issues with next actions.
 
-This README describes development version **`0.2.11-dev.3`** on `dev`. See the [release notes](./release-notes/v0.2.11-dev.3.md); `main` retains the original non-loop workflow, with general fixes backported separately. The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
+This README describes development version **`0.2.13-dev.1`** on `dev`. See the [release notes](./release-notes/v0.2.13-dev.1.md). The package is `@yogurtss/dsh-teamflow`; install it from this repository or a local build.
 
 | Channel | Git source | Purpose |
 | --- | --- | --- |
-| Stable | `github:yogurtss/dsh-teamflow#main` | Original non-loop workflow; excludes the development features described here |
-| Development | `github:yogurtss/dsh-teamflow#dev` | Upcoming changes under development |
+| Stable | `github:yogurtss/dsh-teamflow#main` | Stable workflows with gated loops, rework and result archives |
+| Development | `github:yogurtss/dsh-teamflow#dev` | Super Agent development and upcoming fixes |
 | Classic | `github:yogurtss/dsh-teamflow#classic` | Historical version without Gallery |
 
 This release accepts DSH `0.2.1-rc.5`; the repository's development dependencies remain on `0.2.1-rc.2`. See the [compatibility record](./docs/harness-0.2.1-rc.5/README.md) and [compatibility matrix](./compatibility.json) for exact targets and validation scope. Stable and development releases have separate schedules.
@@ -93,9 +93,9 @@ Open **Super Agent** in the Harness Web sidebar to enter the shared conversation
 
 Finishing an entire workflow ends its subscription unless you select **Keep watching after workflow completion**. You can unsubscribe at any time. **Clear context** starts a fresh model conversation and keeps the old transcript in conversation history. Subscriptions and workflow progress are stored independently.
 
-## Try it yourself on the development branch
+## Try it yourself
 
-Use the `dev` build and an empty workspace for either example. The first needs a GPU. The second only needs Python 3.
+Use an empty workspace for either example. The first needs a GPU. The second only needs Python 3.
 
 ### 1. Build and verify a Triton softmax kernel
 
@@ -142,7 +142,7 @@ Flow, task, member, and review discussions stay inside Workflow. The main conver
 
 Manual property edits save directly; AI proposals require confirmation. **Save all properties** saves drafts without starting tasks or confirming reruns. Unsaved property and discussion drafts are backed up in the current browser tab; they are not a cross-device backup.
 
-In the development workbench, use the selector on a loop gate or acceptance card, or in its inspector, to switch between human and AI review. A loop gate has an input, a PASS output and a REJECT return port. Connect the upstream task first, drag REJECT back to it and save the loop settings. Select an independent team reviewer for an AI loop gate. Loops open expanded. An acceptance node has an input and output, and its AI mode uses its own acceptance agent to decide against the current evidence.
+In the workbench, use the selector on a loop gate or acceptance card, or in its inspector, to switch between human and AI review. A loop gate has an input, a PASS output and a REJECT return port. Connect the upstream task first, drag REJECT back to it and save the loop settings. Select an independent team reviewer for an AI loop gate. Loops open expanded. An acceptance node has an input and output, and its AI mode uses its own acceptance agent to decide against the current evidence.
 
 ## Installation and updates
 

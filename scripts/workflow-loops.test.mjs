@@ -511,6 +511,28 @@ test('queued loops start when external inputs arrive, without a backward depende
   finish(team); assert.equal(loop.status, 'reviewing')
 })
 
+test('an unconfigured queued loop cannot roll back a completed external input', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'teamflow-queued-input-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const { team, loop } = fixture()
+  const input = task('input')
+  team.tasks[0].dependencies.push(input.id)
+  team.tasks.push(input)
+  startLoop(team, loop.id)
+  await createTeamDir(root, team)
+  team.tasks[0].workflowConfigPending = true
+  input.status = 'completed'
+  await writeTeam(root, team)
+  const saved = await readTeam(root, team.id)
+  assert.equal(saved.tasks.find(task => task.id === 'input').status, 'completed')
+  assert.equal(saved.workflow.loops[0].status, 'paused')
+  assert.equal(saved.workflow.loops[0].queued, undefined)
+  assert.match(saved.workflow.loops[0].reason, /任务要求/)
+  saved.tasks[0].workflowConfigPending = false
+  startLoop(saved, loop.id)
+  assert.equal(saved.workflow.loops[0].status, 'running')
+})
+
 test('random forward DAGs revise exactly the affected closure without changing task identity', () => {
   let seed = 19; const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
   for (let sample = 0; sample < 50; sample++) {
@@ -805,9 +827,9 @@ test('one unreadable team cannot starve other teams loop watchdogs',async t=>{
  await writeFile(join(stateRoot,'broken','team.json'),'{bad')
  const clock=Date.now;Date.now=()=>clock()+120000
  try{
-  watchdog()
-  let state
-  for(let i=0;i<500;i++){await new Promise(r=>setTimeout(r,10));state=await readTeam(stateRoot,'healthy');if(state.workflow.loops[0].status==='paused' && state.tasks[0].status==='pending')break}
+  await watchdog()
+  const state=await readTeam(stateRoot,'healthy')
+  assert.equal(state.tasks[0].status,'pending')
   assert.equal(state.workflow.loops[0].status,'paused');assert.ok(warnings.length)
  }finally{Date.now=clock}
 })

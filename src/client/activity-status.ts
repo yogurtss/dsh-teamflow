@@ -1,4 +1,5 @@
 import type { ActivityTeam } from './activity-monitor.ts'
+import { taskControlState } from './task-control.ts'
 
 type Task = ActivityTeam['tasks'][number]
 const delivered = (task: Task) => task.status === 'completed' && (!task.checkpoint || task.checkpoint.decision === 'approve')
@@ -14,7 +15,7 @@ export function activityStatus(team?: ActivityTeam, archived = false) {
   const unpassedGates=new Set(team?.workflow?.loops.filter(loop=>loop.status!=='passed').map(loop=>loop.gateId))
   const done=endpoints.length>0 && endpoints.every(delivered) && !tasks.some(task=>unpassedGates.has(task.id))
   const running=archived||team?.halted?0:tasks.filter(t=>!t.workflowPaused&&['claimed','in_progress'].includes(t.status)).length
-  const reviews=archived||team?.halted||team?.phase==='staged'?0:tasks.filter(t=>t.checkpoint&&!t.checkpoint.decision&&t.status==='pending'&&!t.workflowPaused&&!t.workflowRerunRequired&&!t.workflowConfigPending&&t.dependencies.every(id=>tasks.some(up=>up.id===id&&up.status==='completed'))).length
+  const reviews=team && !archived ? tasks.filter(task=>task.checkpoint && taskControlState(team,task).reviewReady).length : 0
   const issues=archived?0:tasks.filter(t=>t.status==='failed'||t.checkpoint?.decision==='reject'||t.workflowConfigPending||t.workflowRerunRequired).length
   const configuration=archived?0:tasks.filter(t=>t.workflowConfigPending&&t.status!=='failed'&&t.checkpoint?.decision!=='reject'&&!t.workflowRerunRequired).length
   const attention=reviews+issues

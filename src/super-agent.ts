@@ -82,8 +82,11 @@ export async function setWatch(root:string, id:string, watch:WorkflowWatch|null,
     const team = await readTeam(root,id)
     if (!team?.workflow) throw new Error('Workflow unavailable')
     const current = team.superAgentWatch ?? null
-    if (JSON.stringify(current) === JSON.stringify(watch)) return
-    if (JSON.stringify(current) !== JSON.stringify(previous)) throw new Error('Subscription changed. Refresh and try again.')
+    const matchesCurrent = (value: unknown) => current === null ? value === null
+      : validWatch(value) && current.keep === value.keep && current.kinds.length === value.kinds.length
+        && current.kinds.every(kind => value.kinds.includes(kind))
+    if (matchesCurrent(watch)) return
+    if (!matchesCurrent(previous)) throw new Error('Subscription changed. Refresh and try again.')
     const dir = join(root,indexDir)
     if (watch) {
       if (!watch.keep && workflowComplete(team)) throw new Error('Completed workflow: select follow after completion.')

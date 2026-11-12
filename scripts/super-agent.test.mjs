@@ -60,7 +60,9 @@ test('opt-in, compare-and-set edits, filtering and durable completion without an
   await writeTeam(root,reopened);assert.equal((await listWatchRows(root))[0].complete,true)
   reopened.tasks[1].status='pending';delete reopened.tasks[1].checkpoint.decision
   await writeTeam(root,reopened);assert.deepEqual((await listWatchRows(root))[0].items,[])
-  await setWatch(root,'one',null,persistent);assert.deepEqual(await listWatchRows(root),[])
+  await setWatch(root,'one',config,persistent)
+  await setWatch(root,'one',null,{keep:false,kinds:[...config.kinds].reverse()})
+  assert.deepEqual(await listWatchRows(root),[])
 })
 
 test('only current proposals, human reviews and explicitly actionable blockers are surfaced',()=>{

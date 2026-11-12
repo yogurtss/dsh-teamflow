@@ -5,6 +5,17 @@ import {applyWorkflowOperations} from '../lib/workflow.js'
 import {replacedTaskIds} from '../lib/replaced-tasks.js'
 const task=(id,patch={})=>({id,status:'pending',dependencies:[],...patch})
 const team=tasks=>({phase:'running',tasks,members:[]})
+test('only actionable human decisions appear in the activity review count', () => {
+  const gate = task('gate', {checkpoint:{kind:'gate'}, dependencies:['work']})
+  const work = task('work', {status:'failed'})
+  const flow = team([work, gate, task('accept', {checkpoint:{kind:'acceptance',mode:'ai'}})])
+  assert.equal(activityStatus(flow).reviews, 0)
+  const loop = {gateId:'gate', bodyIds:['work'], status:'reviewing', mode:'human'}
+  flow.workflow = {loops:[loop]}
+  assert.equal(activityStatus(flow).reviews, 1)
+  loop.mode = 'ai'
+  assert.equal(activityStatus(flow).reviews, 0)
+})
 test('workflow completion follows its endpoints even when earlier nodes failed',()=>{
   const failed=task('earlier',{status:'failed'})
   const end=task('finish',{status:'completed',dependencies:['earlier']})

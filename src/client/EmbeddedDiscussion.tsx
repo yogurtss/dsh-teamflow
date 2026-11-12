@@ -30,8 +30,6 @@ export const AssistantReply = memo(function AssistantReply({ text, streaming }: 
 })
 
 export function EmbeddedDiscussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {
-  const l = useWorkflowText()
-
   return <Discussion key={JSON.stringify([sessionId,teamId,discussion])} sessionId={sessionId} teamId={teamId} discussion={discussion} />
 }
 function Discussion({ sessionId, teamId, discussion }: { sessionId: string; teamId: string; discussion: string }) {

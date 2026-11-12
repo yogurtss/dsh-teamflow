@@ -8,7 +8,7 @@ import css from './AgentTeamsCard.module.css'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { openWorkflowConversation } from './session-navigation.ts'
 
-export function TeamChatEntry({ sessionId, t, openMember, openContext }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'agentTeams'> & Pick<AgentTeamsCardInjected, 'openMember'> & { openContext?: () => void }) {
+export function TeamChatEntry({ sessionId, openMember, openContext }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'agentTeams'> & Pick<AgentTeamsCardInjected, 'openMember'> & { openContext?: () => void }) {
   const { teams, archivedTeams } = useSyncExternalStore(subscribeActivitySnapshots, getActivitySnapshotsSnapshot)
   const team = [...teams, ...archivedTeams].find(team => team.captainSessionId === sessionId)
   if (!team) return <WorkflowWorkbench key={sessionId} sessionId={sessionId} nativeOnly openContext={openContext}

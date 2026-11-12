@@ -66,18 +66,15 @@ import { appendTaskEvidence } from './quality-gates.ts'
 import {
   artifactDrift,
   bindReviewToRevision,
-  deliveryArtifactPaths,
-  deliveryScopePatterns,
   isQualityKind,
   verdictScopePatterns,
 } from './quality-gates.ts'
-import type { DeliveryAudit } from './quality-gates.ts'
 import { auditTeamWorkspace } from './workspace-audit.ts'
 import { readArtifactScope, snapshotWorkspacePaths, workspacePathExists } from './artifacts.ts'
 import { agentTeamsSource, observedSessionFormatVersion, restrictableToolNames } from './harness-compat.ts'
-import { memberSpawnRelaxableDeny, optionalToolPolicy, requireToolPolicy, resolveMemberToolFilter, type MemberToolFilter, type MemberToolPolicy } from './tool-policies.ts'
+import { memberSpawnRelaxableDeny, optionalToolPolicy, requireToolPolicy, resolveMemberToolFilter, type MemberToolPolicy } from './tool-policies.ts'
 import type { ContractAmendmentInput } from './state.ts'
-import type { AcceptanceResult, ArtifactDigest, ArtifactSnapshot, CommandResult, ReviewFinding, ReviewVerdict, TaskKind } from './types.ts'
+import type { AcceptanceResult, ArtifactSnapshot, CommandResult, ReviewFinding, ReviewVerdict, TaskKind } from './types.ts'
 import {
   deliverToMember,
   installRetiredMemberGuard,
@@ -95,7 +92,7 @@ import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeam
 import { installMailboxAdmission, isCurrentMail, mailboxContent, mailboxPrompt, readCurrentMailbox } from './mailbox.ts'
 import { resolveTeamProfile } from './profiles.ts'
 import { assertWorkflowArchivable } from './workflow-lifecycle.ts'
-import { forkLineageNote, leadIdentityOf, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeam, sessionLeadsTeamAsync } from './lineage.ts'
+import { forkLineageNote, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeamAsync } from './lineage.ts'
 
 export { steerCaptainReport } from './members.ts'
 
@@ -1011,7 +1008,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           tasks: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { task_id: { type: 'string', required: true }, seed_id: { type: 'string', required: true }, subject: { type: 'string', required: true }, status: { type: 'string', required: true }, kind: { type: 'string' }, assignee: { type: 'string' }, dependencies: { type: 'array', items: { type: 'string' }, required: true } } } },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: (value.phase === 'staged'
           ? `Team "${value.team_name}" plan created under ${value.state_dir}. It is staged: finish the roster and DAG, then wait for the user to edit and approve it. Do not start or approve it yourself.`
@@ -1363,7 +1360,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           phase: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: (value.phase === 'staged'
           ? `Member "${value.member_name}" added to the staged roster (${value.provider}/${value.model}); no child was spawned.`
@@ -1457,7 +1454,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           requeued_tasks: { type: 'array', items: { type: 'string' }, required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Member "${value.member_name}" removed (status ${value.status}); requeued tasks: ${value.requeued_tasks.join(', ') || 'none'}.`,
       }],
@@ -1545,7 +1542,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           assignee: { type: 'string' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task "${value.subject}" created as ${value.task_id} (status ${value.status}, kind ${value.kind}, ${value.assignee ? `assigned to ${value.assignee}` : 'unassigned shared pool'}).`,
       }],
@@ -1811,7 +1808,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           task_details: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task ${value.task_id} claimed by ${value.assignee} (attempt ${value.attempt}${value.attempt_id ? `, attempt_id ${value.attempt_id}` : ''}, status ${value.status}).\n${value.task_details}`,
       }],
@@ -1982,7 +1979,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           follow_up: { type: 'string' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Task ${value.task_id} attempt ${value.attempt} → ${value.status}${value.output !== undefined ? `\nOutput: ${value.output}` : ''}${value.evidence_count === undefined ? '' : `\nSupplemental evidence records: ${value.evidence_count}. Original result unchanged.`}${value.follow_up ? `\n${value.follow_up}` : ''}`,
       }],
@@ -2275,7 +2272,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           delivered: { type: 'string', required: true, description: 'live (accepted by the live captain), wake (member recipient woken), mailbox (durable inbox only), or duplicate (same message already retained).' },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Message ${value.message_id} ${value.from} → ${value.to} delivered via ${value.delivered}.`,
       }],
@@ -2602,7 +2599,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
           team_name: { type: 'string', required: true },
         },
       },
-      render: (args, value) => [{
+      render: (_args, value) => [{
         type: 'text',
         text: `Team "${value.team_name}" ended and archived.`,
       }],

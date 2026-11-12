@@ -39,6 +39,7 @@ export function taskReadiness(team: TeamState, task: TeamTask, l: WorkflowText =
   if (task.workflowPaused) return result(l(zh[control.label]), l("点击开始后重新进入调度，已停止的执行将重新开始。{0}", blocked.length ? l("仍需等待：{0}", upstream) : ''), blocked, 'path')
   if (team.phase === 'staged') return result(l(zh[control.label]), l("团队方案尚未确认启动。"))
   if (blocked.length) return result(l(zh[control.label]), l("等待：{0}", upstream), blocked, 'path')
+  if (task.checkpoint?.mode === 'ai') return result(l(zh[control.label]), l.language === 'en' ? 'Waiting for the acceptance agent to review the results.' : '等待验收 Agent 审核上游结果。')
   if (task.checkpoint) return result(l(zh[control.label]), l("上游已完成，打开材料并作出验收决定。"),[],'review')
   if (task.kind === 'archive') return result(l('等待归档'),l('上游已完成，系统将自动生成成果清单。'))
   if (task.assignee === 'captain') return result(l("等待队长"), l("依赖已满足，等待队长领取。"))

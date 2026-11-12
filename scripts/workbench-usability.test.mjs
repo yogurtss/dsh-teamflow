@@ -158,6 +158,22 @@ test('configuration errors identify the task and issue, and only explicit resolu
   assert.equal(resolved.tasks[0].workflowConfigPending,false)
 })
 
+test('idle members remain editable in halted teams while busy members and graph edits stay protected', () => {
+  const source=team();source.halted=true;source.tasks[0].assignee='worker'
+  const before=structuredClone(source)
+  const updated=applyWorkflowOperations(source,[{action:'update_member',name:'worker',model:'new-model',reasoningEffort:'high'}])
+  assert.equal(updated.members[0].model,'new-model');assert.equal(updated.halted,true)
+  assert.deepEqual(updated.tasks,source.tasks);assert.deepEqual(source,before)
+  for(const busy of ['claimed','in_progress','reassigning','stopping']) {
+    const copy=structuredClone(source)
+    if(busy==='stopping')copy.members[0].stopping=true
+    else if(busy==='reassigning')copy.tasks[0].reassigning=true
+    else copy.tasks[0].status=busy
+    assert.throws(()=>applyWorkflowOperations(copy,[{action:'update_member',name:'worker',model:'new-model'}]),/正在执行/)
+  }
+  assert.throws(()=>applyWorkflowOperations(source,[{action:'update_member',name:'worker',model:'new-model'},{action:'add_task',subject:'Unexpected',dependencies:[]}]),/团队已停止/)
+})
+
 test('expanded canvas cards preserve saved coordinates and snap to the displayed input port', async () => {
   const {displayPoint,storedPoint,connectionPort,connectionTarget}=await import('../lib/client/canvas-card-geometry.js')
   const saved={x:332,y:222}, shown=displayPoint(saved)

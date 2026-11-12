@@ -149,7 +149,18 @@ export function reconcileLoops(team: TeamState, now = Date.now(), failedTurnId?:
   for (const loop of loopsOf(team)) {
     if (loop.status === 'ready' && loop.queued && !team.halted && team.phase !== 'staged') {
       const ids = [loop.gateId, ...loop.bodyIds]
-      if (ids.flatMap(id => taskOf(team, id).dependencies).filter(id => !ids.includes(id)).every(id => taskOf(team, id).status === 'completed')) { startLoop(team, loop.id, 0, now, new Set(loop.bodyIds.filter(id => !taskOf(team, id).workflowLoopTaskHold))); changed = true }
+      const inputs = ids.flatMap(id => taskOf(team, id).dependencies).filter(id => !ids.includes(id))
+      if (inputs.every(id => taskOf(team, id).status === 'completed')) {
+        try {
+          const enabled = loop.bodyIds.filter(id => !taskOf(team, id).workflowLoopTaskHold)
+          startLoop(team, loop.id, 0, now, new Set(enabled))
+        } catch (error) {
+          if (!(error instanceof LoopStartUnavailable)) throw error
+          pause(team, loop, error.message, now)
+          delete loop.queued
+        }
+        changed = true
+      }
     }
     if (!['running', 'reviewing'].includes(loop.status)) continue
     const before = JSON.stringify(loop)
@@ -267,7 +278,7 @@ export function decideLoop(team: TeamState, id: string, input: { decisionId: str
   loop.lastDecisionId = input.decisionId; loop.lastDecision = input.decision; loop.feedback = input.note.trim(); loop.requestedTaskIds = [...new Set(targets)]
   gate.output = input.note.trim(); gate.updatedAt = now
   if (input.decision === 'pass') {
-    loop.status = 'passed'; gate.status = 'completed'; gate.checkpoint = { kind: 'gate', round: loop.round, decision: 'approve', note: input.note, history: [] }
+    loop.status = 'passed'; gate.status = 'completed'; gate.checkpoint = { ...gate.checkpoint!, kind: 'gate', mode: loop.mode, round: loop.round, decision: 'approve', note: input.note }
   } else if (input.decision === 'revise' && loop.round < loop.maxRounds) nextRound(team, loop, targets, input.note.trim(), now)
   else {
     // Revoke the review attempt without making its output satisfy dependencies.
