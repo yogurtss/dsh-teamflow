@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionProviderComponent, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionProviderComponent, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkflowLauncherProps } from './WorkflowLauncher.tsx'
@@ -24,11 +24,9 @@ const openCurrentChat='teamflow:open-current-chat'
 type Transcript={latest:number;archives:{id:string;at:number}[];sessionId:string;busy:boolean;records:{seq:number;card:SupervisorCard}[];messages:{id:string;role:string;text:string}[]}
 
 function ChatView({renderSlot}:ConversationViewsProps){return <>{renderSlot('conversation.session',{view:'chat'})}</>}
-export function NativeChatBody({renderFactorySlot,useSession,useConversation}:PropsRenderFactories & PropsRuntime<'teamflow.super-agent.panel.chat'>){
-  const blank=useSession(s=>s.blank&&!s.running)
-  const hasContent=useConversation(s=>s.activeTargets.size>0)
-  // The global Session owns its cwd. DSH's project-creation hero would require a workspace selection.
-  return <>{renderFactorySlot('conversation.content',{variant:'embedded',phase:blank&&!hasContent?'hero':'active',hero:false},{slots:{views:ChatView}})}</>
+export function NativeChatBody({renderFactorySlot}:PropsRenderFactories){
+  // Use DSH's bottom-docked composer from the first message onward.
+  return <>{renderFactorySlot('conversation.content',{variant:'embedded',phase:'active',hero:false},{slots:{views:ChatView}})}</>
 }
 function NativeChat({id,sessions,SessionProvider,renderChat,en}:Props & Required<HostChat> & {id:string;en:boolean}){
   const [reference,setReference]=useState<SessionReference>(),[error,setError]=useState('')
@@ -96,7 +94,7 @@ function GlobalConversation(props:Props & HostChat & {anchor?:string;close?:()=>
   const entries=!native&&log?[...log.messages.map(m=>({seq:Number(m.id),view:<div className={css.chatLine} data-role={m.role}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.role==='user'?m.text:<AssistantReply text={m.text} streaming={false}/>}</div>})),
     ...log.records.map(r=>({seq:r.seq,view:<ConversationCard {...props} archived={!!archive} sessionId={log.sessionId} card={r.card}/>}))].sort((a,b)=>a.seq-b.seq):[]
   return <div className={props.inline?css.chatPage:css.dialogShade}><section className={css.globalChat} role={props.inline?'region':'dialog'} aria-modal={props.inline?undefined:true} aria-label={en?'Global conversation':'全局对话'}>
-    <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2>{props.settings&&<button onClick={props.settings}>{en?'Watch settings':'监听设置'}</button>}
+    <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2>{props.settings&&<button className={css.watchSettingsButton} onClick={props.settings}>{en?'Watch settings':'监听设置'}</button>}
       {!!log?.archives.length&&<select aria-label={en?'Conversation history':'对话历史'} value={archive} onChange={e=>{setArchive(e.target.value);setLog(undefined)}}><option value="">{en?'Current conversation':'当前对话'}</option>{log.archives.map((a,i)=><option key={a.id} value={a.id}>{en?'History':'历史对话'} {i+1}</option>)}</select>}
       {!archive&&<button disabled={!log} onClick={()=>setConfirm(true)}>{en?'Clear context':'清除上下文'}</button>}
       {!archive&&!native&&log&&<button onClick={async()=>{const id=log.sessionId as SessionId;try{props.close?.();await props.openMember(id,id)}catch(e){setError(String(e))}}}>{en?'Open in DSH chat':'在 DSH 对话中打开'}</button>}

@@ -80,3 +80,18 @@
 .chatLine[data-role="user"]{width:fit-content;max-width:85%;margin-left:auto;padding:8px 14px;border-radius:12px;background:light-dark(#f1edfc,#353047)}
 
 .nativeChat{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;overflow:hidden}
+.nativeChat [data-conversation-scroll]>[data-composer-seat]{margin-block-start:auto}
+
+.globalChat .watchSettingsButton{cursor:pointer}
+.globalChat .watchSettingsButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#7656b2);outline-offset:2px}
+@media (hover:hover){
+  .globalChat .watchSettingsButton:hover{background:light-dark(#f1edfc,#353047);border-color:light-dark(#8064b7,#bba3ed);color:light-dark(#5538a5,#dfd1ff)}
+  @media (prefers-reduced-motion:no-preference){
+    .globalChat .watchSettingsButton{transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,transform 150ms ease}
+    .globalChat .watchSettingsButton:hover{transform:translateY(-1px)}
+    .globalChat .watchSettingsButton:active{transform:none}
+    .watched li button{transition:background-color 150ms ease}
+    .watched li button>span:last-child{transition:transform 150ms ease}
+    .watched li button:hover>span:last-child{transform:translateX(3px)}
+  }
+}
