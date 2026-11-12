@@ -633,7 +633,9 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     if (!added) return
     setEditing(true); setPanMode(false)
     updateView(current => selectWorkbench(current, { type:type==='archive'?'task':type==='gate'?'check':type, id: added.id }, result.team))
-    setLibrary('tasks'); setPane(window.matchMedia('(max-width: 900px)').matches ? 'discussion' : 'flow'); setInspectorHidden(false)
+    const narrow = window.matchMedia('(max-width: 900px)').matches
+    setLibrary('tasks'); setPane(narrow ? 'discussion' : 'flow'); setInspectorHidden(false)
+    focusAttention(narrow ? 'header[data-guide="inspector"]' : `[data-card-task="${CSS.escape(added.id)}"]`)
     setFeedback(l("节点已保存，可直接连线；填写要求并完成配置前不会执行或进入验收。"))
     requestAnimationFrame(() => {
       const saved = result.team.workflow?.positions[`task:${added.id}`]
@@ -910,7 +912,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           <footer className={css.canvasStatus} role="status">{link ? link.issue ?? (link.to ? l("已吸附 · 松开连接") : l("拖到下游节点 · Esc 取消")) : l("{0} 个任务节点 · {1} · 滚轮缩放（以鼠标位置为中心）{2}", team.tasks.length, editing ? l("拖动空白处平移") : l("拖动画布平移"), editing ? l(" · 靠近节点显示圆点，拖动连线 · Delete 删除") : l(" · 单击节点查看详情"))}</footer>
         </main>
         <div className={css.resizeHandle} role="separator" aria-label={l("调整右侧面板宽度")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={720} aria-valuenow={inspectorWidth} tabIndex={inspectorHidden ? -1 : 0} onPointerDown={resizeInspector} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setInspectorExpanded(false); setInspectorWidth(value => Math.max(300, Math.min(720, value + (event.key === 'ArrowLeft' ? 40 : -40)))) } }} />
-        <section className={css.inspector} aria-label={l("属性与讨论面板")}><header data-guide="inspector" className={css.inspectorHeader}><strong>{selection.type==='member' && selection.id ? 'Agent · '+selection.id : activeTask ? (gateNode(activeTask)?loopLabel:activeTask.checkpoint?l('验收节点'):l('任务'))+' · '+activeTask.subject : reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
+        <section className={css.inspector} aria-label={l("属性与讨论面板")}><header tabIndex={-1} data-guide="inspector" className={css.inspectorHeader}><strong>{selection.type==='member' && selection.id ? 'Agent · '+selection.id : activeTask ? (gateNode(activeTask)?loopLabel:activeTask.checkpoint?l('验收节点'):l('任务'))+' · '+activeTask.subject : reviewingCheckpoint ? l("验收工作台") : editor ? l("编辑属性") : activeTask || selectedEdge ? l("节点与连接") : l("讨论与验收")}</strong><button aria-pressed={inspectorExpanded} onClick={() => setInspectorExpanded(!inspectorExpanded)}>{inspectorExpanded ? l("还原面板") : l("放大面板")}</button></header>
           {activeTask?.checkpoint && !gateNode(activeTask) && !selectedEdge && <label>{l.language === 'en' ? 'Review mode' : '审核方式'} {reviewModeSelect(activeTask)}</label>}
           {activeTask && !selectedEdge && <LoopPanel key={team.id + ':' + activeTask.id} modeSelect={reviewModeSelect(activeTask)} returnDraft={returnDraft?.gate===activeTask.id ? returnDraft : undefined} team={team} task={activeTask} sessionId={sessionId} base={data.base} archived={archiveView} busy={working} perform={perform} />}
           {selectedEdge && <aside className={css.editor} aria-label={l("交接详情")}><strong>{team.tasks.find(task => task.id === selectedEdge.from)?.subject} → {team.tasks.find(task => task.id === selectedEdge.to)?.subject}</strong><p>{l("上游完成后，下游才开始。编辑时按 Delete 删除；已开始的下游需先停止。")}</p><button disabled={working || archiveView || !editing} onClick={() => void deleteEdge()}>{l("删除连线")}</button></aside>}
