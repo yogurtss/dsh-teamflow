@@ -29,7 +29,7 @@ export function createWorkspaceBridge() {
 export function ActivitySurface({ state, ...props }: ActivityPanelProps & {
   state: WorkspaceActivityState
 }) {
-  return <ActivityPanel {...props} onMonitorStatus={state.status} onRememberTeam={state.remember} />
+  return <ActivityPanel {...props} onMonitorStatus={state.status} />
 }
 
 export type WorkspaceActivityProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'agentTeams'> & {

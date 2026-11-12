@@ -32,8 +32,6 @@ import {
   withTeamLock,
 } from '../lib/state.js'
 import {
-  activityPanelExpandedForSession,
-  activityPanelShouldAutoExpand,
   compactDagLayout,
   compactModelLabel,
   COMPACT_DAG_NODE_HEIGHT,
@@ -59,18 +57,6 @@ import {
   startActivityPolling,
   subscribeActivityMonitorTargets,
 } from '../lib/client/activity-monitor.js'
-import {
-  DEFAULT_PANEL_LAYOUT,
-  compactPanelForBounds,
-  dockPanelLayout,
-  floatPanelLayout,
-  movePanelLayout,
-  panelMaximumHeight,
-  panelUsesAutoHeight,
-  parsePanelLayout,
-  resizePanelLayout,
-  resolvePanelGeometry,
-} from '../lib/client/panel-geometry.js'
 import { memberArtUrl } from '../lib/client/artwork.js'
 import { parseAgentTeamsCreateArgs } from '../lib/client/agent-teams-card-definition.js'
 import {
@@ -283,7 +269,6 @@ check(
   activityPanelSource.includes("const discarded = historic && team.phase === 'staged'")
     && activityPanelSource.includes("t('member.status.discarded')")
     && activityPanelSource.includes("t('member.status.stopped')")
-    && activityPanelSource.includes("'archive.discardedLabel'")
     && localesSource.includes("'task.status.notRun': '未执行'")
     && localesSource.includes("'member.state.notCreated': '未创建'"),
 )
@@ -383,24 +368,9 @@ check(
   'a body portal or unbounded z-index can cover host modal controls',
 )
 check(
-  'panel exposes drag, resize, dock, and fold interaction probes',
-  activityPanelSource.includes('data-drag-handle')
-    && activityPanelSource.includes('data-resize-edge="left"')
-    && activityPanelSource.includes('data-resize-edge="corner"')
-    && activityPanelSource.includes('data-control="dock"')
-    && activityPanelSource.includes('data-control="collapse"')
-    && activityPanelSource.includes('data-height-mode=')
-    && activityPanelSource.includes("height: autoHeight ? 'auto'")
-    && activityPanelCss.includes('.resizeHandle')
-    && activityPanelCss.includes(".resizeHandle[data-resize-edge='left']::after")
-    && activityPanelCss.includes(".resizeHandle[data-resize-edge='bottom']::after")
-    && activityPanelCss.includes('.resizeHandle:hover::after')
-    && activityPanelCss.includes('pointer-events: auto')
-    && activityPanelCss.includes('width: 28px')
-    && activityPanelCss.includes('height: 28px')
-    && activityPanelCss.includes('scrollbar-width: thin')
-    && !activityPanelCss.includes('scrollbar-width: none'),
-  'interactive panel controls must stay visible to browser verification',
+  'conversation badge opens the canvas directly',
+  activityPanelSource.includes('setCanvasEntry({ owner: current, teamId: team.teamId')
+    && !activityPanelSource.includes('data-agent-teams-activity'),
 )
 check(
   'staged plan editor keeps long plans compact and guards consequential actions',
@@ -923,102 +893,6 @@ check(
     && compactModelLabel(' openai/gpt-5.6-sol ') === 'gpt-5.6-sol'
     && memberRouteLabel({ provider: 'openai/org', model: 'gpt-5.6-sol' }) === 'openai/org/gpt-5.6-sol'
     && compactModelLabel('openai/org/gpt-5.6-sol') === 'gpt-5.6-sol',
-)
-const panelBounds = { width: 1440, height: 900, anchorRight: 1440 }
-const dockedPanel = resolvePanelGeometry(DEFAULT_PANEL_LAYOUT, panelBounds)
-check('docked panel follows the shell anchor and retains an available-height ceiling',
-  dockedPanel.mode === 'docked'
-    && dockedPanel.x === 1034
-    && dockedPanel.y === 64
-    && dockedPanel.width === 388
-    && dockedPanel.height === 788
-    && dockedPanel.heightMode === 'auto'
-    && panelUsesAutoHeight(dockedPanel, panelBounds)
-    && panelMaximumHeight(dockedPanel, panelBounds) === 788)
-const floatingPanel = floatPanelLayout(dockedPanel, panelBounds)
-const movedPanel = movePanelLayout(floatingPanel, 999, 999, panelBounds)
-check('floating panel movement clamps every edge inside the shell',
-  movedPanel.mode === 'floating' && movedPanel.x === 1040 && movedPanel.y === 100)
-const widerDockedPanel = resizePanelLayout(dockedPanel, 'left', -120, 0, panelBounds)
-check('docked left-edge resize preserves the right anchor',
-  widerDockedPanel.width === 508 && widerDockedPanel.x === 914)
-const narrowerFloatingPanel = resizePanelLayout(floatingPanel, 'left', 200, 0, panelBounds)
-check('floating left-edge resize preserves the opposite edge at minimum width',
-  narrowerFloatingPanel.width === 320 && narrowerFloatingPanel.x === 1102)
-const cornerPanel = resizePanelLayout({ ...floatingPanel, x: 400, y: 200, width: 388, height: 500 }, 'corner', 1200, 1200, panelBounds)
-check('floating corner resize preserves its top-left anchor at shell limits',
-  cornerPanel.x === 400 && cornerPanel.y === 200
-    && cornerPanel.width === 640 && cornerPanel.height === 688
-    && cornerPanel.heightMode === 'manual'
-    && !panelUsesAutoHeight(cornerPanel, panelBounds))
-const bottomPanel = resizePanelLayout({ ...floatingPanel, x: 400, y: 200, width: 388, height: 500 }, 'bottom', 0, 1200, panelBounds)
-check('floating bottom resize preserves its top edge at the shell limit',
-  bottomPanel.y === 200 && bottomPanel.height === 688
-    && bottomPanel.heightMode === 'manual')
-const redockedPanel = dockPanelLayout({ ...floatingPanel, width: 472, x: 120, y: 100, heightMode: 'manual' }, panelBounds)
-check('dock toggle preserves width while restoring shell alignment and content-fit height',
-  redockedPanel.x === 950 && redockedPanel.width === 472 && redockedPanel.heightMode === 'auto')
-const compactBounds = { width: 900, height: 700, anchorRight: 900 }
-const compactPanel = resolvePanelGeometry(floatingPanel, compactBounds)
-check('compact shell disables free geometry and uses a balanced inset',
-  compactPanelForBounds(compactBounds)
-    && compactPanel.x === 12 && compactPanel.y === 12
-    && compactPanel.width === 876 && compactPanel.height === 676
-    && panelUsesAutoHeight({ ...compactPanel, heightMode: 'manual' }, compactBounds)
-    && panelMaximumHeight(compactPanel, compactBounds) === 676)
-check('persisted panel state rejects corrupt or partial values',
-  parsePanelLayout('{"mode":"floating","x":1}').mode === 'docked'
-    && parsePanelLayout('not-json').mode === 'docked')
-const migratedPanel = parsePanelLayout('{"mode":"floating","x":120,"y":80,"width":420,"height":600}')
-const manualPanel = parsePanelLayout('{"mode":"floating","x":120,"y":80,"width":420,"height":600,"heightMode":"manual"}')
-const legacyDockedManualPanel = parsePanelLayout('{"mode":"docked","x":120,"y":80,"width":420,"height":600,"heightMode":"manual"}')
-check('persisted panel height migrates to auto but preserves explicit manual sizing',
-  migratedPanel.heightMode === 'auto'
-    && panelUsesAutoHeight(migratedPanel, panelBounds)
-    && manualPanel.heightMode === 'manual'
-    && !panelUsesAutoHeight(manualPanel, panelBounds)
-    && legacyDockedManualPanel.heightMode === 'auto')
-check(
-  'expanded activity panel belongs only to its current session',
-  activityPanelExpandedForSession(true, 'session-a', 'session-a')
-    && !activityPanelExpandedForSession(true, 'session-a', 'session-b')
-    && !activityPanelExpandedForSession(true, 'session-a', undefined),
-)
-check(
-  'restored live activity stays collapsed when a conversation is reopened',
-  !activityPanelShouldAutoExpand({
-    alreadyAutoOpened: false,
-    pageSettled: true,
-    restoreComplete: true,
-    previousLiveTeamIds: new Set(['restored-team']),
-    currentLiveTeamIds: ['restored-team'],
-  }),
-)
-check(
-  'archived-only conversation restore never auto-expands the activity panel',
-  !activityPanelShouldAutoExpand({
-    alreadyAutoOpened: false,
-    pageSettled: true,
-    restoreComplete: true,
-    previousLiveTeamIds: new Set(),
-    currentLiveTeamIds: [],
-  }),
-)
-check(
-  'a new live team appearing after restore still auto-expands once',
-  activityPanelShouldAutoExpand({
-    alreadyAutoOpened: false,
-    pageSettled: true,
-    restoreComplete: true,
-    previousLiveTeamIds: new Set(),
-    currentLiveTeamIds: ['new-team'],
-  }) && !activityPanelShouldAutoExpand({
-    alreadyAutoOpened: true,
-    pageSettled: true,
-    restoreComplete: true,
-    previousLiveTeamIds: new Set(),
-    currentLiveTeamIds: ['new-team'],
-  }),
 )
 let monitorNotifications = 0
 const unsubscribeMonitor = subscribeActivityMonitorTargets(() => { monitorNotifications += 1 })

@@ -3,36 +3,15 @@ import { workflowRequest } from './workflow-request.ts'
 import { activityStatus } from './activity-status.ts'
 import { resolveActivitySession, type ActivitySessionOwner } from './activity-session.ts'
 import { WorkflowLocale } from './workflow-i18n.tsx'
-/**
- * AgentTeams activity panel: the top-right floater monitoring every team.
- *
- * Modeled on the Claude Code desktop SessionActivityPanel: a shell-overlay
- * panel that docks at the conversation's top-right edge by default, can be
- * dragged into a floating window, resized, and folded into an activity badge.
- * On wide viewports the docked panel makes the conversation column yield
- * space; narrow viewports keep a simple inset overlay. It
- * polls the host `/plugins/dsh-agent-teams/state` route for
- * server-side snapshots (durable files + live subagent activity), with a
- * badge that opens the workflow canvas on demand. Archived
- * teams stay available for the owning conversation after live work ends.
- *
- * The floater mounts in ui-layout's additive `shell.overlay`; it is not a
- * conversation node — the in-conversation panel was removed in favor of this
- * always-available monitor.
- * @module dsh-agent-teams/client/activity
- */
-
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { flowControlState, flowControlVersion, taskControlState } from './task-control.ts'
 import { TaskStateBadge, taskStateNodeClass } from './TaskStateBadge.tsx'
 import { QuickMemberEditor } from './QuickMemberEditor.tsx'
-import { WorkflowHistory } from './WorkflowHistory.tsx'
 import {
-  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
-  type CSSProperties, type PointerEvent as ReactPointerEvent,
+  useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
 } from 'react'
 import {
-  IconBranchOutline16, IconChevronDownOutline14, IconPanelLeftOutline16,
+  IconBranchOutline16,
   IconStopFill16, IconWarningOutline16,
   WorkflowIcon,
 } from './icons.tsx'
@@ -44,7 +23,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
-  activityPanelExpandedForSession,
   compactDagLayout,
   COMPACT_DAG_NODE_WIDTH,
   COMPACT_DAG_NODE_HEIGHT,
@@ -70,57 +48,12 @@ import {
   type ActivityTeam,
 } from './activity-monitor.ts'
 import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
-import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { StagingPlanEditor } from './StagingPlanEditor.tsx'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
 import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
-import {
-  DEFAULT_PANEL_LAYOUT,
-  PANEL_LAYOUT_STORAGE_KEY,
-  compactPanelForBounds,
-  dockPanelLayout,
-  floatPanelLayout,
-  movePanelLayout,
-  panelMaximumHeight,
-  panelUsesAutoHeight,
-  parsePanelLayout,
-  resizePanelLayout,
-  resolvePanelGeometry,
-  type PanelBounds,
-  type PanelLayout,
-  type PanelResizeEdge,
-} from './panel-geometry.ts'
 import css from './ActivityPanel.module.css'
 
-/** Grace before the panel collapses once no team remains. */
-const AUTOCLOSE_GRACE_MS = 2000
-/** Root marker shared with the panel CSS while the shell overlay is expanded. */
-const PANEL_OPEN_ATTRIBUTE = 'data-agent-teams-panel-open'
-/** Shared width concession consumed by the conversation root CSS. */
-const PANEL_SHIFT_PROPERTY = '--agent-teams-panel-shift'
-const PANEL_CONVERSATION_GAP = 14
-const MOVE_THRESHOLD = 4
 const CAPTAIN_ASSIGNEE = 'captain'
-
-type PanelGesture = {
-  readonly kind: 'move' | 'resize'
-  readonly edge?: PanelResizeEdge
-  readonly pointerId: number
-  readonly originX: number
-  readonly originY: number
-  readonly start: PanelLayout
-  activated: boolean
-}
-
-function initialPanelLayout(): PanelLayout {
-  if (typeof window === 'undefined') return DEFAULT_PANEL_LAYOUT
-  return parsePanelLayout(window.localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY))
-}
-
-function initialPanelBounds(): PanelBounds {
-  if (typeof window === 'undefined') return { width: 1440, height: 900, anchorRight: 1440 }
-  return { width: window.innerWidth, height: window.innerHeight, anchorRight: window.innerWidth }
-}
 
 /** Initial-letter fallback for unmatched roles. */
 function memberInitial(name: string): string {
@@ -919,35 +852,14 @@ export function historicCardTeam(data: AgentTeamsCardData, owner: string): Activ
  * session is the one currently open. */
 export type ActivityPanelProps = {
   readonly onMonitorStatus?: (sessionId: SessionId, status: 'loading' | 'ready' | 'error') => void
-  readonly onRememberTeam?: (sessionId: SessionId, data: AgentTeamsCardData) => void
   readonly conversationVisible?: boolean
   readonly sessionsList: ObservableSnapshot<SessionListState>
   readonly modelDirectories: ModelDirectoryResolver
   readonly openMember: (parentId: SessionId, childId: SessionId) => void | Promise<void>
 } & PropsLocale<'agentTeams'>
 
-export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true, onMonitorStatus, onRememberTeam }: ActivityPanelProps) {
-  // Navigating to a member's subagent transcript is an explicit departure:
-  // hide the floater immediately instead of waiting out the autocollapse
-  // grace, so the panel never lingers over the member session.
-  const navigateToSession = (parentId: SessionId, childId: SessionId): void | Promise<void> => {
-    setOpen(false)
-    setWasActive(false)
-    return openMember(parentId, childId)
-  }
-  const [open, setOpen] = useState(false)
-  const [openOwner, setOpenOwner] = useState<SessionId | undefined>()
+export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, conversationVisible = true, onMonitorStatus }: ActivityPanelProps) {
   const [canvasEntry, setCanvasEntry] = useState<{ owner: SessionId; teamId: string; archived: boolean }>()
-  const [wasActive, setWasActive] = useState(false)
-  const [historic, setHistoric] = useState<ReadonlyMap<string, { data: AgentTeamsCardData; owner: string }>>(new Map())
-  const [layout, setLayout] = useState<PanelLayout>(initialPanelLayout)
-  const [bounds, setBounds] = useState<PanelBounds>(initialPanelBounds)
-  const [interaction, setInteraction] = useState<'dragging' | 'resizing' | null>(null)
-  const panelRef = useRef<HTMLElement | null>(null)
-  const boundsRef = useRef(bounds)
-  const gestureRef = useRef<PanelGesture | null>(null)
-  const frameRef = useRef<number | null>(null)
-  const pendingLayoutRef = useRef<PanelLayout | null>(null)
   const selectedSession = currentSessionId(useSyncExternalStore(
     sessionsList.subscribe,
     sessionsList.getSnapshot,
@@ -968,15 +880,6 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     subscribeActivityMonitorTargets,
     getActivityMonitorTargetsSnapshot,
   )
-  const returnToComposer = (): void => {
-    setOpen(false)
-    setOpenOwner(undefined)
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(
-        '[data-composer-card] [contenteditable="true"][role="textbox"], [data-composer-card] textarea',
-      )?.focus()
-    })
-  }
   const { teams, archivedTeams } = useSyncExternalStore(
     subscribeActivitySnapshots,
     getActivitySnapshotsSnapshot,
@@ -985,91 +888,9 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     () => current === undefined ? [] : monitorTargets.filter((target) => target.sessionId === current),
     [current, monitorTargets],
   )
-  const currentRef = useRef(current)
-  useEffect(() => { currentRef.current = current }, [current])
-  const expanded = conversationVisible && activityPanelExpandedForSession(open, openOwner, current)
-  const geometry = useMemo(() => resolvePanelGeometry(layout, bounds), [layout, bounds])
-  const compact = compactPanelForBounds(bounds)
-
-  const commitLayout = useCallback((next: PanelLayout): void => {
-    setLayout(next)
-  }, [])
-
-  useEffect(() => {
-    window.localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(layout))
-  }, [layout])
-
-  // The slot sits inside AppFrame, so all geometry is measured against the
-  // shell overlay rather than the browser viewport. The conversation's real
-  // right edge is the dock anchor and naturally follows sidebar/details
-  // concessions without importing their hashed implementation classes.
   useLayoutEffect(() => {
-    const overlay = document.querySelector<HTMLElement>('[data-shell-overlay]')
-    if (overlay === null) return
-    const conversation = document.querySelector<HTMLElement>("[data-phase='active']")
-    let frame: number | null = null
-    const measure = (): void => {
-      frame = null
-      const overlayRect = overlay.getBoundingClientRect()
-      const conversationRect = conversation?.getBoundingClientRect()
-      const next: PanelBounds = {
-        width: overlayRect.width,
-        height: overlayRect.height,
-        anchorRight: conversationRect === undefined
-          ? overlayRect.width
-          : Math.min(Math.max(conversationRect.right - overlayRect.left, 0), overlayRect.width),
-      }
-      const previous = boundsRef.current
-      if (previous.width === next.width
-        && previous.height === next.height
-        && previous.anchorRight === next.anchorRight) return
-      boundsRef.current = next
-      setBounds(next)
-    }
-    const scheduleMeasure = (): void => {
-      frame ??= requestAnimationFrame(measure)
-    }
-    measure()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleMeasure)
-    observer?.observe(overlay)
-    if (conversation !== null) observer?.observe(conversation)
-    window.addEventListener('resize', scheduleMeasure)
-    return () => {
-      if (frame !== null) cancelAnimationFrame(frame)
-      observer?.disconnect()
-      window.removeEventListener('resize', scheduleMeasure)
-    }
+    setCanvasEntry(entry => entry?.owner === current ? entry : undefined)
   }, [current])
-
-  // This shell overlay survives conversation route changes. Gate expansion by its
-  // owning session during render, then clear stale state before paint. This
-  // removes the old panel immediately instead of waiting for the no-team
-  // autoclose grace period on the destination page.
-  useLayoutEffect(() => {
-    if (canvasEntry && canvasEntry.owner !== current) setCanvasEntry(undefined)
-    if (openOwner === undefined || openOwner === current) return
-    setOpen(false)
-    setOpenOwner(undefined)
-  }, [current, openOwner, canvasEntry])
-
-  // Only the wide docked mode asks the conversation column to yield. Floating
-  // and compact modes are intentionally true overlays. The width is written as
-  // one shared variable so the panel and the concession cannot drift apart.
-  useLayoutEffect(() => {
-    const root = document.documentElement
-    const shouldYield = expanded && geometry.mode === 'docked' && !compact
-    if (shouldYield) {
-      root.setAttribute(PANEL_OPEN_ATTRIBUTE, '')
-      root.style.setProperty(PANEL_SHIFT_PROPERTY, `${geometry.width + PANEL_CONVERSATION_GAP + 18}px`)
-    } else {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
-    return () => {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
-  }, [compact, expanded, geometry.mode, geometry.width])
 
   useEffect(() => {
     if (current === undefined) return
@@ -1081,50 +902,11 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     return () => controller.stop()
   }, [current, currentTargets, onMonitorStatus])
 
-  useEffect(() => {
-    const onOpenPanel = (event: Event): void => {
-      const activeSession = currentRef.current
-      if (activeSession === undefined) return
-      const detail = (event as CustomEvent<AgentTeamsCardData>).detail
-      if (detail?.captainSessionId && detail.captainSessionId !== activeSession) return
-      setOpenOwner(activeSession)
-      setOpen(true)
-      if (detail?.teamId !== undefined) {
-        onRememberTeam?.(activeSession, detail)
-        // A card from a log that predates captainSessionId belongs to the
-        // session that activated it (the current one at injection time).
-        const owner = detail.captainSessionId || activeSession
-        const teamKey = `${owner}:${detail.teamId}`
-        setHistoric((previous) => {
-          const next = new Map(previous)
-          next.set(teamKey, { data: detail, owner })
-          return next
-        })
-      }
-    }
-    window.addEventListener(OPEN_PANEL_EVENT, onOpenPanel)
-    return () => {
-      window.removeEventListener(OPEN_PANEL_EVENT, onOpenPanel)
-    }
-  }, [onRememberTeam])
-
-  // Teams follow the current session: live snapshots and historic card
-  // summaries are visible only while their captain session is current.
   const visibleTeams = useMemo(
     // No current session (initial load): show nothing until one is picked,
     // so cross-session teams never leak into the floater.
     () => (current === undefined ? [] : teams.filter((team) => team.captainSessionId === current)),
     [teams, current],
-  )
-  const visibleHistoric = useMemo(
-    () => (current === undefined ? [] : [...historic.values()].filter(({ data, owner }) =>
-      owner === current && !teams.some((live) =>
-        live.captainSessionId === current && live.teamId === data.teamId,
-      ) && !archivedTeams.some((archived) =>
-        archived.captainSessionId === current && archived.teamId === data.teamId,
-      ),
-    )),
-    [historic, current, teams, archivedTeams],
   )
   const visibleArchived = useMemo(
     () => (current === undefined ? [] : archivedTeams.filter((team) =>
@@ -1134,304 +916,23 @@ export function ActivityPanel({ sessionsList, modelDirectories, openMember, t, c
     )),
     [archivedTeams, current, teams],
   )
-  const visibleCount = visibleTeams.length + visibleArchived.length + visibleHistoric.length
-  useEffect(() => {
-    if (visibleCount > 0) { setWasActive(true); return }
-    if (!wasActive) return
-    const timer = setTimeout(() => {
-      setOpen(false)
-      setOpenOwner(undefined)
-      setWasActive(false)
-    }, AUTOCLOSE_GRACE_MS)
-    return () => { clearTimeout(timer) }
-  }, [visibleCount, wasActive, current])
-
   const busy = useMemo(
     () => visibleTeams.some((team) => team.members.some((member) => member.activity === 'working')),
     [visibleTeams],
   )
-  const hasTeams = visibleCount > 0
-
-  // Auto-height panels do not store their live content height. Capture the
-  // rendered box when a pointer gesture starts so movement and a first manual
-  // resize clamp against what the user actually sees.
-  const panelGeometryForGesture = useCallback((): PanelLayout => {
-    const measuredHeight = panelRef.current?.getBoundingClientRect().height
-    if (measuredHeight === undefined || measuredHeight <= 0) return geometry
-    return { ...geometry, height: measuredHeight }
-  }, [geometry])
-
-  const flushScheduledLayout = useCallback((): void => {
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current)
-      frameRef.current = null
-    }
-    const pending = pendingLayoutRef.current
-    pendingLayoutRef.current = null
-    if (pending !== null) commitLayout(pending)
-  }, [commitLayout])
-
-  const scheduleLayout = useCallback((next: PanelLayout): void => {
-    pendingLayoutRef.current = next
-    frameRef.current ??= requestAnimationFrame(() => {
-      frameRef.current = null
-      const pending = pendingLayoutRef.current
-      pendingLayoutRef.current = null
-      if (pending !== null) commitLayout(pending)
-    })
-  }, [commitLayout])
-
-  useEffect(() => () => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
-  }, [])
-
-  const beginMove = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    if (compact || event.button !== 0 || (event.target as Element).closest('button') !== null) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    gestureRef.current = {
-      kind: 'move',
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      start: panelGeometryForGesture(),
-      activated: false,
-    }
-  }, [compact, panelGeometryForGesture])
-
-  const beginResize = useCallback((edge: PanelResizeEdge, event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (compact || event.button !== 0 || (geometry.mode === 'docked' && edge !== 'left')) return
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    gestureRef.current = {
-      kind: 'resize',
-      edge,
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      start: panelGeometryForGesture(),
-      activated: true,
-    }
-    setInteraction('resizing')
-  }, [compact, geometry.mode, panelGeometryForGesture])
-
-  const updateGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId
-      || !event.currentTarget.hasPointerCapture(event.pointerId)) return
-    const dx = event.clientX - gesture.originX
-    const dy = event.clientY - gesture.originY
-    const activeBounds = boundsRef.current
-    if (gesture.kind === 'move') {
-      if (!gesture.activated && Math.hypot(dx, dy) < MOVE_THRESHOLD) return
-      if (!gesture.activated) {
-        gesture.activated = true
-        setInteraction('dragging')
-      }
-      scheduleLayout(movePanelLayout(
-        floatPanelLayout(gesture.start, activeBounds),
-        dx,
-        dy,
-        activeBounds,
-      ))
-      return
-    }
-    scheduleLayout(resizePanelLayout(
-      gesture.start,
-      gesture.edge ?? 'left',
-      dx,
-      dy,
-      activeBounds,
-    ))
-  }, [scheduleLayout])
-
-  const endGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId) return
-    updateGesture(event)
-    flushScheduledLayout()
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    gestureRef.current = null
-    setInteraction(null)
-  }, [flushScheduledLayout, updateGesture])
-
-  const cancelGesture = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
-    const gesture = gestureRef.current
-    if (gesture === null || gesture.pointerId !== event.pointerId) return
-    flushScheduledLayout()
-    gestureRef.current = null
-    setInteraction(null)
-  }, [flushScheduledLayout])
-
-  const toggleDock = useCallback((): void => {
-    const liveGeometry = panelGeometryForGesture()
-    commitLayout(liveGeometry.mode === 'docked'
-      ? floatPanelLayout(liveGeometry, boundsRef.current)
-      : dockPanelLayout(liveGeometry, boundsRef.current))
-  }, [commitLayout, panelGeometryForGesture])
-
-  const autoHeight = panelUsesAutoHeight(geometry, bounds)
-
-  const panelStyle: CSSProperties = {
-    width: geometry.width,
-    height: autoHeight ? 'auto' : geometry.height,
-    maxHeight: panelMaximumHeight(geometry, bounds),
-    transform: `translate3d(${geometry.x}px, ${geometry.y}px, 0)`,
-  }
-
-  if (!conversationVisible || (!hasTeams && !expanded && !canvasEntry)) return null
-
+  const team = visibleTeams[0] ?? visibleArchived[0]
+  if (!conversationVisible || !current) return null
   return (
     <>
-      {!expanded && (
-        <CollapsedBadge count={visibleCount} busy={busy} team={visibleTeams[0]??visibleArchived[0]} archived={!visibleTeams.length&&!!visibleArchived.length} t={t} onClick={() => {
-          if (current === undefined) return
-          const team = visibleTeams[0] ?? visibleArchived[0]
-          if (team) setCanvasEntry({ owner: current, teamId: team.teamId, archived: visibleArchived.includes(team) })
-          else { setOpenOwner(current); setOpen(true) }
-        }} />
-      )}
+      {team && <CollapsedBadge count={visibleTeams.length + visibleArchived.length} busy={busy}
+        team={team} archived={!visibleTeams.length} t={t}
+        onClick={() => setCanvasEntry({ owner: current, teamId: team.teamId, archived: !visibleTeams.length })} />}
       {canvasEntry && canvasEntry.owner === current && <WorkflowWorkbench
         key={canvasEntry.owner + ':' + canvasEntry.teamId} initiallyOpen sessionId={canvasEntry.owner}
         teamId={canvasEntry.teamId} archived={canvasEntry.archived} t={t}
         modelDirectory={modelDirectories.directoryFor(canvasEntry.owner)}
-        openExecution={(id, parent) => navigateToSession((parent ?? canvasEntry.owner) as SessionId, id as SessionId)}
-        onShowActivity={() => { setCanvasEntry(undefined); setOpenOwner(current); setOpen(true) }}
+        openExecution={(id, parent) => openMember((parent ?? canvasEntry.owner) as SessionId, id as SessionId)}
         onClose={() => setCanvasEntry(undefined)} />}
-      {expanded && (
-        <aside
-          ref={panelRef}
-          className={css.panel}
-          style={panelStyle}
-          data-agent-teams-activity
-          data-panel-mode={geometry.mode}
-          data-height-mode={autoHeight ? 'auto' : 'manual'}
-          data-compact={compact || undefined}
-          data-dragging={interaction === 'dragging' || undefined}
-          data-resizing={interaction === 'resizing' || undefined}
-          aria-label={t('activity.panelAria')}
-        >
-          <header
-            className={css.panelHead}
-            onPointerDown={beginMove}
-            onPointerMove={updateGesture}
-            onPointerUp={endGesture}
-            onPointerCancel={cancelGesture}
-            data-drag-handle={!compact || undefined}
-          >
-            <span className={css.panelTitle}>
-              {t('activity.title')}
-              <span className={css.panelDot} data-busy={busy} aria-hidden />
-            </span>
-            <span className={css.panelControls}>
-              {!compact && (
-                <button
-                  type="button"
-                  className={css.iconButton}
-                  data-control="dock"
-                  data-mode={geometry.mode}
-                  onClick={toggleDock}
-                  aria-label={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
-                  title={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
-                >
-                  <IconPanelLeftOutline16 />
-                </button>
-              )}
-              <button
-                type="button"
-                className={css.iconButton}
-                data-control="collapse"
-                onClick={() => {
-                  setOpen(false)
-                  setOpenOwner(undefined)
-                }}
-                aria-label={t('activity.collapse')}
-                title={t('activity.collapse')}
-              >
-                <IconChevronDownOutline14 />
-              </button>
-            </span>
-          </header>
-          <div className={css.teams}>
-            <div className={css.workflowLaunchers}>
-              {current && visibleCount === 0 && <WorkflowWorkbench key={current} sessionId={current} modelDirectory={modelDirectories.directoryFor(current)} t={t}
-                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
-                openExecution={(id, parentId) => navigateToSession((parentId ?? current) as SessionId, id as SessionId)} />}
-              {[...visibleTeams,...visibleArchived].map(team => <WorkflowWorkbench key={team.teamId} sessionId={team.captainSessionId} teamId={team.teamId} archived={visibleArchived.includes(team)} modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)} t={t}
-                openConversation={id => openWorkflowConversation(navigateToSession, id as SessionId)}
-                openExecution={(id, parentId) => navigateToSession((parentId ?? team.captainSessionId) as SessionId, id as SessionId)} />)}
-              {visibleHistoric.map(({ data, owner }) => <WorkflowHistory key={data.teamId} name={data.teamName}>
-                <TeamSection team={historicCardTeam(data, owner)} workspace historic onNavigate={navigateToSession} t={t} />
-              </WorkflowHistory>)}
-            </div>
-            {visibleCount === 0
-              ? <span className={css.emptyHint}>{t('activity.empty')}</span>
-              : (
-                <>
-                  {visibleTeams.map((team) => (
-                    <TeamSection
-                      key={team.teamId}
-                      team={team}
-                      modelDirectory={modelDirectories.directoryFor(team.captainSessionId as SessionId)}
-                      onContinuePlanning={returnToComposer}
-                      onDiscarded={returnToComposer}
-                      onNavigate={navigateToSession}
-                      t={t}
-                    />
-                  ))}
-                  {visibleArchived.map((team) => (
-                    <div key={`${team.captainSessionId}:${team.teamId}`} data-team-id={team.teamId} data-historic className={css.archivedWrap}>
-                      <span className={css.archiveLabel}>{t(team.phase === 'staged' ? 'archive.discardedLabel' : 'archive.label')}</span>
-                      <TeamSection team={team} onNavigate={navigateToSession} t={t} historic />
-                    </div>
-                  ))}
-                  {visibleHistoric.map(({ data: team, owner }) => {
-                    const teamKey = `${owner}:${team.teamId}`
-                    return (
-                      <TeamSection key={teamKey} team={historicCardTeam(team, owner)} onNavigate={navigateToSession} t={t} historic />
-                    )
-                  })}
-                </>
-              )}
-          </div>
-          {!compact && (
-            <div
-              className={css.resizeHandle}
-              data-resize-edge="left"
-              onPointerDown={(event) => { beginResize('left', event) }}
-              onPointerMove={updateGesture}
-              onPointerUp={endGesture}
-              onPointerCancel={cancelGesture}
-              aria-hidden
-            />
-          )}
-          {!compact && geometry.mode === 'floating' && (
-            <>
-              <div
-                className={css.resizeHandle}
-                data-resize-edge="bottom"
-                onPointerDown={(event) => { beginResize('bottom', event) }}
-                onPointerMove={updateGesture}
-                onPointerUp={endGesture}
-                onPointerCancel={cancelGesture}
-                aria-hidden
-              />
-              <div
-                className={css.resizeHandle}
-                data-resize-edge="corner"
-                onPointerDown={(event) => { beginResize('corner', event) }}
-                onPointerMove={updateGesture}
-                onPointerUp={endGesture}
-                onPointerCancel={cancelGesture}
-                aria-hidden
-              />
-            </>
-          )}
-        </aside>
-      )}
     </>
   )
 }

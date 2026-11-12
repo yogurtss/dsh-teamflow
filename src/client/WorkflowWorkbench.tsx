@@ -81,11 +81,10 @@ function ReviewMaterials({ text }: { text: string }) {
   } catch { return <pre>{text}</pre> }
 }
 
-function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen = false, onShowActivity, onClose }: {
+function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen = false, onClose }: {
   supervisorTarget?: WatchItem
   entryDiscussion?: string
   initiallyOpen?: boolean
-  onShowActivity?: () => void
   entryTarget?: { taskId: string; review?: boolean; rerun?: boolean }
   onClose?: () => void
   archived?: boolean
@@ -769,7 +768,6 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
             <button disabled={working || unsaved.length > 0 || !flow?.canStart} onClick={() => void perform('set_flow_enabled',{enabled:true,version:flowControlVersion(team)})}>{l("开始全部")}</button>
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
-          {onShowActivity && <button onClick={onShowActivity}>{l("团队活动与历史")}</button>}
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>
           {supervisorTarget ? <button onClick={closeWorkbench}>{l.language==='en'?'← Back to reminder':'← 返回提醒'}</button> : supervisorAvailable && team && <button onClick={event=>{
             const trigger=event.currentTarget

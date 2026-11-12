@@ -136,7 +136,6 @@ Start a blank workflow and send the team this request together with the sample r
 | Navigate a larger workflow | Pan, zoom, fit, or arrange by dependencies; expand the inspector when needed. |
 | Refine one task | Select its node and open the task discussion. Use the flow discussion for changes across nodes. |
 | Change a member's instructions or model | Select the member card; their tasks are highlighted on the canvas. |
-| Inspect team activity or older records | Open **Team activity and history** from the canvas. |
 
 Flow, task, member, and review discussions stay inside Workflow. The main conversation remains in the Session list. Discussions retain their history and show streaming replies when the host supports them. **Enter** sends; **Shift+Enter** inserts a line break.
 

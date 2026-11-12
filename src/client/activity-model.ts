@@ -203,49 +203,6 @@ export function usesParallelTaskGrid<T extends RelationshipTask>(tasks: readonly
 }
 
 /**
- * Whether an expanded activity panel still belongs to the current session.
- *
- * The panel is mounted in the root-scoped shell overlay, so React does not
- * remount it when the conversation route changes. Ownership keeps an expanded
- * panel from leaking onto the new-session screen (or another conversation)
- * while its local open state is being reset.
- */
-export function activityPanelExpandedForSession(
-  open: boolean,
-  owner: string | undefined,
-  current: string | undefined,
-): boolean {
-  return open && owner !== undefined && owner === current
-}
-
-/** Inputs for deciding whether genuinely new live work may expand the panel. */
-export interface ActivityPanelAutoExpandInput {
-  readonly alreadyAutoOpened: boolean
-  readonly pageSettled: boolean
-  readonly restoreComplete: boolean
-  readonly previousLiveTeamIds: ReadonlySet<string>
-  readonly currentLiveTeamIds: readonly string[]
-}
-
-/**
- * Auto-expand only for live teams that appear after the current session's
- * initial restore pass. Replayed cards, archived teams, and live teams restored
- * while reopening a conversation must remain behind the collapsed badge.
- */
-export function activityPanelShouldAutoExpand({
-  alreadyAutoOpened,
-  pageSettled,
-  restoreComplete,
-  previousLiveTeamIds,
-  currentLiveTeamIds,
-}: ActivityPanelAutoExpandInput): boolean {
-  return !alreadyAutoOpened
-    && pageSettled
-    && restoreComplete
-    && currentLiveTeamIds.some((teamId) => !previousLiveTeamIds.has(teamId))
-}
-
-/**
  * Resolve the task whose dependency chain should be highlighted.
  *
  * A pinned task is an explicit user choice. Keyboard focus takes precedence

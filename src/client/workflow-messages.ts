@@ -117,7 +117,6 @@ export const workflowEnglish: Record<string, string> = {
   '确认方案 · {0}': 'Review proposal · {0}',
   '配置 · {0}': 'Configure · {0}',
   '查看重跑路径 · {0}': 'Inspect rerun path · {0}',
-  '团队活动与历史': 'Team activity and history',
   '逐项检查本次生成的任务。所有修改会在确认后一起应用。': 'Review each generated item. Your changes are applied together when you confirm.',
   '选择要检查的项目': 'Select an item to review',
   '放弃通用草稿': 'Discard general draft',
