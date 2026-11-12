@@ -120,7 +120,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
     return withTeamLock(`team:${root}:${address.teamId}`, async () => {
       const team = await readTeam(root, address.teamId)
       const discussion = team && boundDiscussion(team, agent)
-      if (!team || !discussion) throw new Error('讨论会话已失效')
+      if (!team || team.closeout || !discussion) throw new Error('讨论会话已失效')
       workflowDiscussion(team, discussion.key)
       const value = await run(team, discussion, workspace)
       await writeTeam(root, team)
@@ -236,7 +236,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
       if (payload.agent.id !== child.id) return next()
       const admitted = await withTeamLock(`team:${root}:${address.teamId}`, async () => {
         const current = await readTeam(root, address.teamId)
-        if (!current) return false
+        if (!current || current.closeout) return false
         const discussion = boundDiscussion(current, child)
         if (!discussion) return false
         try { return workflowDiscussion(current, discussion.key) === discussion } catch { return false }
@@ -337,7 +337,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
         throw error
       })
       ctx.effect(() => () => handle.dispose(), 'agent-teams: native discussion')
-      await handle.agent.whenIdle()
+      // followup queues the opening turn. Its pre-step needs the team lock held by the opener.
       const requirements = ['adapt', 'graph'].includes(key) ? recentUserRequirements(captain.session) : undefined
       const planningContext = requirements?.partial ? partialRequirementsNotice + '\n' + requirements.text : requirements?.text ?? ''
       const opening = key==='template' ? '请提炼当前流程为可复用模板，先调用 agent_teams_workflow_context 获取模板格式和源流程，再调用 agent_teams_template_propose 提交草稿。具体任务和历史结果仅用于理解做法，不得直接当成通用要求。'+(options.message??'')
