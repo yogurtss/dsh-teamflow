@@ -4,6 +4,7 @@ import { parseTaskArchive, validArchiveFields } from './task-archive-config.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
 import type { TeamState, TeamTask } from './types.ts'
+import { parseMemberExecutionPrompt } from './workflow-types.ts'
 import type { WorkflowOperation, WorkflowProposal, WorkflowState } from './workflow-types.ts'
 import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
@@ -25,6 +26,7 @@ function object(value: unknown): Record<string, unknown> {
 }
 function text(value: unknown, name: string, required = false): string | undefined {
   if (value === undefined && !required) return undefined
+  if (name === 'executionPrompt') return parseMemberExecutionPrompt(value)
   if (typeof value !== 'string' || value.length > 16000 || (required && !value.trim())) throw new Error(`${name} 必须是有效文本`)
   return value.trim()
 }
