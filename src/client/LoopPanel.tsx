@@ -9,9 +9,10 @@ import { previewGate, reviewerConflicts, upstreamIds } from '../workflow-loop-co
 import { RoundComparison, type RoundResults } from './RoundComparison.tsx'
 import css from './LoopPanel.module.css'
 
-export function LoopPanel({ team, task, sessionId, base, archived, busy, perform, modeSelect, returnDraft }: {
+export function LoopPanel({ team, task, sessionId, base, archived, busy, perform, modeSelect, returnDraft, onSelectTask }: {
   team: TeamState; task: TeamTask; sessionId: string; base: string; archived: boolean; busy: boolean
   modeSelect: import('react').ReactNode; returnDraft?: {entry:string}
+  onSelectTask: (id: string) => void
   perform: (action: string, fields: Record<string, unknown>) => Promise<unknown>
 }) {
   const l = useWorkflowText(), tr = (zh: string, en: string) => l.language === 'en' ? en : zh
@@ -57,6 +58,10 @@ export function LoopPanel({ team, task, sessionId, base, archived, busy, perform
   const statuses = { ready: tr('等待启动', 'Ready'), running: tr('执行中', 'Running'), reviewing: tr('审核中', 'Reviewing'), paused: tr('已暂停', 'Paused'), passed: tr('已通过', 'Passed'), cancelled: tr('已结束', 'Cancelled') }
   return <section className={css.panel} data-loop-panel aria-label={tr('门控节点', 'Gate node')}>
     <h3>{tr('门控节点', 'Gate node')}</h3>
+    {loop?.gateId === task.id && <nav className={css.steps} aria-label={tr('循环任务', 'Loop tasks')}>
+      <strong>{tr('循环任务', 'Loop tasks')}</strong>
+      {loop.bodyIds.map(id => <button key={id} type="button" onClick={() => onSelectTask(id)}>{team.tasks.find(item => item.id === id)?.subject ?? id}</button>)}
+    </nav>}
     {error && <p role="alert">{error}</p>}
     {editing && <details open={!loop || !!returnDraft || undefined}><summary>{tr('配置 IF 路径与审核', 'Configure IF routes and review')}</summary><div className={css.settings}>
       <fieldset disabled={!!loop?.historyCount}><legend>{tr('PASS · 通过后继续', 'PASS · Continue to')}</legend>

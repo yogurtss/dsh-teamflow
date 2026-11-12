@@ -17,3 +17,7 @@
 .feedback { white-space:pre-wrap; }
 .comparison { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 14rem),1fr)); gap:12px; margin-top:8px; }
 .comparison section { min-width:0; }
+
+.steps { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.steps strong { flex-basis:100%; font-size:12px; }
+.panel .steps button { min-height:32px; max-width:100%; text-align:start; overflow-wrap:anywhere; }
