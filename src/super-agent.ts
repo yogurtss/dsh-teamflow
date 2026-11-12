@@ -22,7 +22,8 @@ export function watchRow(team: TeamState): WatchRow {
   const watch = validWatch(team.superAgentWatch) ? team.superAgentWatch : undefined
   const complete = workflowComplete(team)
   const items: WatchItem[] = []
-  const row = { teamId: team.id, name: team.name, captainSessionId: team.captainSessionId, complete, watch, items }
+  const row = { teamId: team.id, name: team.name, captainSessionId: team.captainSessionId, complete, watch, items,
+    ...(watch?.kinds.includes('progress') ? {progress:team.watchProgress?.changes??[]} : {}) }
   if (!watch || !team.workflow) return row
   if (watch.kinds.includes('proposal')) {
     for (const [slot, discussion] of Object.entries(team.workflow.discussions)) {
@@ -118,7 +119,15 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
       if(!workspace){reply(404,{error:'Workspace unavailable'});return}
       const root=join(workspace.path,stateDir)
       switch(body['action']){
-        case 'catalog':case 'overview':reply(200,{rows:await listWatchRows(root,body['action']==='catalog')});return
+        case 'catalog':case 'overview':{
+          const rows=await listWatchRows(root,body['action']==='catalog')
+          const titles=ctx.get('sessionTitle') as {get(session:import('@deepseek-ai/dsh-session').Session):{title:string}|undefined}|undefined
+          for(const row of rows){
+            const captain=ctx.agents.get(row.captainSessionId as SessionId)
+            if(captain && titles)row.conversationTitle=titles.get(captain.session)?.title
+          }
+          reply(200,{rows});return
+        }
         case 'set':{
           const id=body['teamId'],watch=body['watch']
           if(!safeId(id)||watch!==null&&!validWatch(watch)){reply(400,{error:'Invalid settings'});return}

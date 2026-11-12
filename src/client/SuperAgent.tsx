@@ -6,7 +6,7 @@ import type { WorkflowLauncherProps } from './WorkflowLauncher.tsx'
 import { selectedWorkflowWorkspace } from './workflow-launcher.ts'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
 import { superAgentEntry, type SupervisorVisit } from './super-agent-navigation.ts'
-import { watchKinds, type WatchRow, type WatchItem, type WorkflowWatch, type WatchKind } from '../super-agent-watch.ts'
+import { defaultWatchKinds, watchKinds, type NodeChange, type WatchRow, type WatchItem, type WorkflowWatch, type WatchKind } from '../super-agent-watch.ts'
 import css from './SuperAgent.module.css'
 
 type Props = WorkflowLauncherProps
@@ -23,6 +23,12 @@ async function request<T>(workspaceId:string, action:string, fields:Record<strin
   return value
 }
 
+function progressText(change:NodeChange,en:boolean){
+  const state=en?{started:'Started',completed:'Completed',cancelled:'Cancelled',failed:'Failed'}:{started:'开始执行',completed:'已完成',cancelled:'已取消',failed:'失败'}
+  const parent=change.inputs.join(en?', ':'、')
+  return (parent?(en?'Completed '+parent:'已完成 '+parent)+' → ':'')+change.title+' · '+state[change.status]
+}
+
 function useWorkspace(props:Props, owner?:string) {
   const spaces=props.workspaces.list, sessions=props.sessions.list
   const workspaces=useSyncExternalStore(fn=>spaces.subscribe(fn),()=>spaces.getSnapshot()).items
@@ -34,7 +40,7 @@ function useWorkspace(props:Props, owner?:string) {
   function choose(id:string){chosenWorkspace=id;window.dispatchEvent(new Event(workspaceChoiceEvent))}
   const selected=owner ? workspaces.find(w=>w.sessionIds.includes(owner as SessionId))??workspaces.find(w=>w.workspaceId===choice)
     : workspaces.find(w=>w.workspaceId===choice)??selectedWorkflowWorkspace(workspaces,list)??(workspaces.length===1?workspaces[0]:undefined)
-  return {workspaces,selected,choose}
+  return {workspaces,selected,choose,sessionRows:list.byId}
 }
 
 type WatchView = {rows:WatchRow[]; error?:string}
@@ -103,7 +109,7 @@ export function SuperAgentIcon(props:Props & {size:number}) {
 
 export function SuperAgentOverlay(props:Props) {
   const [visit,setVisit]=useState<SupervisorVisit>()
-  const [notice,setNotice]=useState<{workspaceId:string;row:WatchRow;item:WatchItem;count:number}>()
+  const [notice,setNotice]=useState<{workspaceId:string;row:WatchRow;item:WatchItem;count:number;progress?:NodeChange}>()
   const seen=useRef(new Map<string,Set<string>>())
   useEffect(()=>{
     const open=(event:Event)=>{event.preventDefault();setVisit((event as CustomEvent<SupervisorVisit>).detail)}
@@ -125,6 +131,11 @@ export function SuperAgentOverlay(props:Props) {
           else first={workspaceId,row,item,count:1}
         }
       }
+      for(const row of rows)for(const change of [...row.progress??[]].reverse()){
+        const id=JSON.stringify([row.teamId,change.id])
+        active.add(id)
+        if(!previous.has(id)&&!first)first={workspaceId,row,item:{kind:'progress',id:change.id,title:change.title,taskId:change.taskId},count:1,progress:change}
+      }
       seen.current.set(workspaceId,active)
       try{
         if(active.size)localStorage.setItem(storage,JSON.stringify([...active]))
@@ -139,8 +150,8 @@ export function SuperAgentOverlay(props:Props) {
   if(!visit){
     if(!notice)return null
     const en=props.t('language.code')==='en'
-    return createPortal(<aside className={css.notice} role="status"><b>Super Agent</b><span>{notice.row.name} › {notice.item.title}{notice.count>1?' +'+(notice.count-1):''}</span>
-      <button onClick={()=>{setVisit({workspaceId:notice.workspaceId,teamId:notice.row.teamId,sessionId:notice.row.captainSessionId,returnToWorkflow:()=>{}});setNotice(undefined)}}>{en?'View pending':'查看待办'}</button>
+    return createPortal(<aside className={css.notice} role="status"><b>Super Agent</b><span>{notice.row.name} › {notice.progress?progressText(notice.progress,en):notice.item.title}{notice.count>1?' +'+(notice.count-1):''}</span>
+      <button onClick={()=>{setVisit({workspaceId:notice.workspaceId,teamId:notice.row.teamId,sessionId:notice.row.captainSessionId,returnToWorkflow:()=>{}});setNotice(undefined)}}>{notice.progress?(en?'View progress':'查看进度'):(en?'View pending':'查看待办')}</button>
       <button aria-label={en?'Dismiss reminder':'收起提醒'} onClick={()=>setNotice(undefined)}>×</button></aside>,document.body)
   }
   const back=()=>{setVisit(undefined);visit.returnToWorkflow()}
@@ -159,11 +170,11 @@ export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>
         {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select>}
       {props.back&&<button onClick={props.back}>{props.visit?.workspaceId?(en?'Close':'关闭'):(en?'Back to Workflow':'返回原工作台')}</button>}
     </header>
-    {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} en={en}/>:<p>{en?'Select a workspace to view subscriptions.':'请选择工作区查看监听设置。'}</p>}
+    {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} project={selected.title} sessionRows={picker.sessionRows} en={en}/>:<p>{en?'Select a workspace to view subscriptions.':'请选择工作区查看监听设置。'}</p>}
   </main>
 }
 
-function WorkspacePanel({workspaceId,en,visit,back,sessions,modelDirectories,t,openMember}:Props & {workspaceId:string;en:boolean;visit?:SupervisorVisit;back?:()=>void}) {
+function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,modelDirectories,t,openMember}:Props & {workspaceId:string;project:string;sessionRows:ReturnType<typeof useWorkspace>['sessionRows'];en:boolean;visit?:SupervisorVisit;back?:()=>void}) {
   const [settings,setSettings]=useState(false),[selection,select]=useState(visit?.teamId??'')
   const result=useRows(workspaceId,settings)
   const [busy,setBusy]=useState(false),[error,setError]=useState('')
@@ -176,7 +187,12 @@ function WorkspacePanel({workspaceId,en,visit,back,sessions,modelDirectories,t,o
   const watching=rows.filter(r=>r.watch)
   const items=watching.flatMap(r=>r.items.map(item=>({row:r,item})))
   const label=(zh:string,english:string)=>en?english:zh
-  const kindLabel=(kind:WatchKind)=>({review:label('人工验收','Human review'),proposal:label('待确认提案','Pending proposal'),block:label('人工介入','Human intervention')})[kind]
+  const kindLabel=(kind:WatchKind)=>({review:label('人工验收','Human review'),proposal:label('待确认提案','Pending proposal'),block:label('人工介入','Human intervention'),progress:label('节点状态变化','Node progress')})[kind]
+  const identity=(r:WatchRow)=>{
+    const title=r.conversationTitle?.trim() || sessionRows[r.captainSessionId as SessionId]?.title?.trim() || label('未命名对话','Untitled conversation')
+    return [project,title,...(r.name!==title?[r.name]:[])].join(' / ')
+  }
+  const progress=watching.flatMap(r=>(r.progress??[]).map(change=>({r,change}))).sort((a,b)=>b.change.at-a.change.at)
   const itemLabel=(item:WatchItem)=>item.reason?({
     configuration:label('需要补全配置','Configuration needed'),rerun:label('待确认重跑','Rerun needs confirmation'),
     rejected:label('验收已退回，待处理','Review returned for revision'),'loop-paused':label('循环暂停，待人工处理','Loop paused for intervention'),
@@ -217,17 +233,21 @@ function WorkspacePanel({workspaceId,en,visit,back,sessions,modelDirectories,t,o
       <button disabled={busy} onClick={chat}>{label('打开主对话','Open conversation')} ↗</button></div>
     {(error||result?.error)&&<p role="alert">{error||result?.error} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{label('刷新','Refresh')}</button></p>}
     {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('监听设置','Watch settings')}</h2>
-      {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{r.name} · {r.teamId}</option>)}</select></label>
+      {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{identity(r)}{rows.some(other=>other.teamId!==r.teamId&&identity(other)===identity(r))?' · '+r.teamId:''}</option>)}</select></label>
         <div className={css.row}><span>{row.watch?label('正在监听','Watching'):label('未监听','Not watched')}{row.complete?' · '+label('已完成','Completed'):''}</span>
-          <button disabled={busy} onClick={()=>save(row.watch?null:{kinds:[...watchKinds],keep:row.complete})}>{row.watch?label('取消监听','Unsubscribe'):row.complete?label('监听后续重开','Watch future reopens'):label('监听此流程','Watch workflow')}</button></div>
+          <button disabled={busy} onClick={()=>save(row.watch?null:{kinds:[...defaultWatchKinds],keep:row.complete})}>{row.watch?label('取消监听','Unsubscribe'):row.complete?label('监听后续重开','Watch future reopens'):label('监听此流程','Watch workflow')}</button></div>
         <fieldset disabled={busy||!row.watch}><legend>{label('需要提醒我的事项','Notify me about')}</legend>
           {watchKinds.map(kind=><label key={kind}><input type="checkbox" checked={row.watch?.kinds.includes(kind)??false} onChange={e=>row.watch&&save({...row.watch,kinds:e.target.checked?[...row.watch.kinds,kind]:row.watch.kinds.filter(k=>k!==kind)})}/>{kindLabel(kind)}</label>)}</fieldset>
         <label><input type="checkbox" disabled={busy||!row.watch} checked={row.watch?.keep??false} onChange={e=>row.watch&&save(row.complete&&!e.target.checked?null:{...row.watch,keep:e.target.checked})}/>{label('整个流程完成后继续监听','Keep watching after workflow completion')}</label></>:<p>{label('此工作区没有可选流程。','No workflows in this workspace.')}</p>}</div>:<div className={css.columns}><section className={css.queue}>
       <h2>{label('待你处理','Needs you')} <small>{items.length}</small></h2>
-      {items.map(({row:r,item})=><div className={css.row} key={r.teamId+':'+item.id}><div><small>{r.name}</small><b>{item.title}</b><small className={css.status}>{itemLabel(item)}{item.round!==undefined?' · '+label('第 '+item.round+' 轮','Round '+item.round):''}</small></div>
+      {items.map(({row:r,item})=><div className={css.row} key={r.teamId+':'+item.id}><div><small>{identity(r)}</small><b>{item.title}</b><small className={css.status}>{itemLabel(item)}{item.round!==undefined?' · '+label('第 '+item.round+' 轮','Round '+item.round):''}</small></div>
         <button disabled={busy} onClick={()=>locate(r,item)}>{item.kind==='review'?label('查看本轮证据','Review evidence'):item.kind==='proposal'?label('查看提案','View proposal'):label('定位节点','Locate node')} ↗</button></div>)}
       {!items.length&&<p>{watching.length?label('已监听流程暂无待处理事项。','No pending items in watched workflows.'):label('尚未监听任何流程。打开监听设置，选择需要关注的流程。','No workflows watched. Choose workflows in Watch settings.')}</p>}
-      </section><aside className={css.scope}><h2>{label('监听范围','Watched workflows')} <small>{watching.length}</small></h2>{!watching.length&&<p>{label('尚未订阅流程','No subscriptions')}</p>}{watching.map(r=><button key={r.teamId} onClick={()=>{select(r.teamId);setSettings(true)}}><span>{r.name}</span><small>{r.watch?.kinds.map(kindLabel).join(' · ')}</small></button>)}</aside>
+      {watching.some(r=>r.watch?.kinds.includes('progress'))&&<><h2>{label('节点动态','Node activity')}</h2>
+        {!progress.length&&<p>{label('开启后发生的节点变化会显示在这里。','Node changes will appear here after subscribing.')}</p>}
+        {progress.slice(0,40).map(({r,change})=><div className={css.row} key={change.id}><div><small>{identity(r)} · {new Date(change.at).toLocaleTimeString()}</small>{progressText(change,en)}</div>
+          <button disabled={busy} onClick={()=>locate(r,{kind:'progress',title:change.title,taskId:change.taskId,id:change.id})}>{label('定位节点','Locate node')} ↗</button></div>)}</>}
+      </section><aside className={css.scope}><h2>{label('监听范围','Watched workflows')} <small>{watching.length}</small></h2>{!watching.length&&<p>{label('尚未订阅流程','No subscriptions')}</p>}{watching.map(r=><button key={r.teamId} onClick={()=>{select(r.teamId);setSettings(true)}}><span>{identity(r)}</span><small>{r.watch?.kinds.map(kindLabel).join(' · ')}</small></button>)}</aside>
     </div>}
     {target&&<WorkflowWorkbench initiallyOpen sessionId={target.row.captainSessionId} teamId={target.row.teamId} supervisorTarget={target.item} onClose={close}
       t={t} modelDirectory={modelDirectories.directoryFor(target.row.captainSessionId as SessionId)} openExecution={(id,parent)=>openMember((parent??target.row.captainSessionId) as SessionId,id as SessionId)}/>}

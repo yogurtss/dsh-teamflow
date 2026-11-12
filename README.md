@@ -85,6 +85,8 @@ Use **Save as template** to have AI extract reusable requirements, review the dr
 
 ### Super Agent (development branch)
 
+The picker identifies workflows by project, captain conversation and workflow name. Enable **Node progress** to see starts, completions, failures and cancellations during the subscription. A start names its completed direct dependencies. Activity links open the node and progress is counted separately from pending human decisions.
+
 Open **Super Agent** in the Harness Web sidebar, choose a workspace, then select individual workflows in **Watch settings**. Subscriptions start empty. Each workflow can notify you about human reviews, pending proposals and blockers requiring human action. New items appear in the Web UI and its sidebar count. Open an item to see its original node or proposal, then return to the overview. The workbench header also opens Super Agent while you edit.
 
 Finishing an entire workflow ends its subscription unless you select **Keep watching after workflow completion**. You can unsubscribe at any time. The workspace conversation uses the host model to read current items from watched workflows. Review decisions and edits take place in the existing workbench.

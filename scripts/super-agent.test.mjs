@@ -7,6 +7,27 @@ import { createTeamDir, readTeam, writeTeam } from '../lib/state.js'
 import { listWatchRows, setWatch, watchRow } from '../lib/super-agent.js'
 import { workflowFingerprint } from '../lib/workflow.js'
 import { configureLoop, startLoop } from '../lib/workflow-loops.js'
+import { recordNodeChanges } from '../lib/super-agent-watch.js'
+
+test('progress starts at subscription, follows actual dependencies and coalesces claimed/running',()=>{
+  const state=team('progress')
+  state.tasks.push(task('parallel'))
+  state.superAgentWatch={...config,kinds:['progress']}
+  recordNodeChanges(state)
+  assert.deepEqual(watchRow(state).progress,[])
+  state.tasks[0].status='completed'
+  state.tasks[1].status='claimed'
+  state.tasks[2].status='in_progress'
+  recordNodeChanges(state)
+  state.tasks[1].status='in_progress'
+  recordNodeChanges(state)
+  const row=watchRow(state)
+  assert.deepEqual(row.items,[])
+  assert.deepEqual(row.progress.map(c=>[c.title,c.status,c.inputs]),[['a','completed',[]],['b','started',['a']],['parallel','started',[]]])
+  state.superAgentWatch=config
+  recordNodeChanges(state)
+  assert.equal(state.watchProgress,undefined)
+})
 
 const task=(id,dependencies=[])=>({id,subject:id,description:'Review evidence',status:'pending',dependencies,createdAt:1,updatedAt:1,checkpoint:{round:1,history:[]}})
 const team=(id)=>({id,name:'Same name',captainSessionId:'captain-'+id,phase:'running',createdAt:1,taskSeq:2,tasks:[task('a'),task('b',['a'])],members:[],workflow:{positions:{},discussions:{},history:[]}})

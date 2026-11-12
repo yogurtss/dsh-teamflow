@@ -27,7 +27,7 @@ import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
 import { loopRetryInstructions, loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
 import { writeLoopTeam } from './workflow-loop-history.ts'
-import { workflowComplete, type WorkflowWatch } from './super-agent-watch.ts'
+import { recordNodeChanges, workflowComplete, type WorkflowWatch } from './super-agent-watch.ts'
 
 export {
   amendTaskContract,
@@ -328,6 +328,7 @@ export async function writeTeamWatch(stateRoot: string, state: TeamState, watch:
 }
 
 async function persistTeam(stateRoot: string, state: TeamState, revisioned: boolean): Promise<void> {
+  if(state.superAgentWatch || state.watchProgress) recordNodeChanges(state)
   if (revisioned) return writeLoopTeam(stateRoot, state)
   await atomicWriteText(join(stateRoot, state.id, 'team.json'), JSON.stringify(state, null, 2))
 }
