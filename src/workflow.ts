@@ -10,7 +10,7 @@ import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
 import { canRestartTask, rerunImpact, resetTaskForRerun } from './task-rerun.ts'
 import { taskNeedsConfiguration } from './task-description.ts'
-import { configureLoop, loopForTask, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
+import { configureLoop, loopForTask, loopTaskContract, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
 
 export function workflowState(team: TeamState): WorkflowState {
   return team.workflow ??= { positions: {}, discussions: {}, history: [] }
@@ -138,9 +138,19 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
   const now = Date.now()
   for (const op of operations) {
     if (op.action === 'configure_loop') { configureLoop(team, op); continue }
-    if ('id' in op && op.id && loopForTask(team, op.id) && !(loopForTask(team, op.id)?.status === 'ready' && op.action === 'update_task'
-      && (op.dependencies === undefined || JSON.stringify(op.dependencies) === JSON.stringify(taskOf(team, op.id).dependencies))
-      && (op.assignee === undefined || op.assignee === taskOf(team, op.id).assignee))) throw new Error('循环节点请使用循环控制；运行中不能修改拓扑或单独重跑')
+    const loop = 'id' in op && op.id ? loopForTask(team, op.id) : undefined
+    if (loop) {
+      if (op.action !== 'update_task') throw new Error('循环节点请使用循环控制；不能修改拓扑或单独重跑')
+      const task = taskOf(team, op.id)
+      if ((op.dependencies !== undefined && JSON.stringify(op.dependencies) !== JSON.stringify(task.dependencies))
+        || (op.assignee !== undefined && op.assignee !== task.assignee)) throw new Error('循环节点不能单独修改依赖或负责人')
+      if (loop.status !== 'ready') {
+        if (!['running', 'paused'].includes(loop.status) || task.id === loop.gateId || task.status !== 'pending'
+          || (task.attempt ?? 0) !== 0 || task.attemptId || task.workflowRerunContext || op.archive !== undefined)
+          throw new Error('循环启动后只能修改尚未首次执行的普通任务要求')
+        if (loop.contracts && loop.contracts[task.id] !== loopTaskContract(task)) throw new Error('循环任务契约已变化，请检查流程')
+      }
+    }
     // Removal changes loop membership; editing an idle member's configuration does not.
     if (op.action === 'remove_member' && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
     if (op.action === 'add_member') {
@@ -209,6 +219,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
       if (reconnectRejected && task.checkpoint) task.checkpoint = { kind: task.checkpoint.kind, mode: task.checkpoint.mode, round: task.checkpoint.round + 1, history: task.checkpoint.history }
+      if (loop?.contracts) loop.contracts[task.id] = loopTaskContract(task)
       task.updatedAt = now
     } else if (op.action === 'remove_task') {
       const task = taskOf(team, op.id); editable(task)

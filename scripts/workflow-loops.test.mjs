@@ -38,6 +38,24 @@ test('loop controls preserve completed state, block node reruns, and distinguish
   assert.throws(() => validateWorkflowGraph(invalid), /审核成员一致/)
 })
 
+test('a pending loop task can receive new requirements while its upstream is working', () => {
+  const {team, loop} = fixture()
+  startLoop(team, loop.id)
+  beginTaskAttempt(team.tasks[0], 'worker')
+  team.tasks[0].status = 'in_progress'
+  const edit = {action:'update_task', id:'b', description:'Deliver a verified result', assignee:'worker', dependencies:['a']}
+  const updated = applyWorkflowOperations(team, [edit])
+  validateWorkflowGraph(updated)
+  assert.equal(updated.tasks[1].description, edit.description)
+  assert.deepEqual(updated.tasks[0], team.tasks[0])
+  assert.equal(updated.workflow.loops[0].status, 'running')
+  for (const change of [{id:'a'}, {id:'gate', assignee:undefined, dependencies:undefined}, {assignee:'reviewer'}, {dependencies:[]}]) {
+    assert.throws(() => applyWorkflowOperations(team, [{...edit, ...change}]), /循环/)
+  }
+  team.tasks[1].attempt = 1
+  assert.throws(() => applyWorkflowOperations(team, [edit]), /首次执行/)
+})
+
 test('AI result drift pauses immediately and persists the reason without releasing downstream', async t => {
   const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
   const gate = team.tasks.find(t => t.id === 'gate'); beginTaskAttempt(gate, 'reviewer')

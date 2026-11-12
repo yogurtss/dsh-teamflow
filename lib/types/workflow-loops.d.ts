@@ -7,6 +7,7 @@ export declare const pendingLoopHistory: (team: TeamState) => readonly LoopHisto
 export declare const clearPendingLoopHistory: (team: TeamState) => void;
 export declare const loopsOf: (team: TeamState) => WorkflowLoop[];
 export declare const loopForTask: (team: TeamState, id: string) => WorkflowLoop | undefined;
+export declare const loopTaskContract: (task: TeamTask) => string;
 export declare function loopInputFingerprint(team: TeamState, loop: WorkflowLoop): string;
 /** The ordinary DAG is validated independently, including external paths. */
 export declare function validateLoopGraph(team: TeamState): void;

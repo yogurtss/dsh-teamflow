@@ -145,7 +145,7 @@ export function installWorkflowConversations(ctx: Context, config: ToolsConfig,
         const loop = team.workflow?.loops?.find(loop => loop.gateId === discussion.key.slice(5) || loop.bodyIds.includes(discussion.key.slice(5)))
         return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, team: {name:team.name,goal:team.description,phase:team.phase,halted:team.halted}, ...context, loop,
           availableAssignees: team.members.filter(member => member.status !== 'removed').map(({name,summary,role}) => ({name,summary,role})), proposal: discussion.proposal,
-          instructions: loop ? '此任务属于门控循环。通过门控反馈和循环控制推进轮次，不可用 rerun_task 或普通任务控制绕过门控。循环启动后任务契约固定；结构变化需保存为模板并新建流程。' : '仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
+          instructions: loop ? '此任务属于门控循环。通过门控反馈和循环控制推进轮次，不可用 rerun_task 或普通任务控制绕过门控。循环运行或暂停时，可以提议修改尚未首次执行的普通任务要求，负责人和依赖固定；结构变化需保存为模板并新建流程。' : '仅可提议修改或重跑当前任务；用户确认后生效。运行中的任务需先由用户停止才能修改。待配置节点仍需用户在属性中完成配置。跨节点拆分请转到整体流程讨论。提交结果和验证记录不是独立核验结论。' })
       }
       if (discussion.key.startsWith('check:')) return JSON.stringify({ discussion: discussion.key, base: discussion.contextBase, goal: team.description, materials: discussion.materials, evidence: discussion.evidence, round: discussion.materialsRound, proposal: discussion.proposal, instructions: team.tasks.find(t => t.id === discussion.key.slice(6))?.checkpoint?.mode === 'ai' ? aiReviewInstructions : '以当前节点的验收要求为准。逐项引用相关执行结果并说明达标、未达标或证据不足。仅在要求涉及功能、性能或迭代比较时检查相应指标。若要求指明文件，仅核对相关文件或请求对应证据。等待用户决定。' })
       const memberName = discussion.key.startsWith('member:') ? discussion.key.slice(7) : undefined
