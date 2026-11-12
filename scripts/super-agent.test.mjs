@@ -96,3 +96,13 @@ test('changing a subscription cannot advance a running loop to review',async t=>
   assert.equal(after.workflow.loops[0].status,'running')
   assert.equal(workflowFingerprint(after),before)
 })
+
+test('native card replay folds status updates into the original review round',async()=>{
+  const {supervisorDefinition:fold}=await import('../lib/client/supervisor-card-definition.js')
+  const card={key:'["a","review-1"]',workspaceId:'w',project:'Project',teamId:'a',workflow:'A',captain:'captain',item:{id:'review-1',kind:'review',title:'Review',round:1},status:'open',summary:'Evidence'}
+  const event=(revision,status)=>({type:'plugin:teamflow/super-agent-card',data:{revision,card:{...card,status}}})
+  const start=event('start','open'),end=event('update','approved')
+  assert.deepEqual(fold.match(start),{id:card.key,role:'start'})
+  assert.deepEqual(fold.match(end),{id:card.key,role:'update'})
+  assert.equal(fold.update({}, {event:end}).status,'approved')
+})

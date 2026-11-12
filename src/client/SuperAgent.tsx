@@ -111,6 +111,28 @@ export function SuperAgentOverlay(props:Props) {
   const [visit,setVisit]=useState<SupervisorVisit>()
   const [notice,setNotice]=useState<{workspaceId:string;row:WatchRow;item:WatchItem;count:number;progress?:NodeChange}>()
   const seen=useRef(new Map<string,Set<string>>())
+  const [chatError,setChatError]=useState('')
+  const jump=useRef<AbortController>()
+  useEffect(()=>()=>jump.current?.abort(),[])
+  async function openNotice(){
+    if(!notice)return
+    jump.current?.abort()
+    const abort=new AbortController();jump.current=abort
+    try{
+      const {sessionId,cards}=await request<{sessionId:SessionId;cards:boolean}>(notice.workspaceId,'chat',{},abort.signal)
+      if(!cards){setVisit({workspaceId:notice.workspaceId,teamId:notice.row.teamId,sessionId:notice.row.captainSessionId,returnToWorkflow:()=>{}});setNotice(undefined);return}
+      await props.sessions.refresh();abort.signal.throwIfAborted()
+      await props.openMember(sessionId,sessionId)
+      const key=JSON.stringify([notice.row.teamId,notice.progress?'progress':notice.item.id])
+      for(let tries=0;tries<80;tries++){
+        abort.signal.throwIfAborted()
+        const card=Array.from(document.querySelectorAll<HTMLElement>('[data-supervisor-card]')).find(c=>c.dataset.supervisorCard===key)
+        if(card){card.scrollIntoView({block:'center'});card.querySelector('button')?.focus({preventScroll:true});break}
+        await new Promise(resolve=>setTimeout(resolve,100))
+      }
+      setNotice(undefined);setChatError('')
+    }catch(error){if(!abort.signal.aborted)setChatError(String(error))}
+  }
   useEffect(()=>{
     const open=(event:Event)=>{event.preventDefault();setVisit((event as CustomEvent<SupervisorVisit>).detail)}
     const onAttention=(event:Event)=>{
@@ -151,7 +173,7 @@ export function SuperAgentOverlay(props:Props) {
     if(!notice)return null
     const en=props.t('language.code')==='en'
     return createPortal(<aside className={css.notice} role="status"><b>Super Agent</b><span>{notice.row.name} › {notice.progress?progressText(notice.progress,en):notice.item.title}{notice.count>1?' +'+(notice.count-1):''}</span>
-      <button onClick={()=>{setVisit({workspaceId:notice.workspaceId,teamId:notice.row.teamId,sessionId:notice.row.captainSessionId,returnToWorkflow:()=>{}});setNotice(undefined)}}>{notice.progress?(en?'View progress':'查看进度'):(en?'View pending':'查看待办')}</button>
+      <button onClick={openNotice}>{en?'Open conversation card':'查看对话卡片'}</button>{chatError&&<span role="alert">{chatError}</span>}
       <button aria-label={en?'Dismiss reminder':'收起提醒'} onClick={()=>setNotice(undefined)}>×</button></aside>,document.body)
   }
   const back=()=>{setVisit(undefined);visit.returnToWorkflow()}

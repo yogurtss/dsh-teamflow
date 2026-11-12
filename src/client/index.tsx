@@ -23,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { WorkflowLauncher } from './WorkflowLauncher.tsx'
+import { supervisorDefinition } from './supervisor-card-definition.ts'
+import { SupervisorMessage } from './SupervisorCard.tsx'
 import { SuperAgentPanel, SuperAgentOverlay, SuperAgentIcon } from './SuperAgent.tsx'
 import { enableSupervisorVisits } from './super-agent-navigation.ts'
 import { BrandIcon } from './BrandIcon.tsx'
@@ -115,6 +117,8 @@ export function apply(ctx: ClientContext): void {
       name:'sidebar.panellist',id:'dsh-teamflow-workflow',order:30,label:'Workflow',
     }, ({size}) => <BrandIcon size={size}/>))
     const services=()=>({sessions:native.sessions,workspaces:native.workspaces,uiWorkspace:native.uiWorkspace,modelDirectories:native.modelDirectories,openMember})
+    native.uiConversation.events.register(supervisorDefinition)
+    native.slots.inject('conversation.chat.node',()=>native.slots.register({name:'conversation.chat.node',key:'teamflow-supervisor',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SupervisorMessage))
     native.slots.inject('main',()=>native.slots.register({name:'main',key:'dsh-teamflow-super-agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentPanel))
     native.slots.inject('sidebar.panellist',()=>native.slots.register({name:'sidebar.panellist',id:'dsh-teamflow-super-agent',order:31,label:'Super Agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentIcon))
     native.slots.inject('shell.overlay',()=>native.slots.register({name:'shell.overlay',id:'teamflow-super-agent-visit',order:81,locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentOverlay))
