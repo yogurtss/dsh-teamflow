@@ -317,10 +317,8 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
   const blocked = discarded ? 0 : team.tasks.filter(task => taskControlState(team,task).checked && taskControlState(team,task).waiting.length > 0).length
   const held = discarded ? 0 : team.tasks.filter(task => !taskControlState(team,task).terminal && !taskControlState(team,task).checked).length
   const completed = discarded ? 0 : team.tasks.filter((task) => task.status === 'completed').length
-  const settled = !discarded && team.tasks.length > 0 && team.tasks.every((task) => (
-    task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
-  ))
-  const summaryTone = discarded ? 'discarded' : blocked > 0 || team.tasks.some(task => task.status === 'failed' || task.status === 'cancelled') ? 'warning' : settled ? 'completed' : 'running'
+  const done = activityStatus(team).state === 'completed'
+  const summaryTone = discarded ? 'discarded' : done ? 'completed' : blocked > 0 || team.tasks.some(task => task.status === 'failed' || task.status === 'cancelled') ? 'warning' : 'running'
   return (
     <section className={css.progressOverview} aria-label={t('progress.aria')} data-progress-summary>
       <span className={css.progressTitle}>{t('progress.title')}</span>
@@ -338,7 +336,7 @@ function ProgressOverview({ team, t, discarded = false }: { readonly team: Activ
       </span>
       <span className={css.progressSummary} data-state={summaryTone}>
         <span className={css.progressSummaryDot} />
-        <span>{taskSummary(team, t, discarded)}</span>
+        <span>{summaryTone === 'completed' ? t('activity.state.completed') : taskSummary(team, t, discarded)}</span>
       </span>
     </section>
   )
@@ -623,8 +621,8 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
     && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
   const captainBusy = captainOwned.length > 0
   const captainTaskIds = formatTaskIds(captainOwned.map((task) => task.id), t)
-  const {completed:completedCount,total:progressTotal} = activityStatus(team)
-  const allCompleted = team.tasks.length > 0 && completedCount === progressTotal
+  const {completed:completedCount,total:progressTotal,state:progressState} = activityStatus(team)
+  const allCompleted = progressState === 'completed'
   const allSettled = team.tasks.length > 0 && team.tasks.every((task) => (
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
   ))

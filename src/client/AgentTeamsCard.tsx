@@ -85,7 +85,7 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
     teamName: snapshot?.name ?? data.teamName,
     members: snapshot?.members.map((member) => ({ id: member.id, name: member.name, role: member.role })) ?? data.members,
   }), [data, owner, snapshot])
-  const { completed, total, state } = activityStatus(snapshot)
+  const { completed, total, percent, state } = activityStatus(snapshot)
   return (
     <section className={css.root} data-agent-teams-card data-team-id={resolved.teamId}>
       <header className={css.head}>
@@ -111,8 +111,8 @@ export function AgentTeamsSummary({ data, openMember, sessionId, t }: AgentTeams
           <span>{t(state === 'completed' ? 'activity.state.completed' : 'card.progress')}</span>
           <strong>{t('card.completedCount', { completed, total })}</strong>
         </div>
-        <div className={css.progressTrack} role="progressbar" aria-label={t('card.progress')} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
-          <span style={{ width: `${completed / total * 100}%` }} />
+        <div className={css.progressTrack} role="progressbar" aria-label={t('card.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+          <span style={{ width: `${percent}%` }} />
         </div>
       </div>}
       {resolved.members.length > 0 && (

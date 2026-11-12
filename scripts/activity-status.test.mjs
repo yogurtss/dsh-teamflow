@@ -5,6 +5,17 @@ import {applyWorkflowOperations} from '../lib/workflow.js'
 import {replacedTaskIds} from '../lib/replaced-tasks.js'
 const task=(id,patch={})=>({id,status:'pending',dependencies:[],...patch})
 const team=tasks=>({phase:'running',tasks,members:[]})
+test('workflow completion follows its endpoints even when earlier nodes failed',()=>{
+  const failed=task('earlier',{status:'failed'})
+  const end=task('finish',{status:'completed',dependencies:['earlier']})
+  const result=activityStatus(team([end,failed]))
+  assert.equal(result.state,'completed')
+  assert.equal(result.percent,100)
+  assert.equal(result.completed,1)
+  assert.notEqual(activityStatus(team([end,failed,task('second-end',{dependencies:['earlier']})])).state,'completed')
+  assert.notEqual(activityStatus(team([failed,{...end,checkpoint:{round:1}}])).state,'completed')
+  assert.equal(activityStatus(team([failed,{...end,checkpoint:{round:1,decision:'approve'}}])).state,'completed')
+})
 test('capsule shows node completion and prioritizes actionable reviews over concurrent work',()=>{
  const result=activityStatus(team([task('a',{status:'completed'}),task('b',{status:'in_progress'}),task('g',{checkpoint:{round:1},dependencies:['a']})]))
  assert.equal(result.percent,33);assert.equal(result.running,1);assert.equal(result.reviews,1);assert.equal(result.attention,1);assert.equal(result.state,'review')
