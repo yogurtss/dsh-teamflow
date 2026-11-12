@@ -36,6 +36,12 @@ export function canChangeGateReview(loop: WorkflowLoop, gate: TeamTask): boolean
   return ['ready', 'running', 'paused'].includes(loop.status) && gate.status === 'pending'
     && !gate.reassigning && !gate.checkpoint?.decision
 }
+export function canToggleLoopTask(loop: Pick<WorkflowLoop, 'gateId' | 'status' | 'lastDecision'>, taskId: string): boolean {
+  return taskId !== loop.gateId && (loop.status === 'ready' || loop.status === 'running' || loop.status === 'paused' && loop.lastDecision !== 'revise')
+}
+export function canRetryLoopTask(loop: Pick<WorkflowLoop, 'gateId' | 'status' | 'lastDecision'>, task: {id: string; status: string}): boolean {
+  return loop.status === 'paused' && canToggleLoopTask(loop, task.id) && (task.status === 'failed' || task.status === 'cancelled')
+}
 export function canStartLoopWithFlow(loop: Pick<WorkflowLoop, 'status' | 'queued' | 'lastDecision' | 'round' | 'maxRounds'>): boolean {
   if (loop.status === 'ready') return !loop.queued
   return loop.status === 'paused' && (loop.lastDecision !== 'revise' || loop.round < loop.maxRounds)

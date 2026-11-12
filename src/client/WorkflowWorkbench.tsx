@@ -436,17 +436,9 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }
   function renderTaskControl(task: TeamTask) {
     if (!team || archiveView) return null
-    const loop = team.workflow?.loops?.find(item => item.gateId === task.id || item.bodyIds.includes(task.id))
-    if (loop) {
-      if (team.halted || team.phase === 'staged' || !canStartLoopWithFlow(loop) || task.status === 'completed') return null
-      const label = loop.status === 'ready' ? l('启动循环') : l('继续循环')
-      return <button type="button" data-node-playback disabled={working || unsaved.length > 0}
-        aria-label={label + ' · ' + task.subject} onPointerDown={event => event.stopPropagation()}
-        onClick={event => { event.stopPropagation(); void perform('loop_start', {loopId:loop.id, base:data?.base}) }}>{label}</button>
-    }
     const control = taskControlState(team, {...task, workflowAwaitingStart:awaitsFirstStart(task)})
     if (control.canRerun) return <button type="button" data-node-rerun disabled={working} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();edit('task',task.id)}}>{l("修改并重跑")}</button>
-    if (control.terminal || control.disabled) return null
+    if (control.disabled) return null
     const label = t ? t(control.actionLabel) : l(zh[control.actionLabel])
     return <button type="button" data-node-playback disabled={working || unsaved.some(item => item.target.id === task.id)}
       aria-label={`${label} · ${task.subject}`} title={l(zh['task.control.hint'])}
@@ -865,8 +857,19 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                 {loopRegions.map(region => <g key={region.loop.id} className={css.edge} data-flow-branch="reject"><path d={region.returnPath} strokeDasharray="7 5" markerEnd="url(#workflow-arrow-reject)"/><text x={region.label.x} y={region.label.y} textAnchor="middle" fontSize="13" fontWeight="650">REJECT · {l.language==='en'?'Revise with feedback':'按意见改进'} · {region.loop.round}/{region.loop.maxRounds}</text></g>)}
                 {link && <path d={connectionPath(link.returning ? {x:canvasPos(link.from).x+112.5,y:canvasPos(link.from).y+150} : connectionPort(canvasPos(link.from),'output', gateNode(team.tasks.find(task => task.id === link.from))),link)} />}
               </svg>
+              {!archiveView && loopRegions.map(({loop,x,bottom}) => {
+                if (team.halted || team.phase === 'staged') return null
+                const held = team.tasks.some(task => loop.bodyIds.includes(task.id) && task.workflowLoopTaskHold && task.workflowPaused)
+                const resume = canStartLoopWithFlow(loop) || (loop.status === 'running' || loop.queued) && held
+                const pause = ['running','reviewing'].includes(loop.status) || loop.queued
+                if (!resume && !pause) return null
+                return <div key={loop.id} data-loop-playback={loop.id} className={css.loopPlayback} style={{left:x+16,top:bottom-29}}>
+                  {resume && <button type="button" disabled={working || !!unsaved.length}
+                  onPointerDown={event=>event.stopPropagation()} onClick={()=>void perform('loop_start',{loopId:loop.id,base:data.base})}>{l(loop.status === 'ready' && !loop.queued ? '启动循环' : '继续循环')}</button>}
+                  {pause && <button type="button" disabled={working || !!unsaved.length} onPointerDown={event=>event.stopPropagation()} onClick={()=>void perform('loop_pause',{loopId:loop.id,base:data.base})}>{l.language === 'en' ? 'Pause loop' : '暂停循环'}</button>}
+                </div>
+              })}
               {canvasTasks.map(task => { const gateLoop = team.workflow?.loops?.find(loop => loop.gateId === task.id); const p = canvasPos(task.id), control=taskControlState(team,{...task,workflowAwaitingStart:awaitsFirstStart(task)},archiveView);
-                const pausedLoopTask = team.workflow?.loops?.some(loop => loop.status === 'paused' && loop.bodyIds.includes(task.id))
                 const en = l.language === 'en'
                 const execution = data.execution?.[task.id]
                 const reviewing = task.status === 'pending' && !!task.checkpoint && !gateNode(task) && data.busy.includes('check:'+task.id)
@@ -889,7 +892,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                 const who = <span className={css.canvasActor} title={identity}>{portrait && <img src={portrait} alt=""/>}{gateLoop?.mode === 'ai' && !preparing && <small>Agent</small>}<b>{identity}</b></span>
                 return <article key={task.id} data-task-selected={selectedTask===task.id || undefined} data-full-card={!gateNode(task) || undefined} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? task.checkpoint.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onDragStart={event=>event.preventDefault()} onPointerDown={event => beginNodeDrag(event, task)} onClickCapture={event=>{if(event.detail && suppressNodeClick.current){suppressNodeClick.current=false;event.preventDefault();event.stopPropagation()}}} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
                 {gateNode(task) && <svg className={css.gateShape} viewBox="0 0 225 150" aria-hidden="true"><path d={WORKFLOW_GATE_PATH} /></svg>}
-                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{!pausedLoopTask && renderTaskControl(task)}</div>
+                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{gateNode(task) && renderTaskControl(task)}</div>
                 {gateNode(task) ? <>
                   <div className={css.gateBody}>
                     <button type="button" className={css.gateTask} aria-pressed={selectedTask===task.id} data-card-task={task.id} aria-label={`${loopLabel}：${task.subject}`}><strong title={task.subject}>{task.subject}</strong></button>
@@ -897,7 +900,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                     <TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} labelText={stateText} />
                   </div>
                   <span className={css.gateCaption}>{gateLoop ? (l.language === 'en' ? `Round ${gateLoop.round} / ${gateLoop.maxRounds}` : `第 ${gateLoop.round} / ${gateLoop.maxRounds} 轮`) : l('请连接返回线')}</span>
-                </> : <CanvasTaskCard playback={pausedLoopTask ? renderTaskControl(task) : undefined} onMember={name=>edit('member',name)} selectedMember={selection.type==='member'?selection.id:undefined} team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
+                </> : <CanvasTaskCard playback={renderTaskControl(task)} onMember={name=>edit('member',name)} selectedMember={selection.type==='member'?selection.id:undefined} team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
                 {task.checkpoint && <span className={css.cardMode}>{reviewModeSelect(task)}</span>}
                 {gateNode(task) && <button type="button" className={css.returnPort} data-connection-handle aria-label="REJECT" disabled={working || archiveView || !editing || !!gateLoop?.historyCount}
                   onClick={()=>{ if (selectedTask !== task.id) choose({type:'check',id:task.id}) }}

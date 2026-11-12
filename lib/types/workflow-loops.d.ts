@@ -21,7 +21,7 @@ export declare function loopDependenciesSatisfied(team: TeamState, task: TeamTas
 export declare function reconcileLoops(team: TeamState, now?: number, failedTurnId?: string): boolean;
 export declare class LoopStartUnavailable extends Error {
 }
-export declare function startLoop(team: TeamState, id: string, additionalRounds?: number, now?: number): void;
+export declare function startLoop(team: TeamState, id: string, additionalRounds?: number, now?: number, enabledBodyIds?: ReadonlySet<string>): void;
 export declare function decideLoop(team: TeamState, id: string, input: {
     decisionId: string;
     runId: string;

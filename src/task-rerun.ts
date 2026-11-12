@@ -28,6 +28,7 @@ export function resetTaskForRerun(task: TeamTask, suspended: boolean, now: numbe
   }
   task.status='pending'; task.workflowPaused=suspended; task.workflowRerunRequired=suspended; task.updatedAt=now
   task.workflowAwaitingStart = false
+  delete task.workflowLoopTaskHold
   delete task.workflowRerunContext
   for (const key of ['output','attemptId','handoffId','handoffFromMemberId','reassigning','verdict','findings','changedPaths','acceptanceResults','commandsRun','supplementalEvidence','reviewedAttempt','reviewedArtifacts','reviewedGaps','reviewedScope','reviewedDuringDrift','verdictStartSnapshot'] as const) delete task[key]
   if(task.checkpoint) task.checkpoint={kind:task.checkpoint.kind,mode:task.checkpoint.mode,round:task.checkpoint.round+1,history:task.checkpoint.history}

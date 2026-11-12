@@ -181,6 +181,8 @@ export interface TeamTask {
   }
   /** Upstream rerun invalidated this task; explicit human confirmation is required. */
   workflowRerunRequired?: boolean
+  /** A body-task hold leaves parallel tasks in this loop schedulable. */
+  workflowLoopTaskHold?: boolean
   workflowPaused?: boolean
   /** New canvas work is held for its first explicit start, distinct from a user pause. */
   workflowAwaitingStart?: boolean

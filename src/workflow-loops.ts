@@ -149,7 +149,7 @@ export function reconcileLoops(team: TeamState, now = Date.now(), failedTurnId?:
   for (const loop of loopsOf(team)) {
     if (loop.status === 'ready' && loop.queued && !team.halted && team.phase !== 'staged') {
       const ids = [loop.gateId, ...loop.bodyIds]
-      if (ids.flatMap(id => taskOf(team, id).dependencies).filter(id => !ids.includes(id)).every(id => taskOf(team, id).status === 'completed')) { startLoop(team, loop.id, 0, now); changed = true }
+      if (ids.flatMap(id => taskOf(team, id).dependencies).filter(id => !ids.includes(id)).every(id => taskOf(team, id).status === 'completed')) { startLoop(team, loop.id, 0, now, new Set(loop.bodyIds.filter(id => !taskOf(team, id).workflowLoopTaskHold))); changed = true }
     }
     if (!['running', 'reviewing'].includes(loop.status)) continue
     const before = JSON.stringify(loop)
@@ -166,7 +166,7 @@ export function reconcileLoops(team: TeamState, now = Date.now(), failedTurnId?:
       pause(team, loop, `节点 ${failedExecution.id} 执行中断，请继续循环以重试本轮`, now)
       loop.failedExecutionTaskId = failedExecution.id
     }
-    else if (team.halted || body.some(t => t.workflowPaused) || gate.workflowPaused) pause(team, loop, '循环已暂停；请使用循环控制继续', now)
+    else if (team.halted || body.some(t => t.workflowPaused && !t.workflowLoopTaskHold) || gate.workflowPaused) pause(team, loop, '循环已暂停；请使用循环控制继续', now)
     else if (body.some(t => t.status === 'cancelled')) pause(team, loop, '循环任务已取消，请检查后继续', now)
     else if (loop.startedAt && now - (loop.status === 'reviewing' ? loop.reviewStartedAt ?? loop.startedAt : loop.startedAt) > loop.timeoutMinutes * 60_000 && !(loop.status === 'reviewing' && loop.mode === 'human')) pause(team, loop, '本轮执行超时，已暂停自动推进', now)
     else if (loop.status === 'running' && !body.some(active)) {
@@ -184,9 +184,10 @@ export function reconcileLoops(team: TeamState, now = Date.now(), failedTurnId?:
 }
 export class LoopStartUnavailable extends Error {}
 
-export function startLoop(team: TeamState, id: string, additionalRounds = 0, now = Date.now()): void {
+export function startLoop(team: TeamState, id: string, additionalRounds = 0, now = Date.now(), enabledBodyIds?: ReadonlySet<string>): void {
   const loop = loopsOf(team).find(l => l.id === id)
   if (!loop || !['ready', 'paused'].includes(loop.status) || team.halted || team.phase === 'staged') throw new LoopStartUnavailable('循环当前不能启动')
+  if (enabledBodyIds && loop.lastDecision === 'revise') throw new LoopStartUnavailable('请先确认本轮返工范围')
   validateLoopGraph(team)
   if (!Number.isSafeInteger(additionalRounds) || additionalRounds < 0 || additionalRounds > 20 || loop.maxRounds + additionalRounds > 20) throw new LoopStartUnavailable('追加轮数必须有限，累计最多 20 轮')
   const tasks = [loop.gateId, ...loop.bodyIds].map(id => taskOf(team, id))
@@ -197,6 +198,13 @@ export function startLoop(team: TeamState, id: string, additionalRounds = 0, now
   const external = [...new Set(tasks.flatMap(t => t.dependencies).filter(id => !tasks.some(t => t.id === id)))]
   if (external.some(id => taskOf(team, id).status !== 'completed')) {
     if (loop.startedAt !== undefined || loop.contracts) throw new LoopStartUnavailable('请先完成循环的外部输入')
+    for (const task of tasks) {
+      if (task.id === loop.gateId) continue
+      task.workflowPaused = !!enabledBodyIds && !enabledBodyIds.has(task.id)
+      if (task.workflowPaused) task.workflowLoopTaskHold = true
+      else delete task.workflowLoopTaskHold
+      task.workflowAwaitingStart = false; task.updatedAt = now
+    }
     loop.status = 'ready'
     loop.queued = true; loop.reason = '已排队，等待外部输入完成'; return
   }
@@ -215,7 +223,10 @@ export function startLoop(team: TeamState, id: string, additionalRounds = 0, now
         if (task.id !== loop.gateId) task.workflowRerunContext = context
         else if (task.checkpoint) task.checkpoint.round = loop.round
       }
-      task.workflowPaused = false; task.workflowRerunRequired = false; task.workflowAwaitingStart = false
+      task.workflowPaused = !!enabledBodyIds && task.id !== loop.gateId && !enabledBodyIds.has(task.id)
+      if (task.workflowPaused) task.workflowLoopTaskHold = true
+      else delete task.workflowLoopTaskHold
+      task.workflowRerunRequired = false; task.workflowAwaitingStart = false; task.updatedAt = now
     }
     loop.status = 'running'; loop.startedAt = now; delete loop.reviewStartedAt
   }

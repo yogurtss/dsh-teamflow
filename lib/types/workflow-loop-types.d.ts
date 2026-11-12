@@ -33,6 +33,11 @@ export interface WorkflowLoop extends LoopConfig {
     executionRounds?: Record<string, number>;
 }
 export declare function canChangeGateReview(loop: WorkflowLoop, gate: TeamTask): boolean;
+export declare function canToggleLoopTask(loop: Pick<WorkflowLoop, 'gateId' | 'status' | 'lastDecision'>, taskId: string): boolean;
+export declare function canRetryLoopTask(loop: Pick<WorkflowLoop, 'gateId' | 'status' | 'lastDecision'>, task: {
+    id: string;
+    status: string;
+}): boolean;
 export declare function canStartLoopWithFlow(loop: Pick<WorkflowLoop, 'status' | 'queued' | 'lastDecision' | 'round' | 'maxRounds'>): boolean;
 export interface LoopHistoryRecord {
     id: string;

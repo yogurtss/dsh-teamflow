@@ -682,6 +682,88 @@ test('a loop with changed inputs does not prevent Start all from resuming an ind
   assert.equal(resumed.team.tasks.find(task => task.id === 'independent').workflowPaused, false)
 })
 
+function parallelLoop() {
+  const {team, loop} = fixture()
+  team.tasks.push({...task('c', ['a']), assignee:'reviewer'})
+  team.tasks.find(task => task.id === 'gate').dependencies.push('c')
+  loop.bodyIds.push('c')
+  startLoop(team, loop.id)
+  finish(team, ['a'])
+  return {team, loop}
+}
+
+test('pausing a live body task drains only its attempt while its parallel sibling finishes', async t => {
+  const {team} = parallelLoop()
+  const b = team.tasks.find(task => task.id === 'b'), c = team.tasks.find(task => task.id === 'c')
+  const oldB = beginTaskAttempt(b, b.assignee), oldC = beginTaskAttempt(c, c.assignee)
+  b.status = 'in_progress'; c.status = 'in_progress'; b.output = 'Partial B'
+  const sent = []
+  const f = await routeFixture(t, team, async (...args) => { sent.push(args); return true })
+  const pause = await f.call('set_task_enabled', {taskId:'b', enabled:false, updatedAt:b.updatedAt})
+  assert.equal(pause.code, 200, pause.error)
+  const saved = await f.read()
+  assert.equal(saved.workflow.loops[0].status, 'running')
+  assert.equal(saved.tasks.find(task => task.id === 'c').attemptId, oldC)
+  assert.equal(saved.tasks.find(task => task.id === 'c').workflowPaused, false)
+  finish(saved, ['c'])
+  await writeTeam(f.stateRoot, saved)
+  const held = saved.tasks.find(task => task.id === 'b')
+  assert.equal(held.workflowPaused, true)
+  assert.equal(held.workflowRerunContext.previousAttemptId, oldB)
+  assert.equal(sent.length, 0)
+  const resumed = await f.call('set_task_enabled', {taskId:'b', enabled:true, updatedAt:held.updatedAt})
+  assert.equal(resumed.code, 200, resumed.error)
+  assert.equal(resumed.team.workflow.loops[0].round, 1)
+  assert.equal(resumed.team.tasks.find(task => task.id === 'c').status, 'completed')
+  assert.deepEqual(sent.map(args => args[2]), ['worker'])
+})
+
+test('retrying a failed loop body card leaves its paused parallel sibling held', async t => {
+  const {team} = parallelLoop()
+  const b = team.tasks.find(task => task.id === 'b')
+  b.status = 'failed'; b.output = 'HTTP 500 Internal Server Error'
+  reconcileLoops(team)
+  assert.equal(taskControlState(team, b).disabled, false)
+  const f = await routeFixture(t, team)
+  const single = await f.call('set_task_enabled', {taskId:'b', enabled:true, updatedAt:b.updatedAt})
+  assert.equal(single.code, 200, single.error)
+  assert.equal(single.team.tasks.find(task => task.id === 'b').workflowPaused, false)
+  assert.equal(single.team.tasks.find(task => task.id === 'c').workflowPaused, true)
+  assert.equal(single.team.workflow.loops[0].round, 1)
+})
+
+test('a single queued card keeps other loop tasks held when an external input finishes', async t => {
+  const {team} = fixture()
+  team.tasks.unshift(task('input'))
+  team.tasks.find(task => task.id === 'a').dependencies = ['input']
+  const f = await routeFixture(t, team)
+  const a = team.tasks.find(task => task.id === 'a')
+  const queued = await f.call('set_task_enabled', {taskId:'a', enabled:true, updatedAt:a.updatedAt})
+  assert.equal(queued.code, 200, queued.error)
+  const saved = await f.read()
+  assert.equal(saved.workflow.loops[0].queued, true)
+  finish(saved, ['input'])
+  assert.equal(saved.workflow.loops[0].status, 'running')
+  assert.equal(saved.tasks.find(task => task.id === 'a').workflowPaused, false)
+  assert.equal(saved.tasks.find(task => task.id === 'b').workflowPaused, true)
+})
+
+for (const bulk of ['loop_start', 'set_flow_enabled']) test('single resume preserves sibling holds until ' + bulk, async t => {
+  const {team, loop} = parallelLoop()
+  pauseLoop(team, loop.id)
+  const f = await routeFixture(t, team)
+  const b = team.tasks.find(task => task.id === 'b')
+  const single = await f.call('set_task_enabled', {taskId:'b', enabled:true, updatedAt:b.updatedAt})
+  assert.equal(single.code, 200, single.error)
+  assert.equal(single.team.tasks.find(task => task.id === 'b').workflowPaused, false)
+  assert.equal(single.team.tasks.find(task => task.id === 'c').workflowPaused, true)
+  assert.equal(single.team.workflow.loops[0].status, 'running')
+  const resumed = await f.call(bulk, {loopId:loop.id, base:single.base, enabled:true, version:flowControlVersion(single.activity)})
+  assert.equal(resumed.code, 200, resumed.error)
+  assert.equal(resumed.team.tasks.find(task => task.id === 'c').workflowPaused, false)
+  assert.equal(resumed.team.workflow.loops[0].round, 1)
+})
+
 test('Start all accepts the activity snapshot of a workflow with an empty loop list', async t => {
   const {team} = fixture()
   team.workflow.loops = []

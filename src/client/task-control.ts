@@ -1,4 +1,4 @@
-import { canStartLoopWithFlow } from '../workflow-loop-types.ts'
+import { canRetryLoopTask, canStartLoopWithFlow, canToggleLoopTask } from '../workflow-loop-types.ts'
 import type { ActivityTask } from './activity-monitor.ts'
 import type { AgentTeamsLocaleKey } from './locales.ts'
 
@@ -11,7 +11,9 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
   const stopping = !!task.workflowPaused && ['claimed','in_progress'].includes(task.status)
   const waiting = task.dependencies.filter(id => !team.tasks.some(upstream => upstream.id === id && upstream.status === 'completed'))
   const reviewReady = (!loop || loop.mode === 'human' && loop.status === 'reviewing') && !!task.checkpoint && !task.checkpoint.decision && task.status === 'pending' && !task.workflowPaused && !task.workflowConfigPending && !task.workflowRerunRequired && (!waiting.length || !!loop) && team.phase !== 'staged' && !team.halted && !historic
-  const disabled = !!loop || historic || !!team.halted || terminal || !!task.workflowConfigPending || !!task.workflowRerunRequired || !!task.checkpoint?.decision
+  const loopLocked = loop && (team.phase === 'staged' || !canToggleLoopTask(loop, task.id))
+  const retryLoopTask = !!loop && canRetryLoopTask(loop, task)
+  const disabled = !!loopLocked || historic || !!team.halted || terminal && !retryLoopTask || !!task.workflowConfigPending || !!task.workflowRerunRequired || !!task.checkpoint?.decision
   const checked = !terminal && !task.workflowPaused && !task.workflowConfigPending && !task.workflowRerunRequired && !task.checkpoint?.decision
   let label: AgentTeamsLocaleKey = terminal ? task.checkpoint?.decision === 'approve' ? 'task.status.reviewPassed' : task.status === 'completed' ? 'task.status.completed' : task.status === 'failed' ? 'task.status.failed' : 'task.status.cancelled'
     : task.checkpoint?.decision === 'reject' ? 'task.status.reviewRejected'
@@ -35,11 +37,11 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
     : !checked ? 'task.control.start' : active ? 'task.control.pause' : 'task.control.dequeue'
   if (!terminal && loop?.status === 'paused') label = stopping ? 'task.control.stopping' : 'task.control.paused'
   else if (!terminal && loop?.status === 'cancelled') label = stopping ? 'task.control.stopping' : 'task.status.cancelled'
-  else if (!terminal && loop?.status === 'ready') label = 'task.control.awaitingStart'
+  else if (!terminal && loop?.status === 'ready' && !loop.queued) label = 'task.control.awaitingStart'
   else if (loop?.gateId === task.id && loop.status === 'reviewing') label = loop.mode === 'ai' ? active ? 'task.status.inProgress' : 'task.control.queued' : 'task.status.reviewReady'
   else if (loop?.gateId === task.id && loop.mode === 'ai' && loop.status === 'passed') label = 'task.status.completed'
   const visual = label.slice(label.lastIndexOf('.') + 1)
-  return {disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel,visual}
+  return {retryLoopTask,disabled,checked,label,waiting,reviewReady,stopping,terminal,canRerun,active,queued,actionLabel,visual}
 }
 
 /** Optimistic concurrency token shared by the canvas, activity view and route. */

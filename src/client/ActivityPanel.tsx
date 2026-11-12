@@ -538,7 +538,7 @@ function DependencyMap({ tasks, members, t, discarded = false, workspace = false
               {detailTask.checkpoint && <span className={css.reviewKind}> · {t('task.control.round',{round:detailTask.checkpoint.round})}</span>}
             </span>
             <div className={css.taskDetailControls}>
-              {(!control.terminal || control.canRerun) && <button type="button"
+              {(!control.terminal || control.canRerun || control.retryLoopTask) && <button type="button"
                 data-task-action={control.canRerun ? 'rerun' : control.stopping ? 'retry' : control.queued ? 'dequeue' : control.checked ? 'pause' : 'play'}
                 data-rerun-action={control.canRerun || undefined}
                 data-running={!control.stopping && detailTask.status === 'in_progress' || undefined}
