@@ -202,6 +202,12 @@ export interface AtomicReplaceOptions {
  */
 export declare function replaceFileAtomicOrDirect(temporary: string, file: string, content: string, primitives: AtomicReplacePrimitives, options?: AtomicReplaceOptions): Promise<void>;
 /**
+ * Atomically replace one UTF-8 state file from a same-directory temp file,
+ * degrading to a direct overwrite when the atomic rename cannot proceed
+ * (see {@link replaceFileAtomicOrDirect} for the Windows EPERM rationale).
+ */
+export declare function atomicWriteText(file: string, content: string): Promise<void>;
+/**
  * Name the first durable defect in a record `coerceTeamState` rejected. Before
  * this, a rejected `team.json` surfaced only as
  * `invalid AgentTeams state in team "x"` — no task, no field, no value — while

@@ -7,9 +7,22 @@ export interface SupervisorCard {
     teamId: string;
     workflow: string;
     captain: string;
-    item: WatchItem;
+    item: WatchItem | {
+        kind: 'requirement';
+        id: string;
+        title: string;
+        round?: undefined;
+        taskId?: undefined;
+    };
     summary: string;
     status: 'open' | 'approved' | 'rejected' | 'closed';
+    requirement?: {
+        id: string;
+        round: number;
+        kind: 'result' | 'question' | 'answered' | 'failed' | 'reply';
+        instruction: string;
+        answer?: string;
+    };
 }
 export interface CardEvent {
     card: SupervisorCard;

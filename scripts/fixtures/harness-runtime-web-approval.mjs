@@ -45,7 +45,7 @@ class WebApprovalAdapter extends LlmAdapter {
     async *stream(options) {
         const system = options.system ?? options.messages.filter(message => message.role === 'system').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');
         if (options.purpose) { yield* textChunks('Web approval lab'); return; }
-        if(system.includes('You are the read-only Super Agent')){
+        if(system.includes('You are the Super Agent for workflow coordination')){
             assert.ok(options.tools.some(t=>t.name==='teamflow_watched_workflows'));
             assert.ok(!options.tools.some(t=>t.name==='agent_teams_create'));
             const turn=options.messages.slice(options.messages.findLastIndex(m=>m.role==='user'));

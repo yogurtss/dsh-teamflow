@@ -123,3 +123,62 @@ test('only incoming visible entries are unread, and one card retains its identit
   assert.deepEqual(conversationUnread(events,4), {latest:4,count:0})
   assert.deepEqual(conversationUnread([...events,record(5,'update')],4), {latest:5,count:1})
 })
+
+test('requirements resolve named targets and require a project when names repeat', async () => {
+  const {resolveRelayTarget}=await import('../lib/super-agent-relay.js')
+  const a={project:'Alpha',workspaceId:'w1',teamId:'a',workflow:'Release notes',conversation:'Discuss launch'}
+  const b={...a,project:'Beta',workspaceId:'w2'}
+  assert.throws(()=>resolveRelayTarget([a,b],'Release notes'),/Alpha.*Beta/)
+  assert.equal(resolveRelayTarget([a,b],'Discuss launch','beta'),b)
+  assert.throws(()=>resolveRelayTarget([a,b],'nonexistent','Beta'),/没有找到/)
+})
+
+test('requirement rounds survive restart, deduplicate delivery and update one return card', async t => {
+  const {Session}=await import('@deepseek-ai/dsh-session')
+  const {createRequirementRelay}=await import('../lib/super-agent-relay.js')
+  const {readMailbox,CAPTAIN_KEY}=await import('../lib/state.js')
+  const {readCard}=await import('../lib/super-agent-card.js')
+  const home=await mkdtemp(join(tmpdir(),'teamflow-relay-'))
+  t.after(()=>rm(home,{recursive:true,force:true}))
+  const root=join(home,'teams'),target={workspaceId:'w',project:'Project',teamId:'a',workflow:'Release',captain:'captain-a'}
+  await createTeamDir(root,team('a'))
+  const inputs=[],notices=[],master={id:'coordinator',session:Session.create('coordinator'),followup:m=>notices.push(m)}
+  let report
+  const captain={id:'captain-a',session:{header:{version:4},ownEvents:()=>inputs.map((m,seq)=>({seq,type:'user/message',data:m}))},
+    followup:m=>inputs.push(m),ctx:{tools:{register:tool=>{report=tool;return ()=>{}}}}}
+  const ctx={effect:fn=>fn(),sessions:{flush:async()=>{}},agents:{get:()=>captain},logger:{warn:m=>assert.fail(m)}}
+  const start=()=>createRequirementRelay(ctx,home,'teams',()=>home,async()=>master,()=>master.id)
+  const request=['coordinator',6,'Add a summary']
+  let relay=start()
+  const {id}=await relay.queue(target,...request)
+  await relay.pass()
+  relay=start();await relay.queue(target,...request);await relay.pass()
+  assert.equal(inputs.length,1)
+  await report.execute({id,round:1,kind:'question',text:'Which language?'})
+  relay=start();await relay.pass()
+  await Promise.all([relay.answer(id,1,'Chinese'),relay.answer(id,1,'Chinese')])
+  await assert.rejects(relay.answer(id,1,'English'),/已被回复/)
+  await relay.pass();assert.equal(inputs.length,2)
+  await assert.rejects(report.execute({id,round:1,kind:'result',text:'stale'}),/stale/)
+  await report.execute({id,round:2,kind:'result',text:'摘要已加入。'})
+  await relay.pass()
+  relay=start();await relay.queue(target,...request);await relay.pass()
+  const cards=master.session.ownEvents().map(readCard).filter(Boolean)
+  assert.deepEqual(cards.map(e=>e.card.requirement.kind),['question','answered','result'])
+  assert.equal(new Set(cards.map(e=>e.card.key)).size,1)
+  assert.equal(notices.length,2)
+  assert.equal((await readMailbox(root,'a',CAPTAIN_KEY)).length,2)
+  assert.equal((await readTeam(root,'a')).superAgentWatch,undefined)
+})
+
+test('a queued handoff is correlated with its own turn even when prompt assembly fails',async()=>{
+  const {requirementTurn}=await import('../lib/super-agent-relay.js')
+  const input=text=>({source:{kind:'agent-teams'},content:[{type:'text',text}]})
+  const splice=(start,removedCount,...inserted)=>({type:'agent/inbox/spliced',data:{target:'next-turn',start,removedCount,inserted}})
+  const start=turn=>({type:'turn/start',data:{turn}})
+  const end=(turn,kind)=>({type:'turn/end',data:{turn,reason:{kind}}})
+  const events=[splice(0,0,input('another'),input('[request]')),start(2),splice(0,1),end(2,'completed')]
+  assert.deepEqual(requirementTurn(events,'[request]'),{accepted:true,end:undefined,text:''})
+  events.push(start(3),splice(0,1),end(3,'error'),start(4),end(4,'completed'))
+  assert.deepEqual(requirementTurn(events,'[request]'),{accepted:true,end:'error',text:''})
+})

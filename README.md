@@ -85,6 +85,8 @@ Use **Save as template** to have AI extract reusable requirements, review the dr
 
 ### Super Agent (development branch)
 
+In the global chat, name a workflow and ask Super Agent to forward a requirement to its Captain. Specify the project when names overlap. A delivery receipt lets you continue chatting. The Captain returns a result or a question on a card, where you can reply or open the Captain conversation. A directed request has its own reply channel and leaves watch subscriptions intact. Checkpoint decisions use the original workbench.
+
 Hosts with the embedded conversation component use the native DSH transcript and composer for Super Agent. Select the model name in the composer to change the model and its available reasoning level. The global chat opens without a project selection. On hosts with native plugin records, watched reviews, proposals and blockers are delivered proactively to the global conversation. The reminder opens the card. Open its evidence or ask a question in context. Review decisions update the original card, and ordinary progress shares one card per workflow.
 
 Watch settings opens with all watched workflows across projects. Each row shows the project, captain conversation, workflow name and notification types. Select a row to edit its subscription. Enable **Node progress** to see starts, completions, failures and cancellations during the subscription. A start names its completed direct dependencies. Activity links open the node and progress is counted separately from pending human decisions.

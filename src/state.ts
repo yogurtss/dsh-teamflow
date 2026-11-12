@@ -739,7 +739,7 @@ export async function replaceFileAtomicOrDirect(
  * degrading to a direct overwrite when the atomic rename cannot proceed
  * (see {@link replaceFileAtomicOrDirect} for the Windows EPERM rationale).
  */
-async function atomicWriteText(file: string, content: string): Promise<void> {
+export async function atomicWriteText(file: string, content: string): Promise<void> {
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
     await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx' })

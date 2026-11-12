@@ -13,7 +13,7 @@ import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversa
 import type { WorkflowLauncherProps } from './WorkflowLauncher.tsx'
 import { selectedWorkflowWorkspace } from './workflow-launcher.ts'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
-import { superAgentEntry, type SupervisorVisit } from './super-agent-navigation.ts'
+import { captainOpened, superAgentEntry, type SupervisorVisit } from './super-agent-navigation.ts'
 import { defaultWatchKinds, watchKinds, type NodeChange, type WatchRow, type WatchItem, type WorkflowWatch, type WatchKind } from '../super-agent-watch.ts'
 import css from './SuperAgent.module.css'
 
@@ -239,8 +239,10 @@ export function SuperAgentOverlay(props:Props & HostChat) {
   const [chat,setChat]=useState<{key?:string}>()
   useEffect(()=>{
     const open=()=>setChat({})
+    const leave=()=>{setChat(undefined);setVisit(undefined)}
     window.addEventListener('teamflow:global-chat',open)
-    return ()=>window.removeEventListener('teamflow:global-chat',open)
+    window.addEventListener(captainOpened,leave)
+    return ()=>{window.removeEventListener('teamflow:global-chat',open);window.removeEventListener(captainOpened,leave)}
   },[])
   function openNotice(){
     if(!notice)return

@@ -1,5 +1,6 @@
 /** Session-scoped workbenches can visit the workspace supervisor and resume in place. */
 export declare const superAgentEntry = "teamflow:super-agent-entry";
+export declare const captainOpened = "teamflow:super-agent-captain-opened";
 export interface SupervisorVisit {
     workspaceId?: string;
     sessionId: string;
