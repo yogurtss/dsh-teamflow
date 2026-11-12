@@ -42,7 +42,10 @@ test('member PE survives workflow edits, template reuse and persona generation a
   }
   saved.members[0].executionPrompt += '字'
   assert.throws(() => parseTemplate(saved), /64000/)
-  assert.throws(() => parseWorkflowOperations([{ ...update, specificPrompt: '字'.repeat(16_001) }]))
+  for (const field of ['specificPrompt', 'summary', 'role']) {
+    assert.equal(parseWorkflowOperations([{ ...update, [field]: prompt }])[0][field], prompt)
+    assert.throws(() => parseWorkflowOperations([{ ...update, [field]: prompt + '字' }]), /64000/)
+  }
 })
 
 test('export and instantiation keep structure but never reuse execution/session/route data',()=>{
@@ -94,16 +97,25 @@ test('authenticated workflow handler applies templates once and leaves the sourc
   installWorkflowWorkbench(ctx,{stateDir:'.agent-teams',templateDirectory:library,maxMembers:8},{},{register:r=>{route=r;return()=>{}}})
   async function call(action,fields={}){const req=Readable.from([JSON.stringify({sessionId:'captain',action,...fields})]);req.method='POST';let status,value;await route.handler(req,{writeHead:s=>{status=s},end:v=>{value=JSON.parse(v)}});return {status,...value}}
   assert.equal((await call('template_list')).templates.length,4)
+  const goal = '实现 B' + '求'.repeat(63_995) + '末'
+  captain.session.ownEvents = () => ['earlier', goal].map(text => ({type:'user/message',data:{source:{kind:'user'},content:[{type:'text',text}]}}))
+  const catalog = await call('template_list')
+  assert.equal(catalog.context, goal)
+  assert.ok(catalog.warnings.length)
+  const large = definition()
+  for (const task of large.tasks) task.general = { requirements: goal, deliverables: goal, acceptance: goal }
+  const written = await call('template_save', {definition:large})
+  assert.equal(written.status,200); assert.deepEqual(written.template.tasks[0].general,large.tasks[0].general)
   assert.equal(messages.length,0,'Browsing must leave the captain blank')
   assert.equal((await call('template_apply',{templateId:template.id,version:999,name:'Invalid',description:'B'})).status,409)
   assert.equal(messages.length,0,'Rejected template use must not start a conversation')
   assert.equal(renames.length,0)
-  const result=await call('template_apply',{templateId:template.id,version:1,name:'B',description:'实现 B'});assert.equal(result.status,200,result.error);assert.equal(result.activity.teamId,result.team.id);assert.equal(result.activity.captainSessionId,'captain');assert.equal(result.activity.phase,'staged');assert.equal(result.team.phase,'staged');assert.ok(result.team.tasks.every(t=>t.workflowConfigPending));assert.equal(result.team.members[0].model,'test')
+  const result=await call('template_apply',{templateId:template.id,version:1,name:'B',description:goal});assert.equal(result.status,200,result.error);assert.equal(result.activity.teamId,result.team.id);assert.equal(result.activity.captainSessionId,'captain');assert.equal(result.activity.phase,'staged');assert.equal(result.team.phase,'staged');assert.ok(result.team.tasks.every(t=>t.workflowConfigPending));assert.equal(result.team.members[0].model,'test')
   assert.equal((await call('template_apply',{templateId:template.id,version:1,name:'duplicate',description:'B'})).status,409)
   assert.equal(messages.length,1,'Successful application starts exactly one captain turn; duplicate requests do not')
   assert.equal(messages[0].source.kind,'user')
   assert.ok(messages[0].content[0].text.includes(template.name))
-  assert.ok(messages[0].content[0].text.includes('实现 B'))
+  assert.ok(messages[0].content[0].text.includes(goal))
   assert.ok(messages[0].content[0].text.includes(result.team.id))
   assert.deepEqual(renames,['B'],'Template name immediately titles the captain once')
   title=undefined;await call('state',{teamId:result.team.id})

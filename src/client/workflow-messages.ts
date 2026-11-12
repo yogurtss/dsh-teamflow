@@ -688,6 +688,9 @@ Object.assign(workflowEnglish, {
   "请打开原队长会话后继续": "Open the original captain session to continue",
   "操作必须是对象": "Each operation must be an object",
   "成员执行指令最多允许 {0} 个字符": "Member execution instructions can contain up to {0} characters",
+  "{0} 最多允许 {1} 个字符": "{0} can contain up to {1} characters",
+  "仅带入最近的部分对话需求，请核对并补充较早的要求。": "Only the most recent requirements were carried over. Review and add any earlier requirements you need.",
+  "提案内容最多允许 {0} 个字符": "Proposal content can contain up to {0} characters",
   "{0} 必须是有效文本": "{0} must be valid text",
   "{0} 必须是字符串列表": "{0} must be a list of strings",
   "每次提案需要 1–50 个修改": "Each proposal requires 1–50 changes",
@@ -748,7 +751,7 @@ Object.assign(workflowEnglish, {
   "请为每个节点填写通用任务要求": "Fill in the general task requirements for every node",
   "模板已更新或删除，请重新打开后保存": "The template has been updated or deleted; reopen it before saving",
   "模板已变化，请刷新后重试": "The template has changed; refresh and try again",
-  "任务层需要任务要求、交付物和验收要求三个文本字段（每项最多 16000 字）": "Each task layer requires three text fields: requirements, deliverables, and acceptance (up to 16000 characters each)",
+  "任务层需要任务要求、交付物和验收要求三个文本字段（每项最多 64000 字）": "Each task layer requires three text fields: requirements, deliverables, and acceptance (up to 64000 characters each)",
   "新建任务必须提供 layers.general 和 layers.specific，各含 requirements、deliverables、acceptance 三个字符串；两层 requirements 均不能为空。不要将分层标题写入 description。": "New tasks must provide layers.general and layers.specific, each containing requirements, deliverables, and acceptance strings. Both requirements fields must be nonempty. Do not put layer headings in description.",
   "AI 拆分只能更新当前任务的 layers，不得新增任务、重跑或修改其他字段": "AI splitting may only update the current task's layers; it cannot add tasks, rerun tasks, or change other fields",
   "请同时填写通用层和本次层的任务要求": "Fill in the requirements for both the general and current layers"

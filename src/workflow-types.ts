@@ -1,5 +1,10 @@
 import type { GalleryAccess } from "./gallery-access.ts"
-export const MAX_MEMBER_PE_LENGTH = 64_000
+export const MAX_WORKFLOW_TEXT_LENGTH = 64_000
+export const MAX_MEMBER_PE_LENGTH = MAX_WORKFLOW_TEXT_LENGTH
+export const MAX_WORKFLOW_PROPOSAL_LENGTH = 4_000_000
+// A JSON string of this length takes at most three UTF-8 bytes per UTF-16
+// code unit. Leave room for the surrounding workbench request.
+export const MAX_WORKFLOW_REQUEST_BYTES = 16_000_000
 
 export function parseMemberExecutionPrompt(value: unknown): string {
   if (typeof value !== 'string') throw new Error('executionPrompt 必须是有效文本')

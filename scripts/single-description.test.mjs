@@ -93,18 +93,33 @@ test('old layer records flatten without losing constraints or bypassing human co
   assert.deepEqual(await f.read(),loaded,'Migration must be idempotent')
 })
 
+test('AI can propose several full-length member instructions together', async t => {
+  const f = await mount(t)
+  const context = await f.context()
+  const prompt = '指'.repeat(63_999) + '末'
+  const operations = ['writer', 'reviewer'].map(name => ({ action: 'add_member', name, summary: 'Work', executionPrompt: prompt }))
+  await f.call('agent_teams_workflow_propose', { base: context.base, title: 'Roles', operations })
+  const saved = await f.read()
+  assert.deepEqual(saved.workflow.discussions['discussion:graph'].proposal.operations.map(op => op.executionPrompt), [prompt, prompt])
+})
+
 test('template extraction uses structured arguments, preserves layout and leaves source tasks untouched',async t=>{
   const f=await mount(t,'extract'),context=await f.context()
   assert.equal(context.templateFormat.positions,undefined,'Models need not copy canvas coordinates')
   const definition={...context.templateFormat,tasks:context.templateFormat.tasks.map(task=>({...task,general:brief}))}
   await assert.rejects(f.call('agent_teams_template_propose',{base:context.base,definition:JSON.stringify(definition)}),/object/)
   await assert.rejects(f.call('agent_teams_template_propose',{base:context.base,definition:{...definition,tasks:definition.tasks.slice(1)}}),/保留|依赖/)
+  const prompt = '指'.repeat(63_999) + '末'
+  for (const member of definition.members) member.executionPrompt = prompt
+  for (const task of definition.tasks) task.general = { requirements: prompt, deliverables: prompt, acceptance: prompt }
   const malformed=structuredClone(definition);malformed.tasks[0].general.deliverables=['code']
   await assert.rejects(f.call('agent_teams_template_propose',{base:context.base,definition:malformed}),/string/)
   await f.call('agent_teams_template_propose',{base:context.base,definition})
   const saved=await f.read(),draft=saved.workflow.discussions['discussion:template'].templateDraft.definition
   assert.deepEqual(saved.tasks,JSON.parse(JSON.stringify(f.source.tasks)))
   assert.deepEqual(saved.members,JSON.parse(JSON.stringify(f.source.members)))
+  assert.deepEqual(draft.tasks[0].general, definition.tasks[0].general)
+  assert.equal(draft.members[0].executionPrompt, prompt)
   assert.deepEqual(draft.positions,f.source.workflow.positions)
   assert.deepEqual(draft.tasks.map(task=>task.general),definition.tasks.map(task=>task.general))
 })

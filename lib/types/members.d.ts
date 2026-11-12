@@ -17,8 +17,6 @@ import type { Session } from '@deepseek-ai/dsh-session';
 import { type SessionFormatBearer } from './harness-compat.ts';
 import type { MemberToolFilter } from './tool-policies.ts';
 import { type TeamMember, type TeamState, type TeamTask } from './types.ts';
-/** Persona snapshot of a profile protocol; the full text lives on team.json. */
-export declare const PERSONA_PROTOCOL_MAX_CHARS = 400;
 /** Runtime knobs for member spawning, resolved from plugin config. */
 export interface MemberRuntimeConfig {
     /** Registered `ctx.subagents` provider name (must support continuable + persona). */

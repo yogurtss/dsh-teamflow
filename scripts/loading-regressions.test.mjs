@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {workflowRequest} from '../lib/client/workflow-request.js'
 import {openAgentTeamMember} from '../lib/client/session-navigation.js'
-import {discussionHistory} from '../lib/discussion-history.js'
+import {discussionHistory, recentUserRequirements} from '../lib/discussion-history.js'
 
 function deferredFetch(){const calls=[];const fetcher=(_url,init)=>new Promise((resolve,reject)=>{calls.push({init,resolve:value=>resolve(new Response(JSON.stringify(value)))});init.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true})});return {fetcher,calls}}
 test('shared reads cancel independently, release transport after last reader and never retain settled authority',async()=>{
@@ -33,4 +33,14 @@ test('discussion tail avoids converting old content, caches unchanged log and re
  const first=discussionHistory(session);assert.equal(first.length,100);assert.equal(first[0].text,'99900');assert.equal(discussionHistory(session),first);assert.equal(reads,1)
  events.push({seq:100000,type:'assistant/message',data:{message:{content:[{type:'text',text:'new'}]}}});session.seq++;assert.equal(discussionHistory(session).at(-1).text,'new');assert.equal(reads,2)
  const legacy={ownEvents:()=>events};assert.equal(discussionHistory(legacy).at(-1).text,'new')
+})
+
+test('planning context carries all fitting user text and marks omissions without splitting emoji', () => {
+  const user = (...texts) => ({ type:'user/message', data:{source:{kind:'user'}, content:texts.map(text=>({type:'text',text}))} })
+  const blocks = Array.from({length:12}, (_,i) => 'Requirement ' + i)
+  const events = [user(...blocks), {type:'user/message',data:{source:{kind:'tool'},content:[{type:'text',text:'private'}]}}]
+  const session = {ownEvents:()=>events}
+  assert.deepEqual(recentUserRequirements(session),{text:blocks.join('\n'),partial:false})
+  events.push(user('开' + '😀' + '字'.repeat(63_999)))
+  assert.deepEqual(recentUserRequirements(session),{text:'字'.repeat(63_999),partial:true})
 })

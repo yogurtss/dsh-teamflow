@@ -1,3 +1,5 @@
+import { MAX_WORKFLOW_TEXT_LENGTH, MAX_WORKFLOW_REQUEST_BYTES } from './workflow-types.ts'
+import { recentUserRequirements, partialRequirementsNotice } from './discussion-history.ts'
 import { resumeTeamState } from './quality-gates.ts'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import { rerunPath, startWorkflowPath, resumeRerunPath } from './task-rerun.ts'
@@ -19,7 +21,7 @@ import { flowControlVersion } from './client/task-control.ts'
 import { assembleTeamSnapshot } from './snapshot.ts'
 import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
-import { drainMemberChildren, sessionOwnEvents } from './harness-compat.ts'
+import { drainMemberChildren } from './harness-compat.ts'
 import { excerpt, resultDigest, reviewResult } from './review-results.ts'
 import { createWorkspaceAuditor } from './workspace-audit-async.ts'
 import { workflowMaterialEvidence } from './workflow-material-evidence.ts'
@@ -31,8 +33,8 @@ import { builtinTemplates, getBuiltinTemplate } from './builtin-templates.ts'
 import { isBuiltinTemplate } from './templates.ts'
 import { taskNeedsConfiguration, taskText } from './task-description.ts'
 
-function string(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 16000) throw new Error(`${name} 不能为空或过长`)
+function string(value: unknown, name: string, maxLength = 16000): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > maxLength) throw new Error(`${name} 不能为空或过长`)
   return value.trim()
 }
 /** Use the host's durable rename API; do not depend on auxiliary LLM naming. */
@@ -82,7 +84,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
     }
     if (req.method !== 'POST') { reply(405, { error: 'POST required' }); return }
     try {
-      const body = await readJsonRequest(req)
+      const body = await readJsonRequest(req, MAX_WORKFLOW_REQUEST_BYTES)
       const action = string(body['action'], 'action')
       conditionalState=(action==='state'||action==='archive_state'||action==='conversation_state')&&body['conditionalState']===true
       knownRevision=body['knownRevision']
@@ -126,8 +128,11 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       if (!captain) throw new Error('请先打开队长对话，使当前会话连接到宿主')
       const workspace = captain.session.header.cwd ?? process.cwd(), root = join(workspace, config.stateDir)
       if(action==='template_list'){
-        const context=sessionOwnEvents(caller.session).flatMap(event=>event.type==='user/message'&&event.data.source.kind==='user'?event.data.content.filter(b=>b.type==='text').map(b=>b.text):[]).slice(-4).join('\n').slice(-12000)
-        const library=await listTemplates(libraryRoot);reply(200,{...library,templates:[...builtinTemplates(),...library.templates],context});return
+        const requirements = recentUserRequirements(caller.session)
+        const library = await listTemplates(libraryRoot)
+        const warnings = requirements.partial ? [...library.warnings, partialRequirementsNotice] : library.warnings
+        reply(200, { warnings, templates: [...builtinTemplates(), ...library.templates], context: requirements.text })
+        return
       }
       if(action==='template_save'){
         const previous=body['templateId']===undefined?undefined:{id:string(body['templateId'],'templateId'),version:Number(body['version'])}
@@ -150,7 +155,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           if(action==='template_apply'){
             const id=string(body['templateId'],'templateId');const template=isBuiltinTemplate(id)?localizeBuiltinTemplate(getBuiltinTemplate(id,Number(body['version'])),body['language']==='en'?'en':'zh'):await getTemplate(libraryRoot,id,Number(body['version']))
             if(template.members.length>config.maxMembers)throw new Error('模板成员数超过当前宿主配置上限')
-            const copy=instantiateTemplate(template,teamId,captain.id,name,string(body['description'],'本次需求'))
+            const copy=instantiateTemplate(template,teamId,captain.id,name,string(body['description'],'本次需求',MAX_WORKFLOW_TEXT_LENGTH))
             const selection=await resolveMemberLlmSelection(ctx,captain,{})
             for(const member of copy.members){member.provider=selection.provider;member.model=selection.model;member.reasoningEffort=selection.reasoningEffort}
             await createTeamDir(root,copy)
@@ -353,7 +358,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
         if (!conversations) throw new Error('宿主未加载原生讨论服务')
         const payload = await withTeamLock(lock, async () => {
           const team = await load()
-          if (action === 'conversation_send') await conversations.sendEmbedded(team, key, string(body['message'], '讨论内容'))
+          if (action === 'conversation_send') await conversations.sendEmbedded(team, key, string(body['message'], '讨论内容',MAX_WORKFLOW_TEXT_LENGTH))
           return conversations.readEmbedded(team, key)
         })
         reply(200, payload); return
@@ -476,7 +481,9 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
             const discussion = discussionOf(team, `check:${id}`)
             if (typeof body['evidence'] !== 'string' || body['evidence'] !== discussion.evidence) throw new Error('请先打开并阅读当前验收材料')
             const material = workflowMaterials(team, id)
-            decideCheckpoint(team, id, decision, body['evidence'], material.evidence, typeof body['note'] === 'string' ? body['note'].slice(0, 16000) : '', material.text)
+            const note = typeof body['note'] === 'string' ? body['note'] : ''
+            if (note.length > MAX_WORKFLOW_TEXT_LENGTH) throw new Error(`验收意见 最多允许 ${MAX_WORKFLOW_TEXT_LENGTH} 个字符`)
+            decideCheckpoint(team, id, decision, body['evidence'], material.evidence, note, material.text)
           } else if (action === 'start_path') {
             if(body['base'] !== workflowFingerprint(team))throw new Error('团队已变化，请刷新节点后重新确认')
             startWorkflowPath(team,string(body['taskId'],'taskId'))

@@ -140,7 +140,7 @@ const cycled = collectCompletedDependencyOutputs([
   { id: 't2', subject: 'b', status: 'completed', dependencies: ['t1'], createdAt: 0, updatedAt: 0 },
 ], 't2', () => { cycleWarned = true })
 check('recursive dependency collection stops on cycles', cycleWarned && Array.isArray(cycled))
-check('persona protocol is truncated', profilePersona.includes('p'.repeat(400)) && !profilePersona.includes('p'.repeat(401)))
+check('persona carries the full profile protocol', profilePersona.includes('p'.repeat(600)))
 const injected = 'The product interface should present the intended outcome, not reveal the reasoning process.'
 const assignment = assignmentPrompt({ taskId: 't1', memberName: 'Implementer', memberId: 'm', attempt: 1, attemptId: 'a', subject: 'x', dependencyOutputs: [], executionPrompt: injected }, '.agent-teams', 'demo')
 check('execution prompt is injected into persona and assignment', assignment.includes(injected) && memberPersona({ name: 'Demo', id: 'demo', description: 'goal', captainSessionId: 'c', createdAt: 0, members: [], tasks: [], taskSeq: 0 }, { name: 'Implementer', id: 'm', role: 'builder', joinedAt: 0, status: 'idle', executionPrompt: injected }, '.agent-teams').includes(injected))
