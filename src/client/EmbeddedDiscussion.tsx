@@ -6,7 +6,7 @@ import { useWorkflowText } from './workflow-i18n.tsx'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { OutcomeMarkdown } from './OutcomeShowcase.tsx'
-import { discussionJson } from './discussion-json.ts'
+import { discussionMarkdown } from './discussion-json.ts'
 import { BrandIcon } from './BrandIcon.tsx'
 import css from './WorkflowWorkbench.module.css'
 import { remainingMessage } from './workbench-drafts.ts'
@@ -15,9 +15,14 @@ type Chat = { revision?:string; messages: { id: string; role: string; text: stri
 const discussionCache=createWorkflowCache<Chat>(4,2*1024*1024)
 const AssistantReply = memo(function AssistantReply({ text, streaming }: { text: string; streaming: boolean }) {
   const l = useWorkflowText()
-  const labels = useMemo(() => ({ code: { copyLabel: l("复制代码"), copiedLabel: l("已复制") }, footnotes: l("脚注") }), [l])
-  const json = useMemo(() => streaming ? undefined : discussionJson(text), [text, streaming])
-  const source = json === undefined ? text : '```json\n' + json + '\n```'
+  const labels = useMemo(() => ({
+    code: {
+      copyLabel: l("复制代码"), copiedLabel: l("已复制"),
+      toolbarLabels: { codeLabel: l("代码"), wrapLabel: l("自动换行"), unwrapLabel: l("取消自动换行") },
+    },
+    footnotes: l("脚注"),
+  }), [l])
+  const source = useMemo(() => streaming ? text : discussionMarkdown(text), [text, streaming])
   return <div className={css.replyBody}>
     {MarkdownText ? <MarkdownText text={source} streaming={streaming} labels={labels} /> : <OutcomeMarkdown text={source} />}
     {streaming && <span className={css.streamCaret} aria-hidden="true" />}

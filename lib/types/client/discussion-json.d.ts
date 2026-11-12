@@ -1,2 +1,2 @@
-/** Format whitespace only, preserving duplicate keys, escapes and numeric literals. */
-export declare function discussionJson(text: string): string | undefined;
+/** Rewrite only complete top-level JSON fences, preserving surrounding Markdown verbatim. */
+export declare function discussionMarkdown(text: string): string;

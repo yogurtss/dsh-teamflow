@@ -6,7 +6,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { zh, en } from '../lib/client/locales.js';
 import { workflowEnglish } from '../lib/client/workflow-messages.js';
-import { discussionJson } from '../lib/client/discussion-json.js';
+import { discussionMarkdown } from '../lib/client/discussion-json.js';
 import { workflowText, workflowMessage, briefDisplay } from '../lib/client/workflow-text.js';
 import { WorkflowLocale } from '../lib/client/workflow-i18n.js';
 import { taskReadiness } from '../lib/client/task-readiness.js';
@@ -23,13 +23,18 @@ const {ProposalReview}=await import('../lib/client/ProposalReview.js');
 const {TaskRerunImpact}=await import('../lib/client/TaskRerunPicker.js');
 const {EmbeddedDiscussion}=await import('../lib/client/EmbeddedDiscussion.js');
 hook.deregister();
-test('discussion JSON layout preserves model literals and leaves mixed or incomplete Markdown alone', () => {
+test('discussion JSON layout preserves literals and formats complete JSON fences in mixed Markdown', () => {
  const source = '{"id":9007199254740993,"id":1e-7,"items":[{},[],", : { }"]}';
  const formatted = '{\n  "id": 9007199254740993,\n  "id": 1e-7,\n  "items": [\n    {},\n    [],\n    ", : { }"\n  ]\n}';
- assert.equal(discussionJson(source), formatted);
- assert.equal(discussionJson('```json\n' + source + '\n```'), formatted);
- assert.equal(discussionJson('# Results\n```json\n' + source + '\n```'), undefined);
- assert.equal(discussionJson('{"items":['), undefined);
+ const block = '```json\n' + source + '\n```';
+ const pretty = '```json\n' + formatted + '\n```';
+ assert.equal(discussionMarkdown(source), pretty);
+ assert.equal(discussionMarkdown(block), pretty);
+ const mixed = '# Results\n' + block + '\n\nNext\n' + block;
+ assert.equal(discussionMarkdown(mixed), mixed.replaceAll(block, pretty));
+ for (const unchanged of ['{"items":[', block.slice(0,-3), '````md\n' + block + '\n````', block.replace(source, '{broken}')]) {
+   assert.equal(discussionMarkdown(unchanged), unchanged);
+ }
 });
 const translate=dict=>(key,params={})=>dict[key]?.replace(/\{(\w+)\}/g,(_,name)=>String(params[name]))??key;
 const layers={general:{requirements:'Reusable method',deliverables:'Evidence',acceptance:'Verified'},specific:{requirements:'Current contract',deliverables:'Files',acceptance:'Tests pass'}};
