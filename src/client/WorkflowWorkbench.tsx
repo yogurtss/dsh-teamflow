@@ -81,7 +81,7 @@ function ReviewMaterials({ text }: { text: string }) {
   } catch { return <pre>{text}</pre> }
 }
 
-function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen = false, onClose }: {
+function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen = false, onClose }: {
   supervisorTarget?: WatchItem
   entryDiscussion?: string
   initiallyOpen?: boolean
@@ -100,6 +100,8 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   sessionId: string; teamId?: string; waitingCount?: number; openExecution?: (memberId: string, parentId?: string) => void | Promise<void>
 }) {
   const l = useWorkflowText(t)
+  const [closeoutOwner, setCloseoutOwner] = useState<string>()
+  const sessionId = closeoutOwner ?? entrySessionId
   const [guideDismissed, setGuideDismissed] = useState(() => {
     try { return localStorage.getItem('teamflow.workbench.guideDismissed') === '1' } catch { return false }
   })
@@ -111,7 +113,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const [opened, setOpened] = useState(initiallyOpen || !!entryTarget)
   const [visitingSupervisor,setVisitingSupervisor]=useState(false)
   const [connectionError,setConnectionError]=useState('')
-  const refreshInFlight=useRef(false), mutationInFlight=useRef(false)
+  const refreshInFlight=useRef(false), mutationInFlight=useRef<{ action: string }>()
   const [showOutcomes, setShowOutcomes] = useState(false)
   const [galleryMode,setGalleryMode]=useState<'browse'|'save'|undefined>(teamId?undefined:'browse')
   const entryOpened = useRef(false)
@@ -342,28 +344,31 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     return () => {controller.abort();clearInterval(timer);window.removeEventListener('online',reconnect);document.removeEventListener('visibilitychange',reconnect)}
   }, [activeId, mutating, archiveView])
   async function perform(action: string, fields: Record<string, unknown> = {}): Promise<Response | undefined> {
-    if(revalidating)return
+    const closing = action === 'force_end'
+    if(revalidating && !closing)return
     if(adaptationBusy && adaptationConflicts.has(action)){setError(l('AI 正在适配，请等待生成结束后再修改或启动流程。'));return}
     if(archiveView && action !== 'restore_archive') {setError(l("请先恢复归档，再修改或重新执行。"));return}
-    if(mutationInFlight.current)return
-    if(connectionError){setError(l('请先重新连接并核对最新状态，再操作流程。'));return}
-    mutationInFlight.current=true
+    if(mutationInFlight.current && (!closing || mutationInFlight.current.action === 'force_end'))return
+    if(connectionError && !closing){setError(l('请先重新连接并核对最新状态，再操作流程。'));return}
+    const mutation = { action }
+    mutationInFlight.current=mutation
     setWorking(true)
     const saving = action === 'edit' || action === 'layout'
     if (saving) setSaveState('saving')
     setError(''); setFeedback(''); const token = ++generation.current
     try {
       const result = await request({ sessionId, teamId: activeId, discussion, action, ...fields })
+      if (!mounted.current || token !== generation.current) return
       if (!result) { if (saving) setSaveState('error'); return }
       if (saving) setSaveState('saved')
-      if(action==='force_end') {setArchiveView(true);setEditing(false);viewCache.remove(workflowCacheKey(sessionId,result.team.id,false))}
+      if(closing) {if(data?.currentDiscussion)setCloseoutOwner(result.team.captainSessionId);setConnectionError('');setRevalidating(false);setArchiveView(true);setEditing(false);viewCache.remove(workflowCacheKey(sessionId,result.team.id,false))}
       if(action==='restore_archive') {setArchiveView(false);setEditing(false);setFeedback(l("已恢复为待确认流程。已完成成果保留；确认成员配置并启动后，可修改和重跑。"))}
       if (result.skipped?.length) setError(result.skipped.join('\n'))
       if(result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='force_end'||(action!=='restore_archive'&&archiveView)),result);setData(result); setActiveId(result.team.id) }
       return result
     } catch (err) { if (mounted.current && token === generation.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
-    finally { mutationInFlight.current=false;if (mounted.current) { setWorking(false) } }
+    finally { if (mutationInFlight.current === mutation) {mutationInFlight.current=undefined;if (mounted.current) setWorking(false)} }
   }
   async function createFlow(): Promise<void> {
     const created = await perform('create', { name: name ?? l('新团队'), description: goal })
@@ -763,10 +768,10 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
             <button disabled={working || unsaved.length > 0 || !flow?.canStart} onClick={() => void perform('set_flow_enabled',{enabled:true,version:flowControlVersion(team)})}>{l("开始全部")}</button>
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
-          {team && !galleryMode && !showOutcomes && !archiveView && !data?.currentDiscussion && <button type="button" className={css.forceEnd} disabled={mutating || revalidating || !!connectionError} onClick={async () => {
+          {team && !galleryMode && !showOutcomes && !archiveView && <button type="button" className={css.forceEnd} disabled={ending} onClick={async () => {
             if (!window.confirm(l('强制结束「{0}」？将停止执行并请 Captain 总结当前进展，然后把所有任务标记为完成并归档。', team.name))) return
             setEnding(true)
-            try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: crypto.randomUUID(), language: l.language }) }
+            try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2,'0')).join(''), language: l.language }) }
             finally { setEnding(false) }
           }}>{ending ? l('正在收尾…') : l('强制结束')}</button>}
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>

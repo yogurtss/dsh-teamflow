@@ -196,7 +196,7 @@ for (const legacy of [false, true]) test(`task discussion carries saved context,
   agents.set(captain.id,captain)
   const ctx={tools:{register:d=>definitions.set(d.name,d)},subagents:{registerContinuableSetup:fn=>{setup=fn}},llm:{resolveCallConfig:async v=>v},effect:fn=>fn(),sessions:{flush:async()=>{}},logger:{warn(){}},agents:{get:id=>agents.get(id),create:async spec=>{
     spec.setup({effect:fn=>fn(),tools:{restrict:filter=>{restrictions.push(filter);return()=>{}}}})
-    const events=[], agent={id:spec.sessionId,status:'idle',session:{header:{cwd:root},...(legacy ? {events} : {ownEvents:()=>events})},whenIdle:async()=>{},followup:message=>{prompts.push(message);events.push({type:'user/message',seq:events.length+1,data:message})}}
+    const events=[], agent={id:spec.sessionId,status:'idle',session:{header:{cwd:root},...(legacy ? {events} : {ownEvents:()=>events})},whenIdle:async()=>{throw Error("Discussion startup cannot wait for idle while holding the team lock")},followup:message=>{prompts.push(message);events.push({type:'user/message',seq:events.length+1,data:message})}}
     agents.set(agent.id,agent);return{agent,dispose(){}}
   }}}
   const conversations=installWorkflowConversations(ctx,{stateDir:'.agent-teams',maxMembers:8},workflowMaterials)
@@ -1471,6 +1471,30 @@ test('conditional discussion history retains streaming and busy changes without 
  chat={messages:[...chat.messages,{id:'stream',role:'assistant',text:'partial',streaming:true}],busy:true}
  const changed=await f.call('conversation_state',{discussion:'member:worker',conditionalState:true,knownRevision:initial.revision});assert.equal(changed.busy,true);assert.equal(changed.messages.at(-1).text,'partial');assert.notEqual(changed.revision,initial.revision)
  assert.equal(f.dispatched.length,0);assert.equal((await f.read()).tasks[0].status,'pending')
+})
+
+for (const key of ['check:gate', 'task:after']) test('force end from a bound human review or edit: ' + key, async t => {
+  const source = withGate()
+  source.tasks[0].status = 'completed'
+  Object.assign(source.tasks[2], {workflowPaused:true, workflowConfigPending:true})
+  const id = 'session-at-discussion-' + createHash('sha256').update(source.id).digest('hex').slice(0,16) + '-00000000-0000-0000-0000-000000000003'
+  workflowState(source).discussions['discussion:'+key] = {key, messages:[], calls:[], native:{sessionId:id,label:'Review or edit'}}
+  const liveAgents = new Map()
+  const f = await lifecycleFixture(t, source, {liveAgents, captain:{
+    cancel(){}, followup(message){this.session.ownEvents=()=>[{type:'user/message',data:message},{type:'assistant/message',data:{message:{content:[{type:'text',text:'Review and edits remain unfinished.'}]}}}]},
+    async whenIdle(){},
+  }})
+  liveAgents.set(id, {id, session:{header:{cwd:f.workspace}}})
+  const fields = {sessionId:id,createdAt:source.createdAt,requestId:'end-from-discussion',confirmed:true}
+  assert.equal((await f.call('force_end', {...fields,confirmed:false})).code,409)
+  assert.equal((await f.call('force_end', {...fields,teamId:'another-team'})).code,409)
+  assert.equal((await f.read()).halted,undefined)
+  const result = await f.call('force_end',fields)
+  assert.equal(result.code,200,result.error)
+  assert.equal(result.team.closeout.source,'captain')
+  assert.ok(result.team.tasks.every(task=>task.status==='completed'))
+  assert.equal(result.team.tasks[1].checkpoint.decision,undefined)
+  assert.equal(await f.read(),undefined)
 })
 
 test('confirmed force end drains work, records the matching captain report, then archives exactly once', async t => {
