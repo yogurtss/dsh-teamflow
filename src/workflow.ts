@@ -8,9 +8,9 @@ import { MAX_WORKFLOW_TEXT_LENGTH, parseMemberExecutionPrompt } from './workflow
 import type { WorkflowOperation, WorkflowProposal, WorkflowState } from './workflow-types.ts'
 import { validateCreateTask } from './quality-gates.ts'
 import { sanitizeKey } from './state.ts'
-import { canRestartTask, rerunImpact, resetTaskForRerun } from './task-rerun.ts'
+import { taskIsExecuting, canRestartTask, rerunImpact, resetTaskForRerun } from './task-rerun.ts'
 import { taskNeedsConfiguration } from './task-description.ts'
-import { configureLoop, loopForTask, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
+import { configureLoop, loopForTask, loopTaskContract, parseLoopConfig, validateLoopGraph } from './workflow-loops.ts'
 
 export function workflowState(team: TeamState): WorkflowState {
   return team.workflow ??= { positions: {}, discussions: {}, history: [] }
@@ -135,15 +135,20 @@ export function checkpointInputs(team: TeamState, task: TeamTask): TeamTask[] {
 }
 /** Apply to a detached copy: validation errors never partly modify durable state. */
 export function applyWorkflowOperations(original: TeamState, operations: WorkflowOperation[], maxMembers = 8): TeamState {
-  // Idle-member configuration does not resume execution or change the graph.
-  if (original.halted && operations.some(op => op.action !== 'update_member')) throw new Error('团队已停止，请先恢复团队')
+  // Saving properties is allowed while the team is halted.
+  if (original.halted && operations.some(op => op.action !== 'update_member' && op.action !== 'update_task')) throw new Error('团队已停止，请先恢复团队')
   const team = structuredClone(original)
   const now = Date.now()
   for (const op of operations) {
     if (op.action === 'configure_loop') { configureLoop(team, op); continue }
-    if ('id' in op && op.id && loopForTask(team, op.id) && !(loopForTask(team, op.id)?.status === 'ready' && op.action === 'update_task'
-      && (op.dependencies === undefined || JSON.stringify(op.dependencies) === JSON.stringify(taskOf(team, op.id).dependencies))
-      && (op.assignee === undefined || op.assignee === taskOf(team, op.id).assignee))) throw new Error('循环节点请使用循环控制；运行中不能修改拓扑或单独重跑')
+    const loop = 'id' in op && op.id ? loopForTask(team, op.id) : undefined
+    if (loop) {
+      if (op.action !== 'update_task') throw new Error('循环节点请使用循环控制；不能修改拓扑或单独重跑')
+      const task = taskOf(team, op.id)
+      if ((op.dependencies !== undefined && JSON.stringify(op.dependencies) !== JSON.stringify(task.dependencies))
+        || (op.assignee !== undefined && op.assignee !== task.assignee)) throw new Error('循环节点不能单独修改依赖或负责人')
+      if (loop.contracts && loop.contracts[task.id] !== loopTaskContract(task)) throw new Error('循环任务契约已变化，请检查流程')
+    }
     // Removal changes loop membership; editing an idle member's configuration does not.
     if (op.action === 'remove_member' && team.workflow?.loops?.some(loop => loop.status !== 'ready' && (loop.reviewer === op.name || loop.bodyIds.some(id => taskOf(team, id).assignee === op.name)))) throw new Error('请先结束循环再修改其成员')
     if (op.action === 'add_member') {
@@ -154,7 +159,7 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
     } else if (op.action === 'update_member' || op.action === 'remove_member') {
       const member = team.members.find(m => m.name === op.name && m.status !== 'removed')
       if (!member) throw new Error('成员不存在')
-      if (member.stopping || team.tasks.some(t => t.assignee === member.name && (['claimed', 'in_progress'].includes(t.status) || t.reassigning))) throw new Error('成员正在执行任务，请先停止该任务')
+      if (member.stopping || team.tasks.some(t => t.assignee === member.name && taskIsExecuting(t))) throw new Error('成员正在执行任务，请先停止该任务')
       if (op.action === 'remove_member') {
         if (team.tasks.some(t => t.assignee === member.name && t.status === 'pending')) throw new Error('先重新分配该成员的待执行任务')
         member.status = 'removed'
@@ -191,7 +196,11 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
       const reconnectRejected = task.checkpoint?.decision === 'reject'
         && !!op.dependencies?.some(id => !task.dependencies.includes(id))
         && op.subject === undefined && op.description === undefined && op.adaptationIssue === undefined && op.assignee === undefined && !op.confirmConfiguration
-      editable(task, reconnectRejected)
+      if (taskIsExecuting(task)) throw new Error('任务已开始，请先停止该任务')
+      if (op.dependencies && JSON.stringify(op.dependencies) !== JSON.stringify(task.dependencies)) {
+        if (team.halted) throw new Error('团队已停止，请先恢复团队再修改依赖')
+        editable(task, reconnectRejected)
+      }
       if (op.subject !== undefined) task.subject = op.subject
       if (op.description !== undefined) task.description = op.description
       updateDescription(task,op)
@@ -209,10 +218,13 @@ export function applyWorkflowOperations(original: TeamState, operations: Workflo
         task.workflowConfigPending = task.checkpoint?.kind === 'gate' && !loopForTask(team, task.id)
         if (team.phase === 'staged' && !task.workflowConfigPending) task.workflowPaused = false
       }
-      const validation = validateCreateTask({ ...team, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
+      // Validate the existing contract without invoking the team-resume requirement for creating new work.
+      const validation = validateCreateTask({ ...team, halted: false, tasks: team.tasks.filter(t => t.id !== task.id) }, task)
       if (!validation.ok) throw new Error(validation.error ?? '任务修改违反验收契约')
       if (reconnectRejected && task.checkpoint) task.checkpoint = { kind: task.checkpoint.kind, mode: task.checkpoint.mode, round: task.checkpoint.round + 1, history: task.checkpoint.history }
-      task.updatedAt = now
+      if (loop?.contracts) loop.contracts[task.id] = loopTaskContract(task)
+      // A property save must not create a new execution record or invalidate a completed upstream result.
+      if (task.status === 'pending') task.updatedAt = now
     } else if (op.action === 'remove_task') {
       const task = taskOf(team, op.id); editable(task)
       if (team.tasks.some(t => t.dependencies.includes(task.id))) throw new Error('请先断开该任务的下游连接')

@@ -1,7 +1,7 @@
 import { cancelTaskArchive } from './task-archive.ts'
 import { parseTaskArchive, taskArchiveParameter } from './task-archive-config.ts'
 import { drainMemberChildren } from './harness-compat.ts'
-import { configureLoop, decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopsOf, pauseLoop, startLoop } from './workflow-loops.ts'
+import { configureLoop, decideLoop, loopCanExecute, loopDependenciesSatisfied, loopForTask, loopInputFingerprint, loopsOf, pauseLoop, startLoop } from './workflow-loops.ts'
 import { loopArtifactEvidence } from './workflow-loop-evidence.ts'
 /**
  * The `agent_teams_*` model-facing tools.
@@ -2155,7 +2155,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, openR
         const gate = requireTask(fresh, loop.gateId)
         if (!gate.attemptId || gate.attemptId !== args.attempt_id || gate.assignee !== identity.name) throw new Error('审核执行令牌已过期')
         const evidence = loopArtifactEvidence(workspace, fresh, loop)
-        if (loop.reviewArtifactEvidence !== evidence) {
+        const staleReview = loop.status === 'reviewing' && args.run_id === loop.runId && args.round === loop.round
+          && args.fingerprint !== loopInputFingerprint(fresh, loop)
+        if (staleReview || loop.reviewArtifactEvidence !== evidence) {
           pauseLoop(fresh, loop.id, false, '本轮结果已变化，已暂停；请检查后继续以重新审核')
           await writeTeam(root, fresh)
           return { status: loop.status, round: loop.round }

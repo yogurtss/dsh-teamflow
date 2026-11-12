@@ -18,7 +18,7 @@ export const loopForTask = (team: TeamState, id: string): WorkflowLoop | undefin
 const active = (task: TeamTask) => ['claimed', 'in_progress'].includes(task.status) || !!task.reassigning
 const terminal = (task: TeamTask) => ['completed', 'failed', 'cancelled'].includes(task.status)
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-const contract = (task: TeamTask) => hash([task.id, task.subject, task.description, task.dependencies, task.assignee, task.kind, task.objective, task.acceptance, task.verify, task.inScope, task.outOfScope])
+export const loopTaskContract = (task: TeamTask) => hash([task.id, task.subject, task.description, task.dependencies, task.assignee, task.kind, task.objective, task.acceptance, task.verify, task.inScope, task.outOfScope])
 const inputVersion = (task: TeamTask) => hash([task.id, task.attemptId, task.status, task.updatedAt, task.supplementalEvidence?.length])
 function taskOf(team: TeamState, id: string): TeamTask {
   const task = team.tasks.find(item => item.id === id)
@@ -42,7 +42,7 @@ function snapshot(team: TeamState, loop: WorkflowLoop, kind: LoopHistoryRecord['
 /** The ordinary DAG is validated independently, including external paths. */
 export function validateLoopGraph(team: TeamState): void {
   validateLoopStructure(team)
-  for (const loop of loopsOf(team)) if (loop.contracts && [loop.gateId, ...loop.bodyIds].some(id => loop.contracts![id] !== contract(taskOf(team, id)))) throw new Error('循环启动后任务契约不可更改，请结束循环后建立新流程')
+  for (const loop of loopsOf(team)) if (loop.contracts && [loop.gateId, ...loop.bodyIds].some(id => loop.contracts![id] !== loopTaskContract(taskOf(team, id)))) throw new Error('循环启动后任务契约不可更改，请结束循环后建立新流程')
 }
 export function configureLoop(team: TeamState, config: LoopConfig): WorkflowLoop {
   if (team.halted) throw new Error('请先恢复团队')
@@ -81,7 +81,7 @@ export function saveGateSettings(team: TeamState, config: LoopConfig, passTarget
     Object.assign(previous, config, { rejectToEntry: config.rejectToEntry, reviewer: config.mode === 'ai' ? config.reviewer : undefined })
     gate.assignee = previous.reviewer
     gate.checkpoint!.mode = config.mode
-    if (previous.contracts) previous.contracts[gate.id] = contract(gate)
+    if (previous.contracts) previous.contracts[gate.id] = loopTaskContract(gate)
   } else {
     if (previous) draft.workflow!.loops = loopsOf(draft).filter(loop => loop !== previous)
     const updated = configureLoop(draft, config)
@@ -181,7 +181,7 @@ export function startLoop(team: TeamState, id: string, additionalRounds = 0, now
   const inputs = Object.fromEntries(external.map(id => [id, inputVersion(taskOf(team, id))]))
   if (loop.startedAt && hash(inputs) !== hash(loop.externalInputs)) throw new Error('外部输入已变化；请重新建立流程以避免混用结果')
   loop.maxRounds += additionalRounds
-  loop.contracts ??= Object.fromEntries(tasks.map(task => [task.id, contract(task)]))
+  loop.contracts ??= Object.fromEntries(tasks.map(task => [task.id, loopTaskContract(task)]))
   snapshot(team, loop, 'control', additionalRounds ? `人工追加 ${additionalRounds} 轮并继续` : '启动或恢复循环', tasks, { actor: 'human' }, now)
   if (loop.lastDecision === 'revise') nextRound(team, loop, loop.requestedTaskIds ?? loop.bodyIds, loop.feedback ?? '', now)
   else {
