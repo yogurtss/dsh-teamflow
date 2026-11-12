@@ -10,6 +10,9 @@ export function rerunImpact(tasks: readonly TeamTask[], id: string): { descendan
     active: descendants.filter(task => ['claimed','in_progress'].includes(task.status) || task.reassigning),
   }
 }
+export function taskIsExecuting(task: Pick<TeamTask, 'status' | 'reassigning'>): boolean {
+  return task.status === 'claimed' || task.status === 'in_progress' || !!task.reassigning
+}
 export function canRestartTask(task: Pick<TeamTask,'checkpoint'|'status'|'workflowPaused'|'workflowConfigPending'|'reassigning'|'attempt'|'stoppedAttempts'>): boolean {
   return !task.checkpoint && (['completed','failed','cancelled'].includes(task.status) || (task.status==='pending'&&!!task.workflowPaused&&!task.reassigning&&!task.workflowConfigPending&&((task.attempt??0)>0||!!task.stoppedAttempts?.length)))
 }

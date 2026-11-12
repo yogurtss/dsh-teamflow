@@ -326,7 +326,7 @@ test('completed canvas tasks edit and rerun atomically while preserving unrelate
   source.tasks.push({...task('unrelated'),status:'completed',output:'preserved'})
   source.members.push({...member,name:'replacement'})
   const before=structuredClone(source), operation=parseWorkflowOperations([{action:'rerun_task',id:'t1',instructions:'Use the previous result and check the new requirement',subject:'Revised task',description:'New requirement',assignee:'replacement',output:'ignore forged result'}])[0]
-  assert.equal(editorTarget(source,{type:'task',id:'t1'},true).type,'task')
+  assert.equal(editorTarget(source,{type:'task',id:'t1'}).type,'task')
   const result=applyWorkflowOperations(source,[operation])
   assert.deepEqual(source,before);assert.equal(result.tasks[0].subject,'Revised task');assert.equal(result.tasks[0].description,'New requirement');assert.equal(result.tasks[0].assignee,'replacement')
   assert.equal(result.tasks[0].status,'pending');assert.equal(result.tasks[0].output,undefined);assert.equal(result.tasks[0].objective,'keep objective');assert.deepEqual(result.tasks[0].acceptance,['keep acceptance'])
@@ -393,7 +393,7 @@ test('late saves cannot move a newer selection or remove newer typing', () => {
 test('completed work remains a task selection and explicit member navigation clears it', () => {
   const source=team();source.tasks[0].status='completed'
   let view=selectWorkbench(initialWorkbenchView(),{type:'task',id:'t1'},source)
-  assert.equal(editorTarget(source,view.target),undefined,'completed work has read-only task properties')
+  assert.equal(editorTarget(source,view.target)?.id,'t1','completed work has editable task properties')
   view=selectWorkbench(view,{type:'member',id:'worker'},source,{rerunTaskId:'t1'})
   assert.equal(view.target.type,'member');assert.equal(editorTarget(source,view.target).type,'member')
   view=selectWorkbench(view,{type:'discussion',key:'member:worker'},source)
@@ -825,11 +825,12 @@ test('active work and active member instructions cannot change until stopped', (
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_member', name: 'worker', role: 'other' }]), /先停止/)
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', description: 'other' }]), /已开始/)
 })
-test('completed work is immutable, and members with pending assignments cannot be removed', () => {
+test('completed work can be edited without restarting it, and members with pending assignments cannot be removed', () => {
   const source = team()
   assert.throws(() => applyWorkflowOperations(source, [{ action: 'remove_member', name: 'worker' }]), /重新分配/)
   source.tasks[0].status = 'completed'
-  assert.throws(() => applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', subject: 'rewrite' }]), /已开始/)
+  const edited = applyWorkflowOperations(source, [{ action: 'update_task', id: 't1', subject: 'rewrite' }])
+  assert.equal(edited.tasks[0].subject, 'rewrite'); assert.equal(edited.tasks[0].status, 'completed')
   const removed = applyWorkflowOperations(source, [{ action: 'remove_member', name: 'worker' }])
   assert.equal(removed.members[0].status, 'removed'); assert.equal(removed.tasks[0].assignee, 'worker')
 })
@@ -876,7 +877,7 @@ test('new upstream wiring reopens a rejected checkpoint without stopping it or l
   assert.equal(checkpointReady(updated,gate),false,'new unfinished upstream blocks review')
   assert.equal(applyWorkflowOperations(updated,[operation]).tasks[1].checkpoint.round,2,'repeat wiring cannot create extra rounds')
   assert.throws(()=>applyWorkflowOperations(source,[{...operation,description:'Unrelated edit'}]),/先停止/)
-  assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:['t1']}]),/先停止/)
+  assert.deepEqual(applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:['t1']}]).tasks[1].checkpoint, before.tasks[1].checkpoint)
   assert.throws(()=>applyWorkflowOperations(source,[{action:'update_task',id:'gate',dependencies:[]}]),/先停止/)
   assert.throws(()=>applyWorkflowOperations(source,[{action:'remove_task',id:'gate'}]),/先停止/)
   assert.match(connectionIssue(source.tasks,'after','gate'),/循环/)

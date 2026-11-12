@@ -1,5 +1,7 @@
 /** Source-message catalog for workflow UI. Never apply to user-authored content. */
 export const workflowEnglish: Record<string, string> = {
+  "启动循环": "Start loop",
+  "继续循环": "Resume loop",
   "{0} 负责「{1}」，请选择独立审核成员": "{0} owns “{1}”. Choose an independent reviewer.",
   "请选择有效的 AI 审核成员": "Choose an active AI reviewer.",
   "请先为循环内任务指定有效负责人": "Assign an active owner to each task in the loop.",
@@ -354,7 +356,7 @@ export const workflowEnglish: Record<string, string> = {
   "重跑输入": "Rerun inputs",
   "上一轮结果（自动提供给 Agent）": "Previous result (provided to the agent)",
   "上一轮未提交结果": "No previous result submitted",
-  "本次重跑要求（必填）": "New rerun requirements (required)",
+  "重跑要求（仅重跑时必填）": "Rerun instructions (required only to rerun)",
   "Agent 将结合原任务要求、上一轮结果和本次新增要求重新执行，并重新验证结果。": "The agent will use the original requirements, previous result, and new instructions to rerun and verify the task.",
   "讨论使用已保存的资料；当前草稿会保留。": "Discussions use saved information; your current draft is retained.",
   "名称": "Name",
@@ -370,7 +372,7 @@ export const workflowEnglish: Record<string, string> = {
   "执行 Agent": "Execution agent",
   "由空闲成员领取": "Claimed by an available member",
   "节点已在画布中，靠近节点后可拖动右侧圆点连线。修改名称或要求后点击保存。": "The node is on the canvas. Hover to connect from its right-hand dot. Save after editing its name or requirements.",
-  "保存将开启新一轮执行，原有状态与结果保存在历史执行记录中。以下下游先等待新结果：": "Saving starts a new attempt and preserves previous status and results in history. These downstream nodes will wait for new results: ",
+  "选择重跑将开启新一轮执行，原有状态与结果保存在历史执行记录中。以下下游先等待新结果：": "Choosing to rerun starts a new attempt and preserves previous status and results in history. These downstream nodes will wait for new results: ",
   "无": "None",
   "。新结果就绪后，由你逐个启动执行或重新验收；其他分支保留。": ". Once results are ready, start or review each node. Other branches are retained.",
   "请先查看流程并确认启动团队，再重跑。": "Confirm and start the team before rerunning tasks.",

@@ -1,6 +1,6 @@
 /** One selected object owns the property panel; drafts survive navigation. */
 import type { TeamState } from '../types.ts'
-import { rerunnableTasks } from '../task-rerun.ts'
+import { taskIsExecuting, rerunnableTasks } from '../task-rerun.ts'
 
 export type EditorTarget = { type: 'member' | 'task' | 'check'; id?: string }
 export type WorkbenchTarget = EditorTarget | { type: 'edge'; from: string; to: string } | { type: 'discussion'; key: string }
@@ -8,12 +8,11 @@ export type EditorDraft = { values: Record<string,string>; source: string; basel
 export type WorkbenchView = { target: WorkbenchTarget; revision: number; drafts: Record<string,EditorDraft> }
 export const initialWorkbenchView = (): WorkbenchView => ({ target: {type:'discussion',key:'graph'}, revision:0, drafts:{} })
 export const editorKey = (teamId: string, target: EditorTarget): string => JSON.stringify([teamId,target.type,target.id??null])
-export function editorTarget(team: TeamState | undefined, target: WorkbenchTarget, allowRerun = false): EditorTarget | undefined {
+export function editorTarget(team: TeamState | undefined, target: WorkbenchTarget): EditorTarget | undefined {
   if(target.type==='edge'||target.type==='discussion') return
   if(target.type==='member'||!target.id) return target
   const task=team?.tasks.find(item=>item.id===target.id)
-  if(allowRerun && task && !task.checkpoint && ['completed','failed','cancelled'].includes(task.status)) return target
-  if(task?.status==='pending' && ((task.attempt??0)===0 || task.workflowPaused) && !task.checkpoint?.decision && !task.reassigning) return target
+  if(task && !taskIsExecuting(task)) return target
 }
 export function targetDiscussion(target: WorkbenchTarget): string {
   return target.type==='discussion'?target.key:target.type==='member'&&target.id?`member:${target.id}`:target.type==='check'&&target.id?`check:${target.id}`:'graph'

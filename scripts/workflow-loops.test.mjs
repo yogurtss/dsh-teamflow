@@ -38,6 +38,50 @@ test('loop controls preserve completed state, block node reruns, and distinguish
   assert.throws(() => validateWorkflowGraph(invalid), /审核成员一致/)
 })
 
+test('a pending loop task can receive new requirements while its upstream is working', () => {
+  const {team, loop} = fixture()
+  startLoop(team, loop.id)
+  beginTaskAttempt(team.tasks[0], 'worker')
+  team.tasks[0].status = 'in_progress'
+  const edit = {action:'update_task', id:'b', description:'Deliver a verified result', assignee:'worker', dependencies:['a']}
+  const updated = applyWorkflowOperations(team, [edit])
+  validateWorkflowGraph(updated)
+  assert.equal(updated.tasks[1].description, edit.description)
+  assert.deepEqual(updated.tasks[0], team.tasks[0])
+  assert.equal(updated.workflow.loops[0].status, 'running')
+  for (const change of [{id:'a'}, {assignee:'reviewer'}, {dependencies:[]}]) {
+    assert.throws(() => applyWorkflowOperations(team, [{...edit, ...change}]), /循环|已开始/)
+  }
+  team.tasks[1].attempt = 1
+  assert.equal(applyWorkflowOperations(team, [edit]).tasks[1].description, edit.description)
+})
+
+test('idle body and gate edits preserve execution, decisions and history across loop phases', () => {
+  for (const phase of ['paused', 'reviewing', 'passed', 'cancelled', 'revise']) {
+    const {team, loop} = fixture()
+    startLoop(team, loop.id)
+    finish(team)
+    if (phase === 'passed' || phase === 'revise') {
+      decideLoop(team, loop.id, decision(team, loop, phase === 'passed' ? 'pass' : 'revise', phase === 'passed' ? [] : ['b']), 'human')
+    }
+    if (phase === 'paused' || phase === 'cancelled') pauseLoop(team, loop.id, phase === 'cancelled')
+    for (const halted of [false, true]) {
+      team.halted = halted
+      reconcileLoops(team)
+      const updated = applyWorkflowOperations(team, ['b', 'gate'].map(id => ({action:'update_task', id, description:'Updated requirements'})))
+      reconcileLoops(updated)
+      assert.equal(updated.halted, halted)
+      assert.equal(updated.workflow.loops[0].status, loop.status)
+      assert.equal(updated.workflow.loops[0].historyCount, loop.historyCount)
+      for (const id of ['b', 'gate']) {
+        const before = team.tasks.find(t => t.id === id), after = updated.tasks.find(t => t.id === id)
+        assert.equal(after.description, 'Updated requirements')
+        for (const key of ['status','attempt','attemptId','output','checkpoint','workflowRerunContext']) assert.deepEqual(after[key], before[key])
+      }
+    }
+  }
+})
+
 test('AI result drift pauses immediately and persists the reason without releasing downstream', async t => {
   const { team, loop } = fixture('ai'); startLoop(team, loop.id); finish(team)
   const gate = team.tasks.find(t => t.id === 'gate'); beginTaskAttempt(gate, 'reviewer')
@@ -51,6 +95,27 @@ test('AI result drift pauses immediately and persists the reason without releasi
   assert.equal(saved.workflow.loops[0].status, 'paused'); assert.match(saved.workflow.loops[0].reason, /结果已变化/)
   assert.notEqual(saved.tasks.find(t => t.id === 'gate').status, 'completed')
   assert.equal(saved.tasks.find(t => t.id === 'after').status, 'pending')
+})
+
+test('a reviewer with the old requirements must refresh its review before passing', async t => {
+  const {team, loop} = fixture('ai')
+  startLoop(team, loop.id); finish(team)
+  const gate = team.tasks.find(task => task.id === 'gate')
+  beginTaskAttempt(gate, 'reviewer')
+  gate.status = 'in_progress'
+  const f = await routeFixture(t, team)
+  const input = decision(team, loop, 'pass', [])
+  loop.reviewArtifactEvidence = (await import('../lib/workflow-loop-evidence.js')).loopArtifactEvidence(f.root, team, loop)
+  await writeTeam(f.stateRoot, team)
+  const result = await f.call('edit', {base:workflowFingerprint(team), title:'Edit idle task during review', operations:[
+    {action:'update_task', id:'b', description:'Revised acceptance criteria'}
+  ]})
+  assert.equal(result.code, 200, result.error)
+  const saved = await f.read()
+  assert.equal(saved.tasks.find(t => t.id === 'b').status, 'completed')
+  assert.equal(saved.tasks.find(t => t.id === 'gate').attemptId, gate.attemptId)
+  assert.equal((await f.tool('agent_teams_decide_loop', {loop_id:loop.id, run_id:loop.runId, round:loop.round,
+    fingerprint:input.fingerprint, attempt_id:gate.attemptId, decision_id:input.decisionId, decision:'pass', note:input.note, task_ids:[]})).status, 'paused')
 })
 
 test('pausing live loop work revokes its attempt and resumes the same round with partial output retained', async t => {
@@ -147,7 +212,7 @@ async function routeFixture(t, source) {
   const captain = { id: 'captain', status: 'idle', options: {provider:'fixture',model:'model-a'}, session: { header: { id: 'captain', cwd: root }, requestHeader: () => ({config:{provider:'fixture',model:'model-a'}}), ownEvents: () => [] } }
   const live = new Map([[captain.id, captain], ...source.members.map(m => [m.id, { id: m.id, status: 'running', session: { header: { id: m.id, cwd: root }, ownEvents: () => [] } }])])
   const definitions = new Map(), effects = [], noop = () => {}; let route
-  const ctx = { on: () => noop, effect: fn => effects.push(fn()), logger: { warn: noop, debug: noop }, tools: { register: d => definitions.set(d.name, d) }, agents: { get: id => live.get(id) }, llm: { resolveCallConfig: async v => v }, subagents: { followup: async () => {}, registerContinuableSetup: () => noop, drainChildren: async () => {} } }
+  const ctx = { on: () => noop, effect: fn => effects.push(fn()), logger: { warn: noop, debug: noop }, tools: { register: d => definitions.set(d.name, d) }, agents: { get: id => live.get(id) }, llm: { resolveCallConfig: async v => v, listModels: async () => [{id:"model-a"}] }, subagents: { followup: async () => {}, registerContinuableSetup: () => noop, drainChildren: async () => {} } }
   t.after(() => effects.forEach(fn => typeof fn === 'function' && fn()))
   const config = { stateDir: '.agent-teams', maxMembers: 8, memberProvider: 'spawn', memberMaxDepth: 1, profiles: {}, toolPolicies: {} }
   const runtime = registerAgentTeamsTools(ctx, config)
@@ -505,6 +570,55 @@ test('global pause cancels queued loops so later external completion cannot rest
  const current=await f.read(),queued=current.workflow.loops[0]
  assert.equal(queued.queued,undefined);assert.equal(queued.status,'paused')
  finish(current,['input']);assert.equal(queued.status,'paused');assert.equal(current.tasks.find(t=>t.id==='a').workflowPaused,true)
+})
+
+test('confirming a staged team starts its configured loop', async t => {
+  const {team} = fixture()
+  team.phase = 'staged'
+  const f = await routeFixture(t, team)
+  const response = await f.call('start')
+  assert.equal(response.code, 200, response.error)
+  assert.equal(response.team.phase, 'running')
+  assert.equal(response.team.workflow.loops[0].status, 'running')
+  assert.equal(response.team.tasks.find(task => task.id === 'a').workflowPaused, false)
+})
+
+test('Start all requeues a manually paused loop and dispatches its entry after external input arrives', async t => {
+  const {team,loop} = fixture()
+  team.tasks.unshift(task('input'))
+  team.tasks.find(t => t.id === 'a').dependencies = ['input']
+  startLoop(team, loop.id)
+  const f = await routeFixture(t, team)
+  const paused = await f.call('set_flow_enabled', {enabled:false, version:flowControlVersion(await f.read())})
+  assert.equal(paused.code, 200, paused.error)
+  const resumed = await f.call('set_flow_enabled', {enabled:true, version:flowControlVersion(paused.activity)})
+  assert.equal(resumed.code, 200, resumed.error)
+  const saved = await f.read()
+  assert.equal(saved.workflow.loops[0].queued, true)
+  finish(saved, ['input'])
+  assert.equal(saved.workflow.loops[0].status, 'running')
+  await writeTeam(f.stateRoot, saved)
+  const sent = [], captain = {id:'captain', status:'idle', session:{header:{cwd:f.root}}}
+  const ctx = {agents:{get:id => id === 'captain' ? captain : undefined}, on(){}, effect:fn => t.after(fn()), logger:{warn(){}}}
+  const scheduler = installTeamScheduler(ctx, {stateDir:'.agent-teams', dispatch:async (...args) => {sent.push(args); return true}})
+  await scheduler.kickTeam(f.root, team.id, captain)
+  assert.equal((await f.read()).tasks.find(t => t.id === 'a').status, 'claimed')
+  assert.equal(sent.length, 1)
+})
+
+test('a loop-only flow can resume the same round after Pause all', async t => {
+  const {team, loop} = fixture()
+  team.tasks = team.tasks.filter(t => t.id !== 'after')
+  startLoop(team, loop.id)
+  const f = await routeFixture(t, team)
+  const paused = await f.call('set_flow_enabled', {enabled:false, version:flowControlVersion(await f.read())})
+  assert.equal(paused.code, 200, paused.error)
+  assert.equal(flowControlState(paused.activity).canStart, true)
+  const resumed = await f.call('set_flow_enabled', {enabled:true, version:flowControlVersion(paused.activity)})
+  assert.equal(resumed.code, 200, resumed.error)
+  assert.equal(resumed.team.workflow.loops[0].status, 'running')
+  assert.equal(resumed.team.workflow.loops[0].round, 1)
+  assert.equal(resumed.team.tasks.find(t => t.id === 'a').workflowPaused, false)
 })
 
 test('workflow and global control tokens include queued loop control changes',()=>{

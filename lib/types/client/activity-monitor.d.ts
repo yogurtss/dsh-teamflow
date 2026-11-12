@@ -61,7 +61,7 @@ export interface ActivityTeam {
     readonly phase: 'staged' | 'running';
     readonly workflowEnabled?: boolean;
     readonly workflow?: {
-        loops: Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'queued' | 'failedExecutionTaskId'>[];
+        loops: Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'queued' | 'failedExecutionTaskId' | 'reason' | 'lastDecision'>[];
     };
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;

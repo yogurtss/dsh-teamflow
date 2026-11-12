@@ -32,6 +32,7 @@ export interface WorkflowLoop extends LoopConfig {
     contracts?: Record<string, string>;
     executionRounds?: Record<string, number>;
 }
+export declare function canStartLoopWithFlow(loop: Pick<WorkflowLoop, 'status' | 'reason' | 'queued' | 'lastDecision' | 'failedExecutionTaskId'>): boolean;
 export interface LoopHistoryRecord {
     id: string;
     previous?: string;
