@@ -7,7 +7,10 @@ import type {WorkflowLauncherProps} from './WorkflowLauncher.tsx'
 import css from './SuperAgent.module.css'
 
 export function SupervisorMessage({node,sessionId,t,sessions,modelDirectories,openMember}:PropsRuntime<'conversation.chat.node','teamflow-supervisor'>&PropsLocale<'agentTeams'>&WorkflowLauncherProps){
-  const card=node.data, en=t('language.code')==='en'
+  return <ConversationCard card={node.data} {...{sessionId,t,sessions,modelDirectories,openMember}} />
+}
+export function ConversationCard({card,sessionId,t,sessions,modelDirectories,openMember}:Pick<WorkflowLauncherProps,'t'|'sessions'|'modelDirectories'|'openMember'>&{card:import('../super-agent-card.ts').SupervisorCard;sessionId:string}){
+  const en=t('language.code')==='en'
   const [open,setOpen]=useState(false),[error,setError]=useState(''),[asking,setAsking]=useState(false),[question,setQuestion]=useState(''),[busy,setBusy]=useState(false)
   const token=useRef<AbortController>()
   useEffect(()=>()=>token.current?.abort(),[])

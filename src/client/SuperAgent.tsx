@@ -1,3 +1,5 @@
+import { ConversationCard } from './SupervisorCard.tsx'
+import type { SupervisorCard } from '../super-agent-card.ts'
 import { BrandIcon } from './BrandIcon.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
@@ -10,6 +12,53 @@ import { defaultWatchKinds, watchKinds, type NodeChange, type WatchRow, type Wat
 import css from './SuperAgent.module.css'
 
 type Props = WorkflowLauncherProps
+type Transcript={sessionId:string;busy:boolean;records:{seq:number;card:SupervisorCard}[];messages:{id:string;role:string;text:string}[]}
+
+function GlobalConversation(props:Props & {anchor?:string;close:()=>void}){
+  const en=props.t('language.code')==='en'
+  const [log,setLog]=useState<Transcript>(),[draft,setDraft]=useState(''),[error,setError]=useState(''),[sending,setSending]=useState(false)
+  const feed=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null)
+  const stick=useRef(!props.anchor),anchored=useRef(false)
+  useEffect(()=>{
+    const before=document.activeElement as HTMLElement|null
+    input.current?.focus()
+    const controller=new AbortController()
+    let timer:ReturnType<typeof setTimeout>
+    async function refresh(){
+      try{const next=await request<Transcript>('','history',{},controller.signal)
+        if(!controller.signal.aborted)setLog(next)
+      }catch(e){if(!controller.signal.aborted)setError(String(e))}
+      finally{if(!controller.signal.aborted)timer=setTimeout(refresh,1200)}
+    }
+    void refresh()
+    return ()=>{controller.abort();clearTimeout(timer);before?.focus()}
+  },[])
+  useEffect(()=>{
+    if(!feed.current)return
+    if(props.anchor&&!anchored.current){
+      const card=Array.from(feed.current.querySelectorAll<HTMLElement>('[data-supervisor-card]')).find(el=>el.dataset.supervisorCard===props.anchor)
+      if(card){card.scrollIntoView({block:'center'});anchored.current=true}
+    }else if(stick.current)feed.current.scrollTop=feed.current.scrollHeight
+  },[log,props.anchor])
+  async function send(){
+    if(sending||!draft.trim())return
+    setSending(true);setError('')
+    try{await request('','send',{question:draft});setDraft('');stick.current=true}
+    catch(e){setError(String(e))}finally{setSending(false)}
+  }
+  const entries=log?[...log.messages.map(m=>({seq:Number(m.id),view:<p className={css.chatLine}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.text}</p>})),
+    ...log.records.map(r=>({seq:r.seq,view:<ConversationCard {...props} sessionId={log.sessionId} card={r.card}/>}))].sort((a,b)=>a.seq-b.seq):[]
+  return <div className={css.dialogShade}><section className={css.globalChat} role="dialog" aria-modal="true" aria-label={en?'Global conversation':'全局对话'}>
+    <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2><button onClick={props.close}>{en?'Close':'关闭'}</button></header>
+    <div className={css.chatHistory} ref={feed} onScroll={e=>{const el=e.currentTarget;stick.current=el.scrollHeight-el.scrollTop-el.clientHeight<80}}>
+      {!entries.length&&<p>{!log?(en?'Loading…':'正在读取…'):(en?'Ask about watched workflows across your projects.':'可以在这里询问各项目中已监听的流程。')}</p>}
+      {entries.map(e=><div key={e.seq}>{e.view}</div>)}
+      {log?.busy&&<small role="status">{en?'Super Agent is responding…':'Super Agent 正在回复…'}</small>}
+    </div>
+    {error&&<p role="alert">{error}</p>}
+    <form onSubmit={e=>{e.preventDefault();void send()}}><textarea ref={input} aria-label={en?'Message':'消息'} placeholder={en?'Message Super Agent':'给 Super Agent 发消息'} value={draft} maxLength={4000} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/><button disabled={!log||sending||!draft.trim()}>{en?'Send':'发送'}</button></form>
+  </section></div>
+}
 const changed = 'teamflow:watch-settings-changed'
 const workspaceChoiceEvent = 'teamflow:super-agent-workspace'
 let chosenWorkspace=''
@@ -111,27 +160,16 @@ export function SuperAgentOverlay(props:Props) {
   const [visit,setVisit]=useState<SupervisorVisit>()
   const [notice,setNotice]=useState<{workspaceId:string;row:WatchRow;item:WatchItem;count:number;progress?:NodeChange}>()
   const seen=useRef(new Map<string,Set<string>>())
-  const [chatError,setChatError]=useState('')
-  const jump=useRef<AbortController>()
-  useEffect(()=>()=>jump.current?.abort(),[])
-  async function openNotice(){
+  const [chat,setChat]=useState<{key?:string}>()
+  useEffect(()=>{
+    const open=()=>setChat({})
+    window.addEventListener('teamflow:global-chat',open)
+    return ()=>window.removeEventListener('teamflow:global-chat',open)
+  },[])
+  function openNotice(){
     if(!notice)return
-    jump.current?.abort()
-    const abort=new AbortController();jump.current=abort
-    try{
-      const {sessionId,cards}=await request<{sessionId:SessionId;cards:boolean}>(notice.workspaceId,'chat',{},abort.signal)
-      if(!cards){setVisit({workspaceId:notice.workspaceId,teamId:notice.row.teamId,sessionId:notice.row.captainSessionId,returnToWorkflow:()=>{}});setNotice(undefined);return}
-      await props.sessions.refresh();abort.signal.throwIfAborted()
-      await props.openMember(sessionId,sessionId)
-      const key=JSON.stringify([notice.row.teamId,notice.progress?'progress':notice.item.id])
-      for(let tries=0;tries<80;tries++){
-        abort.signal.throwIfAborted()
-        const card=Array.from(document.querySelectorAll<HTMLElement>('[data-supervisor-card]')).find(c=>c.dataset.supervisorCard===key)
-        if(card){card.scrollIntoView({block:'center'});card.querySelector('button')?.focus({preventScroll:true});break}
-        await new Promise(resolve=>setTimeout(resolve,100))
-      }
-      setNotice(undefined);setChatError('')
-    }catch(error){if(!abort.signal.aborted)setChatError(String(error))}
+    setChat({key:JSON.stringify([notice.workspaceId,notice.row.teamId,notice.progress?'progress':notice.item.id])})
+    setNotice(undefined)
   }
   useEffect(()=>{
     const open=(event:Event)=>{event.preventDefault();setVisit((event as CustomEvent<SupervisorVisit>).detail)}
@@ -169,11 +207,12 @@ export function SuperAgentOverlay(props:Props) {
     window.addEventListener(attentionEvent,onAttention)
     return ()=>{window.removeEventListener(superAgentEntry,open);window.removeEventListener(attentionEvent,onAttention)}
   },[])
+  if(chat)return createPortal(<GlobalConversation {...props} anchor={chat.key} close={()=>setChat(undefined)}/>,document.body)
   if(!visit){
     if(!notice)return null
     const en=props.t('language.code')==='en'
     return createPortal(<aside className={css.notice} role="status"><b>Super Agent</b><span>{notice.row.name} › {notice.progress?progressText(notice.progress,en):notice.item.title}{notice.count>1?' +'+(notice.count-1):''}</span>
-      <button onClick={openNotice}>{en?'Open conversation card':'查看对话卡片'}</button>{chatError&&<span role="alert">{chatError}</span>}
+      <button onClick={openNotice}>{en?'Open conversation card':'查看对话卡片'}</button>
       <button aria-label={en?'Dismiss reminder':'收起提醒'} onClick={()=>setNotice(undefined)}>×</button></aside>,document.body)
   }
   const back=()=>{setVisit(undefined);visit.returnToWorkflow()}
@@ -190,6 +229,7 @@ export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>
       {props.visit&&selected?<span>{selected.title}</span>:<select aria-label={en?'Workspace':'工作区'} value={selected?.workspaceId??''} onChange={e=>choose(e.target.value)}>
         <option value="" disabled>{en?'Choose a workspace':'选择工作区'}</option>
         {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select>}
+      <button onClick={()=>window.dispatchEvent(new Event('teamflow:global-chat'))}>{en?'Global conversation':'全局对话'}</button>
       {props.back&&<button onClick={props.back}>{props.visit?.workspaceId?(en?'Close':'关闭'):(en?'Back to Workflow':'返回原工作台')}</button>}
     </header>
     {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} project={selected.title} sessionRows={picker.sessionRows} en={en}/>:<p>{en?'Select a workspace to view subscriptions.':'请选择工作区查看监听设置。'}</p>}
@@ -244,15 +284,9 @@ function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,
     })
   }
   function close(){setTarget(undefined);handle.current?.release();handle.current=undefined;window.dispatchEvent(new Event(changed));requestAnimationFrame(()=>focus.current?.focus())}
-  function chat(){void run(async signal=>{
-    const {sessionId}=await request<{sessionId:SessionId}>(workspaceId,'chat',{},signal)
-    await sessions.refresh();signal.throwIfAborted()
-    await openMember(sessionId,sessionId)
-    back?.()
-  })}
   return <section className={css.content} aria-busy={busy}>
     <div className={css.actions}><button onClick={()=>{setSettings(!settings);setError('')}}>{settings?label('← 返回概览','← Overview'):label('监听设置','Watch settings')}</button>
-      <button disabled={busy} onClick={chat}>{label('打开主对话','Open conversation')} ↗</button></div>
+    </div>
     {(error||result?.error)&&<p role="alert">{error||result?.error} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{label('刷新','Refresh')}</button></p>}
     {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('监听设置','Watch settings')}</h2>
       {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{identity(r)}{rows.some(other=>other.teamId!==r.teamId&&identity(other)===identity(r))?' · '+r.teamId:''}</option>)}</select></label>

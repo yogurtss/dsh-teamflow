@@ -213,9 +213,10 @@ export function apply(ctx) {
             const master=JSON.parse(readFileSync('super-agent-session.json','utf8'));
             const coordinator=await ctx.agents.resume({resumeSessionId:master.sessionId,agentOptions:{provider:'runtime-lab',model:'fixture-model'}});
             ctx.effect(()=>()=>coordinator.dispose());
+            const previousReplies=ownSessionEvents(coordinator.agent.session).filter(e=>e.type==='assistant/message'&&e.data.message.content.some(b=>b.text==='SUPERVISOR_READ_OK')).length;
             coordinator.agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'Check watched workflows after restart'}]}));
             await coordinator.agent.whenIdle();
-            assert.equal(ownSessionEvents(coordinator.agent.session).filter(e=>e.type==='assistant/message'&&e.data.message.content.some(b=>b.text==='SUPERVISOR_READ_OK')).length,2);
+            assert.equal(ownSessionEvents(coordinator.agent.session).filter(e=>e.type==='assistant/message'&&e.data.message.content.some(b=>b.text==='SUPERVISOR_READ_OK')).length,previousReplies+1);
             const templateOwner=JSON.parse(readFileSync('template-captain-resume.json','utf8'));
             const templateMain=await ctx.agents.resume({resumeSessionId:templateOwner.sessionId,agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
             ctx.effect(()=>()=>templateMain.dispose());await templateMain.agent.whenIdle();

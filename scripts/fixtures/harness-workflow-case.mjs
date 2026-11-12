@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 export function ownSessionEvents(session) {
   if (typeof session.ownEvents === 'function') return session.ownEvents();
@@ -96,6 +96,10 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   await supervisor('set',{teamId:activeTeam,previous:null,watch:subscription});
   assert.deepEqual((await supervisor('overview')).rows[0].items.map(i=>i.taskId),['g1']);
   const master=await supervisor('chat');
+  const otherPath=mkdirSync('global-chat-other-project',{recursive:true})??'global-chat-other-project';
+  const other=await ctx.workspaceRegistry.create(otherPath,'Second project');
+  assert.deepEqual(await supervisor('chat',{workspaceId:other.id}),master);
+  assert.ok(ctx.workspaceRegistry.list().every(project=>!project.sessionIds.includes(master.sessionId)));
   writeFileSync('super-agent-session.json',JSON.stringify(master));
   assert.deepEqual(await supervisor('chat'),master);
   const coordinator=ctx.agents.get(master.sessionId);
