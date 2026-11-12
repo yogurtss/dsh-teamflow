@@ -4,7 +4,7 @@ import type { AgentTeamsLocaleKey } from './locales.ts'
 
 /** Playback grants scheduling permission; it never satisfies a dependency. */
 export type ControlTask = Pick<ActivityTask, 'id'|'status'|'dependencies'|'checkpoint'|'workflowPaused'|'workflowAwaitingStart'|'workflowConfigPending'|'workflowRerunRequired'|'updatedAt'>
-export interface ControlTeam { tasks: readonly ControlTask[]; phase?: string; halted?: boolean; workflow?: { loops?: readonly (Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'> & Partial<Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'queued'|'failedExecutionTaskId'|'reason'|'lastDecision'>>)[] } }
+export interface ControlTeam { tasks: readonly ControlTask[]; phase?: string; halted?: boolean; workflow?: { loops?: readonly (Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'round'|'maxRounds'> & Partial<Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'queued'|'failedExecutionTaskId'|'reason'|'lastDecision'>>)[] } }
 export function taskControlState(team: ControlTeam, task: ControlTask, historic = false) {
   const loop = team.workflow?.loops?.find(loop => loop.gateId === task.id || loop.bodyIds.includes(task.id))
   const terminal = ['completed','failed','cancelled'].includes(task.status)
@@ -44,14 +44,18 @@ export function taskControlState(team: ControlTeam, task: ControlTask, historic 
 
 /** Optimistic concurrency token shared by the canvas, activity view and route. */
 export function flowControlVersion(team: ControlTeam): string {
-  return JSON.stringify([team.phase ?? 'running', !!team.halted, team.workflow?.loops?.map(loop => [loop.gateId, loop.bodyIds, loop.status, loop.mode, !!loop.queued, loop.failedExecutionTaskId, canStartLoopWithFlow(loop)]), team.tasks.map(task => [task.id, task.updatedAt, task.status, !!task.workflowPaused, !!task.workflowConfigPending, !!task.workflowRerunRequired, task.checkpoint?.decision, task.dependencies])])
+  return JSON.stringify([team.phase ?? 'running', !!team.halted, (team.workflow?.loops ?? []).map(loop => [loop.gateId, loop.bodyIds, loop.status, loop.mode, !!loop.queued, loop.failedExecutionTaskId, canStartLoopWithFlow(loop)]), team.tasks.map(task => [task.id, task.updatedAt, task.status, !!task.workflowPaused, !!task.workflowConfigPending, !!task.workflowRerunRequired, task.checkpoint?.decision, task.dependencies])])
 }
 
 export function flowControlState(team: ControlTeam) {
   // Global start explicitly confirms pending reruns; individual node controls remain guarded.
   const controls = team.tasks.map(task => taskControlState(team, {...task, workflowPaused:task.workflowPaused||task.workflowRerunRequired, workflowRerunRequired:false}))
+  const stoppingIds = new Set(team.tasks.filter((_, i) => controls[i]?.stopping).map(task => task.id))
+  const canStartLoop = team.workflow?.loops?.some(loop => canStartLoopWithFlow(loop)
+    && !stoppingIds.has(loop.gateId) && !loop.bodyIds.some(id => stoppingIds.has(id)))
+  const canKickLoop = team.workflow?.loops?.some(loop => loop.status === 'running' || loop.status === 'reviewing' && loop.mode === 'ai')
   return {
-    canStart: !team.halted && team.phase !== 'staged' && !controls.some(c => c.stopping) && (controls.some(c => !c.disabled) || !!team.workflow?.loops?.some(canStartLoopWithFlow)),
+    canStart: !team.halted && team.phase !== 'staged' && (controls.some(c => !c.disabled && !c.stopping) || !!canStartLoop || !!canKickLoop),
     canPause: !team.halted && team.phase !== 'staged' && (controls.some(c => !c.disabled && (c.checked || c.stopping)) || !!team.workflow?.loops?.some(loop => ['running', 'reviewing'].includes(loop.status) || loop.queued) || controls.some(c => c.stopping)),
   }
 }

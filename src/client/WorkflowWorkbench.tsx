@@ -49,7 +49,7 @@ import { ReviewWorkbench } from './ReviewWorkbench.tsx'
 import { supervisorAvailable, visitSuperAgent } from './super-agent-navigation.ts'
 import type { WatchItem } from '../super-agent-watch.ts'
 
-interface Response { revision?:string; execution?:Record<string,ExecutionState>; team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string; activity?:ActivityTeam }
+interface Response { skipped?:string[]; revision?:string; execution?:Record<string,ExecutionState>; team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string; activity?:ActivityTeam }
 const viewCache=createWorkflowCache<Response>()
 async function request(payload: Record<string, unknown>, signal?:AbortSignal): Promise<Response | undefined> {
   const reading=payload['action']==='state'||payload['action']==='archive_state'
@@ -357,6 +357,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       if (!result) { if (saving) setSaveState('error'); return }
       if (saving) setSaveState('saved')
       if(action==='restore_archive') {setArchiveView(false);setEditing(false);setFeedback(l("已恢复为待确认流程。已完成成果保留；确认成员配置并启动后，可修改和重跑。"))}
+      if (result.skipped?.length) setError(result.skipped.join('\n'))
       if(result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='restore_archive'?false:archiveView),result);setData(result); setActiveId(result.team.id) }
       return result
@@ -437,7 +438,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     if (!team || archiveView) return null
     const loop = team.workflow?.loops?.find(item => item.gateId === task.id || item.bodyIds.includes(task.id))
     if (loop) {
-      if (team.halted || team.phase === 'staged' || !canStartLoopWithFlow(loop) || ['completed','failed','cancelled'].includes(task.status)) return null
+      if (team.halted || team.phase === 'staged' || !canStartLoopWithFlow(loop) || task.status === 'completed') return null
       const label = loop.status === 'ready' ? l('启动循环') : l('继续循环')
       return <button type="button" data-node-playback disabled={working || unsaved.length > 0}
         aria-label={label + ' · ' + task.subject} onPointerDown={event => event.stopPropagation()}
@@ -865,6 +866,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                 {link && <path d={connectionPath(link.returning ? {x:canvasPos(link.from).x+112.5,y:canvasPos(link.from).y+150} : connectionPort(canvasPos(link.from),'output', gateNode(team.tasks.find(task => task.id === link.from))),link)} />}
               </svg>
               {canvasTasks.map(task => { const gateLoop = team.workflow?.loops?.find(loop => loop.gateId === task.id); const p = canvasPos(task.id), control=taskControlState(team,{...task,workflowAwaitingStart:awaitsFirstStart(task)},archiveView);
+                const pausedLoopTask = team.workflow?.loops?.some(loop => loop.status === 'paused' && loop.bodyIds.includes(task.id))
                 const en = l.language === 'en'
                 const execution = data.execution?.[task.id]
                 const reviewing = task.status === 'pending' && !!task.checkpoint && !gateNode(task) && data.busy.includes('check:'+task.id)
@@ -887,7 +889,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                 const who = <span className={css.canvasActor} title={identity}>{portrait && <img src={portrait} alt=""/>}{gateLoop?.mode === 'ai' && !preparing && <small>Agent</small>}<b>{identity}</b></span>
                 return <article key={task.id} data-task-selected={selectedTask===task.id || undefined} data-full-card={!gateNode(task) || undefined} data-canvas-node={task.id} data-tone={tone} data-loop-gate={gateNode(task) || undefined} data-node-shape={gateNode(task) ? 'decision' : task.kind==='archive' ? 'archive' : 'task'} data-gate-mode={task.checkpoint ? gateLoop?.mode ?? task.checkpoint.mode ?? 'human' : undefined} data-lifecycle={control.visual} data-status={task.status} data-member-match={selection.type === 'member' && !!selection.id && task.assignee === selection.id || undefined} data-connection={link?.to === task.id ? link.issue ? 'invalid' : 'valid' : undefined} data-review-ready={!!task.checkpoint && !task.checkpoint.decision && data.ready.includes(task.id)} data-config-pending={task.workflowConfigPending || undefined} data-suspended={task.workflowRerunRequired || undefined} className={`${css.node} ${taskStateNodeClass} ${gateNode(task) ? `${css.checkpoint} ${css.gateNode}` : ''} ${highlightedTask === task.id ? css.selected : ''}`} style={{ left: p.x, top: p.y }} onDragStart={event=>event.preventDefault()} onPointerDown={event => beginNodeDrag(event, task)} onClickCapture={event=>{if(event.detail && suppressNodeClick.current){suppressNodeClick.current=false;event.preventDefault();event.stopPropagation()}}} onClick={event => { if ((event.target as HTMLElement).closest('[data-connection-handle]')) return; if(editing && !archiveView) edit(task.checkpoint ? 'check' : 'task', task.id); else choose({type:task.checkpoint ? 'check' : 'task',id:task.id}) }}>
                 {gateNode(task) && <svg className={css.gateShape} viewBox="0 0 225 150" aria-hidden="true"><path d={WORKFLOW_GATE_PATH} /></svg>}
-                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{renderTaskControl(task)}</div>
+                <div className={`${css.drag} ${css.iconLabel}`}><WorkflowIcon name={gateNode(task) ? 'gate' : task.checkpoint ? 'acceptance' : task.kind==='archive' ? 'archive' : 'task'} />{task.checkpoint ? gateNode(task) ? loopLabel : l('验收节点') : task.kind==='archive' ? l("成果归档") : l("任务节点")} · {task.id}{!pausedLoopTask && renderTaskControl(task)}</div>
                 {gateNode(task) ? <>
                   <div className={css.gateBody}>
                     <button type="button" className={css.gateTask} aria-pressed={selectedTask===task.id} data-card-task={task.id} aria-label={`${loopLabel}：${task.subject}`}><strong title={task.subject}>{task.subject}</strong></button>
@@ -895,7 +897,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
                     <TaskStateBadge control={control} t={t} detail={taskReadiness(team,task,l).detail} labelText={stateText} />
                   </div>
                   <span className={css.gateCaption}>{gateLoop ? (l.language === 'en' ? `Round ${gateLoop.round} / ${gateLoop.maxRounds}` : `第 ${gateLoop.round} / ${gateLoop.maxRounds} 轮`) : l('请连接返回线')}</span>
-                </> : <CanvasTaskCard onMember={name=>edit('member',name)} selectedMember={selection.type==='member'?selection.id:undefined} team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
+                </> : <CanvasTaskCard playback={pausedLoopTask ? renderTaskControl(task) : undefined} onMember={name=>edit('member',name)} selectedMember={selection.type==='member'?selection.id:undefined} team={team} task={task} control={control} execution={data.execution?.[task.id]} archived={archiveView} reviewing={!!task.checkpoint && task.status==='pending' && data.busy.includes('check:'+task.id)} adapting={!archiveView && adaptationStatus==='generating' && !!task.workflowConfigPending} draft={!archiveView && adaptationStatus==='ready' && !!adaptationDiscussion?.proposal?.operations.some(op=>op.action==='update_task' && op.id===task.id)} systemOwned={task.kind==='archive'} />}
                 {task.checkpoint && <span className={css.cardMode}>{reviewModeSelect(task)}</span>}
                 {gateNode(task) && <button type="button" className={css.returnPort} data-connection-handle aria-label="REJECT" disabled={working || archiveView || !editing || !!gateLoop?.historyCount}
                   onClick={()=>{ if (selectedTask !== task.id) choose({type:'check',id:task.id}) }}
@@ -966,7 +968,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           </header>
           <section className={css.taskBrief}><strong>{l("任务要求 / 验收要求")}</strong><p>{activeTask.description || l("暂无任务说明")}</p></section>
           {renderReadiness(activeTask)}
-          {!['completed', 'failed', 'cancelled'].includes(activeTask.status) && renderTaskControl(activeTask)}{renderRerunPath(activeTask)}
+          {(activeLoop || !['completed', 'failed', 'cancelled'].includes(activeTask.status)) && renderTaskControl(activeTask)}{renderRerunPath(activeTask)}
           {activeTask.checkpoint && !gateNode(activeTask) && <p>{l("第 ")}{activeTask.checkpoint.round} {l(" 轮 · ")}{activeTask.checkpoint.note || l("暂无验收意见")}</p>}<div>
             {!archiveView && !activeLoop && !activeTask.checkpoint && activeTask.assignee && rerunnableTasks(team.tasks, activeTask.assignee).some(task => task.id === activeTask.id) && <button disabled={working} onClick={() => { edit('member', activeTask.assignee, {rerunTaskId:activeTask.id}) }}>{l("修改负责人并重跑此任务")}</button>}
           </div><TaskRecord task={activeTask} team={team} showContract={false} /><ArchiveRecords key={`${team.id}:${activeTask.id}`} sessionId={sessionId} team={team} task={activeTask} archived={archiveView}/>

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { TeamState, TeamTask } from '../types.ts'
 import { LEAD_ART, REVIEW_ART, memberArtUrl } from './artwork.ts'
 import { useWorkflowText } from './workflow-i18n.tsx'
@@ -6,9 +7,10 @@ import { TaskStateBadge } from './TaskStateBadge.tsx'
 import type { taskControlState } from './task-control.ts'
 import css from './CanvasTaskCard.module.css'
 
-export function CanvasTaskCard({team,task,control,execution,archived,reviewing,adapting,draft,systemOwned=false,onMember,selectedMember}: {
+export function CanvasTaskCard({team,task,control,execution,archived,reviewing,adapting,draft,systemOwned=false,playback,onMember,selectedMember}: {
   team:TeamState; task:TeamTask; control:ReturnType<typeof taskControlState>; execution?:ExecutionState; archived:boolean
   reviewing:boolean; adapting:boolean; draft:boolean; systemOwned?:boolean
+  playback?:ReactNode
   onMember:(name:string)=>void; selectedMember?:string
 }) {
   const l=useWorkflowText(), english=l.language==='en'
@@ -37,7 +39,7 @@ export function CanvasTaskCard({team,task,control,execution,archived,reviewing,a
           aria-label={tr('查看 Agent · ','View agent · ')+member.name}
           onClick={e=>{e.stopPropagation();onMember(member.name)}}>{identity}</button>
       : <span className={css.actor}>{identity}</span>}
-      <TaskStateBadge control={control} className={css.badge} detail={detail} labelText={status}/></span>
+      <span className={css.controls}>{playback}<TaskStateBadge control={control} className={css.badge} detail={detail} labelText={status}/></span></span>
     <button type="button" className={css.body} data-card-task={task.id} aria-label={tr('查看任务 · ','View task · ')+task.subject}><strong>{task.subject}</strong><span title={requirements}>{requirements||tr('待填写任务要求','Task requirements pending')}</span></button>
     <span className={css.footer} title={footer}><b>{caption}</b><span>{footer}</span></span>
   </div>

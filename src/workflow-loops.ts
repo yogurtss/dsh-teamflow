@@ -182,24 +182,26 @@ export function reconcileLoops(team: TeamState, now = Date.now(), failedTurnId?:
   }
   return changed
 }
+export class LoopStartUnavailable extends Error {}
+
 export function startLoop(team: TeamState, id: string, additionalRounds = 0, now = Date.now()): void {
   const loop = loopsOf(team).find(l => l.id === id)
-  if (!loop || !['ready', 'paused'].includes(loop.status) || team.halted || team.phase === 'staged') throw new Error('循环当前不能启动')
+  if (!loop || !['ready', 'paused'].includes(loop.status) || team.halted || team.phase === 'staged') throw new LoopStartUnavailable('循环当前不能启动')
   validateLoopGraph(team)
-  if (!Number.isSafeInteger(additionalRounds) || additionalRounds < 0 || additionalRounds > 20 || loop.maxRounds + additionalRounds > 20) throw new Error('追加轮数必须有限，累计最多 20 轮')
+  if (!Number.isSafeInteger(additionalRounds) || additionalRounds < 0 || additionalRounds > 20 || loop.maxRounds + additionalRounds > 20) throw new LoopStartUnavailable('追加轮数必须有限，累计最多 20 轮')
   const tasks = [loop.gateId, ...loop.bodyIds].map(id => taskOf(team, id))
-  if (tasks.some(t => t.assignee && !team.members.some(m => m.name === t.assignee && m.status !== 'removed'))) throw new Error('请先恢复有效的循环执行与审核成员')
-  if (tasks.some(t => active(t))) throw new Error('请先停止仍在运行的循环任务，再继续')
-  if (tasks.some(t => t.workflowConfigPending || !t.description?.trim())) throw new Error('请先完成所有循环节点的任务要求')
-  if (loop.lastDecision === 'revise' && loop.round >= loop.maxRounds && !additionalRounds) throw new Error('已达轮次上限，请明确追加轮数后继续')
+  if (tasks.some(t => t.assignee && !team.members.some(m => m.name === t.assignee && m.status !== 'removed'))) throw new LoopStartUnavailable('请先恢复有效的循环执行与审核成员')
+  if (tasks.some(t => active(t))) throw new LoopStartUnavailable('请先停止仍在运行的循环任务，再继续')
+  if (tasks.some(t => t.workflowConfigPending || !t.description?.trim())) throw new LoopStartUnavailable('请先完成所有循环节点的任务要求')
+  if (loop.lastDecision === 'revise' && loop.round >= loop.maxRounds && !additionalRounds) throw new LoopStartUnavailable('已达轮次上限，请明确追加轮数后继续')
   const external = [...new Set(tasks.flatMap(t => t.dependencies).filter(id => !tasks.some(t => t.id === id)))]
   if (external.some(id => taskOf(team, id).status !== 'completed')) {
-    if (loop.startedAt !== undefined || loop.contracts) throw new Error('请先完成循环的外部输入')
+    if (loop.startedAt !== undefined || loop.contracts) throw new LoopStartUnavailable('请先完成循环的外部输入')
     loop.status = 'ready'
     loop.queued = true; loop.reason = '已排队，等待外部输入完成'; return
   }
   const inputs = Object.fromEntries(external.map(id => [id, inputVersion(taskOf(team, id))]))
-  if (loop.startedAt && hash(inputs) !== hash(loop.externalInputs)) throw new Error('外部输入已变化；请重新建立流程以避免混用结果')
+  if (loop.startedAt && hash(inputs) !== hash(loop.externalInputs)) throw new LoopStartUnavailable('外部输入已变化；请重新建立流程以避免混用结果')
   loop.maxRounds += additionalRounds
   loop.contracts ??= Object.fromEntries(tasks.map(task => [task.id, loopTaskContract(task)]))
   snapshot(team, loop, 'control', additionalRounds ? `人工追加 ${additionalRounds} 轮并继续` : '启动或恢复循环', tasks, { actor: 'human' }, now)

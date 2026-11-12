@@ -11,6 +11,8 @@
 .identity b,.identity small,.footer span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .identity b{font-size:21px;line-height:26px;letter-spacing:-.4px}
 .identity small{font-size:12px;color:var(--wb-muted)}
+.controls{display:grid;justify-items:end;align-self:flex-start;gap:2px}
+.controls button[data-node-playback]{font-size:11px;line-height:16px;padding:1px 6px;min-height:20px}
 .header .badge{--task-state-color:var(--ink);align-self:flex-start;max-width:86px;margin-top:3px}
 .card button.body{display:grid;background:transparent;border:0;border-radius:0;text-align:left;color:inherit;align-content:center;gap:6px;padding:7px 16px}
 .body strong,.body>span{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}

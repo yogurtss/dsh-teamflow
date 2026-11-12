@@ -601,7 +601,8 @@ function LocalizedTeamSection({ team, modelDirectory, onContinuePlanning, onDisc
     if (controlPending.current) return
     controlPending.current = true; setControlBusy('flow'); setControlError('')
     try {
-      const value = await workflowRequest<{activity?:ActivityTeam}>({action:team.phase === 'staged' ? 'start' : 'set_flow_enabled',sessionId:team.captainSessionId,teamId:team.teamId,enabled,version:flowControlVersion(team)})
+      const value = await workflowRequest<{activity?:ActivityTeam; skipped?:string[]}>({action:team.phase === 'staged' ? 'start' : 'set_flow_enabled',sessionId:team.captainSessionId,teamId:team.teamId,enabled,version:flowControlVersion(team)})
+      if (value.skipped?.length) setControlError(value.skipped.join('\n'))
       if (!value.activity) throw new Error(t('task.control.failed'))
       publishWorkflowActivity(value.activity)
     } catch (error) { setControlError(error instanceof Error ? error.message : t('task.control.failed')) }

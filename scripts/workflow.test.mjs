@@ -142,9 +142,12 @@ test('pause all fences the entire chain before draining, retains results and rec
   assert.equal(response.code,409)
   let current=await f.read()
   assert.equal(taskControlState(current,current.tasks[0]).stopping,true)
-  assert.equal(flowControlState(current).canStart,false)
+  assert.equal(flowControlState(current).canStart,true)
   response=await f.call('set_flow_enabled',{enabled:true,version:flowControlVersion(current)})
-  assert.equal(response.code,409,'resume cannot race the outstanding stop')
+  assert.equal(response.code,200,response.error)
+  assert.equal(response.team.tasks[0].workflowPaused,true,'resume cannot race the outstanding stop')
+  assert.ok(response.skipped.length)
+  current=response.team
   response=await f.call('set_flow_enabled',{enabled:false,version:flowControlVersion(current)})
   assert.equal(response.code,200,response.error)
   current=response.team

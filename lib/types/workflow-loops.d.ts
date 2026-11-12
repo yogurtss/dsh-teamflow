@@ -19,6 +19,8 @@ export declare function loopCanExecute(team: TeamState, task: TeamTask): boolean
 export declare function loopDependenciesSatisfied(team: TeamState, task: TeamTask): boolean;
 /** Called before every durable write and from the scheduler watchdog. Never creates tasks. */
 export declare function reconcileLoops(team: TeamState, now?: number, failedTurnId?: string): boolean;
+export declare class LoopStartUnavailable extends Error {
+}
 export declare function startLoop(team: TeamState, id: string, additionalRounds?: number, now?: number): void;
 export declare function decideLoop(team: TeamState, id: string, input: {
     decisionId: string;

@@ -6,7 +6,7 @@ export interface ControlTeam {
     phase?: string;
     halted?: boolean;
     workflow?: {
-        loops?: readonly (Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode'> & Partial<Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'queued' | 'failedExecutionTaskId' | 'reason' | 'lastDecision'>>)[];
+        loops?: readonly (Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId' | 'bodyIds' | 'status' | 'mode' | 'round' | 'maxRounds'> & Partial<Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'queued' | 'failedExecutionTaskId' | 'reason' | 'lastDecision'>>)[];
     };
 }
 export declare function taskControlState(team: ControlTeam, task: ControlTask, historic?: boolean): {
