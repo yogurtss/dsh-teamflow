@@ -519,3 +519,7 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 .inspectorHeader > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .inspectorHeader > button { flex:none; }
 .node { user-select:none; }
+.replyBody { min-width: 0; max-width: 100%; overflow-x: auto; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+.embeddedTranscript .replyBody p { white-space: normal; font-size: inherit; line-height: inherit; margin: .5em 0; }
+.replyBody pre { max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; }
+.replyBody img { max-width: 100%; height: auto; }
