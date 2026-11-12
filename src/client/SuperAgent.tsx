@@ -1,3 +1,4 @@
+import { BrandIcon } from './BrandIcon.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -152,7 +153,7 @@ export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>
   const selected=props.visit?.workspaceId?workspaces.find(w=>w.workspaceId===props.visit!.workspaceId):picker.selected
   const en=props.t('language.code')==='en'
   return <main className={css.panel}>
-    <header><div><small>{en?'Workspace coordinator':'工作区协调'}</small><h1>Super Agent</h1></div>
+    <header className={css.hero}><div className={css.identity}><span className={css.mark}><BrandIcon size={36}/></span><div><small>{en?'Workspace coordinator':'工作区协调'}</small><h1>Super Agent</h1></div></div>
       {props.visit&&selected?<span>{selected.title}</span>:<select aria-label={en?'Workspace':'工作区'} value={selected?.workspaceId??''} onChange={e=>choose(e.target.value)}>
         <option value="" disabled>{en?'Choose a workspace':'选择工作区'}</option>
         {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select>}
@@ -215,19 +216,19 @@ function WorkspacePanel({workspaceId,en,visit,back,sessions,modelDirectories,t,o
     <div className={css.actions}><button onClick={()=>{setSettings(!settings);setError('')}}>{settings?label('← 返回概览','← Overview'):label('监听设置','Watch settings')}</button>
       <button disabled={busy} onClick={chat}>{label('打开主对话','Open conversation')} ↗</button></div>
     {(error||result?.error)&&<p role="alert">{error||result?.error} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{label('刷新','Refresh')}</button></p>}
-    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<><h2>{label('监听设置','Watch settings')}</h2>
+    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('监听设置','Watch settings')}</h2>
       {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{r.name} · {r.teamId}</option>)}</select></label>
         <div className={css.row}><span>{row.watch?label('正在监听','Watching'):label('未监听','Not watched')}{row.complete?' · '+label('已完成','Completed'):''}</span>
           <button disabled={busy} onClick={()=>save(row.watch?null:{kinds:[...watchKinds],keep:row.complete})}>{row.watch?label('取消监听','Unsubscribe'):row.complete?label('监听后续重开','Watch future reopens'):label('监听此流程','Watch workflow')}</button></div>
         <fieldset disabled={busy||!row.watch}><legend>{label('需要提醒我的事项','Notify me about')}</legend>
           {watchKinds.map(kind=><label key={kind}><input type="checkbox" checked={row.watch?.kinds.includes(kind)??false} onChange={e=>row.watch&&save({...row.watch,kinds:e.target.checked?[...row.watch.kinds,kind]:row.watch.kinds.filter(k=>k!==kind)})}/>{kindLabel(kind)}</label>)}</fieldset>
-        <label><input type="checkbox" disabled={busy||!row.watch} checked={row.watch?.keep??false} onChange={e=>row.watch&&save(row.complete&&!e.target.checked?null:{...row.watch,keep:e.target.checked})}/>{label('整个流程完成后继续监听','Keep watching after workflow completion')}</label></>:<p>{label('此工作区没有可选流程。','No workflows in this workspace.')}</p>}</>:<>
+        <label><input type="checkbox" disabled={busy||!row.watch} checked={row.watch?.keep??false} onChange={e=>row.watch&&save(row.complete&&!e.target.checked?null:{...row.watch,keep:e.target.checked})}/>{label('整个流程完成后继续监听','Keep watching after workflow completion')}</label></>:<p>{label('此工作区没有可选流程。','No workflows in this workspace.')}</p>}</div>:<div className={css.columns}><section className={css.queue}>
       <h2>{label('待你处理','Needs you')} <small>{items.length}</small></h2>
-      {items.map(({row:r,item})=><div className={css.row} key={r.teamId+':'+item.id}><div><b>{r.name} › {item.title}</b><small>{itemLabel(item)}{item.round!==undefined?' · '+label('第 '+item.round+' 轮','Round '+item.round):''}</small></div>
+      {items.map(({row:r,item})=><div className={css.row} key={r.teamId+':'+item.id}><div><small>{r.name}</small><b>{item.title}</b><small className={css.status}>{itemLabel(item)}{item.round!==undefined?' · '+label('第 '+item.round+' 轮','Round '+item.round):''}</small></div>
         <button disabled={busy} onClick={()=>locate(r,item)}>{item.kind==='review'?label('查看本轮证据','Review evidence'):item.kind==='proposal'?label('查看提案','View proposal'):label('定位节点','Locate node')} ↗</button></div>)}
       {!items.length&&<p>{watching.length?label('已监听流程暂无待处理事项。','No pending items in watched workflows.'):label('尚未监听任何流程。打开监听设置，选择需要关注的流程。','No workflows watched. Choose workflows in Watch settings.')}</p>}
-      {watching.length>0&&<><h2>{label('监听范围','Watched workflows')}</h2>{watching.map(r=><button key={r.teamId} onClick={()=>{select(r.teamId);setSettings(true)}}>{r.name}</button>)}</>}
-    </>}
+      </section><aside className={css.scope}><h2>{label('监听范围','Watched workflows')} <small>{watching.length}</small></h2>{!watching.length&&<p>{label('尚未订阅流程','No subscriptions')}</p>}{watching.map(r=><button key={r.teamId} onClick={()=>{select(r.teamId);setSettings(true)}}><span>{r.name}</span><small>{r.watch?.kinds.map(kindLabel).join(' · ')}</small></button>)}</aside>
+    </div>}
     {target&&<WorkflowWorkbench initiallyOpen sessionId={target.row.captainSessionId} teamId={target.row.teamId} supervisorTarget={target.item} onClose={close}
       t={t} modelDirectory={modelDirectories.directoryFor(target.row.captainSessionId as SessionId)} openExecution={(id,parent)=>openMember((parent??target.row.captainSessionId) as SessionId,id as SessionId)}/>}
   </section>
