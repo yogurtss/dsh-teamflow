@@ -771,7 +771,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
           {team && !galleryMode && !showOutcomes && !archiveView && !data?.currentDiscussion && <button type="button" className={css.forceEnd} disabled={mutating || revalidating || !!connectionError} onClick={async () => {
-            if (!window.confirm(l('强制结束「{0}」？未完成的任务将被取消。Captain 将整理收尾报告，随后归档流程。', team.name))) return
+            if (!window.confirm(l('强制结束「{0}」？将停止执行并请 Captain 总结当前进展，然后把所有任务标记为完成并归档。', team.name))) return
             setEnding(true)
             try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: crypto.randomUUID(), language: l.language }) }
             finally { setEnding(false) }

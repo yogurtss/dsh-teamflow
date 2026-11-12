@@ -91,6 +91,7 @@ export interface TeamActivitySnapshot {
   readonly workflow?: { loops: Pick<import('./workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'queued'|'failedExecutionTaskId'|'reason'|'lastDecision'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
+  readonly forceCompleted?: boolean
   readonly members: readonly TeamActivityMember[]
   readonly tasks: readonly TeamActivityTask[]
   readonly messageCount: number
@@ -222,6 +223,7 @@ export async function assembleTeamSnapshot(
     ...state.phase === 'staged'
       ? { planReviewState: state.planReviewState ?? 'awaiting_review' as const }
       : {},
+    ...state.closeout?.originalStatuses && state.closeout.report ? { forceCompleted: true } : {},
     ...state.halted === true ? { halted: true } : {},
     ...audit === undefined ? {} : {
       loopState: loop.state,

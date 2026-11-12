@@ -1,18 +1,19 @@
 import type { ActivityTeam } from './activity-monitor.ts'
 
 type Task = ActivityTeam['tasks'][number]
-const delivered = (task: Task) => task.status === 'completed' && (!task.checkpoint || task.checkpoint.decision === 'approve')
+
 
 /** Completed nodes, not estimated model progress. Scope matches the badge's click target. */
 export function activityStatus(team?: ActivityTeam, archived = false) {
   const tasks=team?.tasks.filter(task => !task.superseded)??[]
+  const delivered = (task: Task) => task.status === 'completed' && (team?.forceCompleted || !task.checkpoint || task.checkpoint.decision === 'approve')
   const completed=tasks.filter(delivered).length
   // Dependencies describe forward flow only. REJECT is a loop control edge,
   // so it neither creates an endpoint at the entry nor hides a terminal gate.
   const upstream=new Set(tasks.flatMap(task=>task.dependencies))
   const endpoints=tasks.filter(task=>!upstream.has(task.id))
   const unpassedGates=new Set(team?.workflow?.loops.filter(loop=>loop.status!=='passed').map(loop=>loop.gateId))
-  const done=endpoints.length>0 && endpoints.every(delivered) && !tasks.some(task=>unpassedGates.has(task.id))
+  const done=endpoints.length>0 && endpoints.every(delivered) && (team?.forceCompleted || !tasks.some(task=>unpassedGates.has(task.id)))
   const running=archived||team?.halted?0:tasks.filter(t=>!t.workflowPaused&&['claimed','in_progress'].includes(t.status)).length
   const reviews=archived||team?.halted||team?.phase==='staged'?0:tasks.filter(t=>t.checkpoint&&!t.checkpoint.decision&&t.status==='pending'&&!t.workflowPaused&&!t.workflowRerunRequired&&!t.workflowConfigPending&&t.dependencies.every(id=>tasks.some(up=>up.id===id&&up.status==='completed'))).length
   const issues=archived?0:tasks.filter(t=>t.status==='failed'||t.checkpoint?.decision==='reject'||t.workflowConfigPending||t.workflowRerunRequired).length

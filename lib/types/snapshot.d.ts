@@ -77,6 +77,7 @@ export interface TeamActivitySnapshot {
     };
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;
+    readonly forceCompleted?: boolean;
     readonly members: readonly TeamActivityMember[];
     readonly tasks: readonly TeamActivityTask[];
     readonly messageCount: number;

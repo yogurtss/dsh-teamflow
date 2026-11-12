@@ -1176,6 +1176,8 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     && (value['halted'] === undefined || typeof value['halted'] === 'boolean')
     && (value['closeout'] === undefined || (value['halted'] === true && isRecord(value['closeout'])
       && typeof value['closeout']['requestId'] === 'string' && isOptionalString(value['closeout']['report'])
+      && (value['closeout']['originalStatuses'] === undefined || (isRecord(value['closeout']['originalStatuses'])
+        && Object.values(value['closeout']['originalStatuses']).every(status => typeof status === 'string' && Object.hasOwn(TASK_TRANSITIONS, status))))
       && (value['closeout']['source'] === undefined || ['captain','snapshot'].includes(String(value['closeout']['source'])))))
     && (value['haltedAt'] === undefined || isFiniteNumber(value['haltedAt']))
     && (value['reviewPolicy'] === undefined || isReviewPolicy(value['reviewPolicy']))

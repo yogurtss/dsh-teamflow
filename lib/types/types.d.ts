@@ -394,6 +394,7 @@ export interface TeamState {
     haltedAt?: number;
     closeout?: {
         requestId: string;
+        originalStatuses?: Record<string, TaskStatus>;
         report?: string;
         source?: 'captain' | 'snapshot';
     };

@@ -65,6 +65,7 @@ export interface ActivityTeam {
     };
     readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback';
     readonly halted?: boolean;
+    readonly forceCompleted?: boolean;
     readonly members: readonly ActivityMember[];
     readonly tasks: readonly ActivityTask[];
     readonly messageCount: number;

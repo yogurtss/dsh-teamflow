@@ -1474,6 +1474,7 @@ test('confirmed force end drains work, records the matching captain report, then
   const source = withGate()
   source.tasks[0].status = 'completed'
   source.tasks[0].output = 'Verified design'
+  source.tasks[2].status = 'failed'
   source.members[0].id = 'worker-session'
   const prompts = [], drained = []
   const f = await lifecycleFixture(t, source, {
@@ -1507,11 +1508,14 @@ test('confirmed force end drains work, records the matching captain report, then
     assert.equal(result.code, 200, result.error)
     assert.equal(result.team.closeout.source, 'captain')
     assert.equal(result.team.closeout.report, 'Design verified. Review remains unfinished.')
-    assert.deepEqual(result.team.tasks.map(task=>task.status), ['completed','cancelled','cancelled'])
+    assert.deepEqual(result.team.tasks.map(task=>task.status), ['completed','completed','completed'])
+    assert.equal(result.team.tasks[1].checkpoint.decision, undefined)
     assert.equal(result.team.tasks[0].output, 'Verified design')
   }
   assert.equal(prompts.length, 1)
   assert.match(prompts[0].content[0].text, /Verified design/)
+  assert.match(prompts[0].content[0].text, /\[等待中\] gate/)
+  assert.match(prompts[0].content[0].text, /\[失败\] after/)
   assert.equal(await f.read(), undefined)
   assert.equal((await f.call('archive_state')).team.closeout.source, 'captain')
   assert.equal((await f.call('restore_archive')).team.closeout, undefined)
