@@ -321,10 +321,10 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
         const cards=new Map<string,{seq:number;card:SupervisorCard}>()
         if(body['action']==='history'&&body['summaryOnly']!==true)for(const event of sessionOwnEvents(agent.session)){
           const r=readCard(event)
-          if(r)cards.set(r.card.key,{seq:cards.get(r.card.key)?.seq??event.seq,card:r.card})
+          if(r)cards.set(r.card.key,{seq:event.seq,card:r.card})
         }
         reply(200,{sessionId:agent.id,cards:typeof sessionHost.appendPluginRecord==='function',
-          ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()],messages:body['summaryOnly']===true?[]:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
+          ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()].sort((a,b)=>a.seq-b.seq),messages:body['summaryOnly']===true?[]:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
       }
       const spaces=registry.list()
       const titles=ctx.get('sessionTitle') as {get(session:import('@deepseek-ai/dsh-session').Session):{title:string}|undefined}|undefined

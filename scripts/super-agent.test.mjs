@@ -105,6 +105,12 @@ test('native card replay folds status updates into the original review round',as
   assert.deepEqual(fold.match(start),{id:card.key,role:'start'})
   assert.deepEqual(fold.match(end),{id:card.key,role:'update'})
   assert.equal(fold.update({}, {event:end}).status,'approved')
+  const first={event:{...start,seq:4},location:{kind:'turn',turn:1}}
+  const last={event:{...end,seq:32},location:{kind:'turn',turn:3}}
+  const node=fold.buildViewNode({key:'same-card',id:card.key,start:first,matches:[first,last],state:end.data.card})
+  assert.equal(node.key,'same-card')
+  assert.equal(node.anchorSeq,32)
+  assert.deepEqual(node.location,last.location)
 })
 
 import { conversationUnread } from '../lib/super-agent-unread.js'

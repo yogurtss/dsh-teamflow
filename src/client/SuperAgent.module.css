@@ -65,6 +65,7 @@
 .notice>b {font-size:13px;color:var(--violet)}
 .notice>span {grid-column:1/-1;font-weight:600}
 .notice>button {justify-self:start;margin-top:4px}
+.noticeActions {grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .notice>button:last-child {grid-column:2;grid-row:1;border:0;margin:0;padding:0 5px;color:var(--muted)}
 @container (max-width:740px) {.columns{grid-template-columns:1fr}.hero{padding-block:22px 16px}.actions{justify-content:flex-start}.queue,.scope,.settings{padding:16px}.panel h1{font-size:26px}}
 .chatCard {margin:12px 0;padding:16px 20px;background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);border:1px solid var(--dsw-alias-border-l2,GrayText);border-inline-start:4px solid #7656b2;border-radius:12px;overflow-wrap:anywhere}

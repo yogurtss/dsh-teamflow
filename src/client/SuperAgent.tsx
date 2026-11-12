@@ -40,7 +40,7 @@ function NativeChat({id,sessions,SessionProvider,renderChat,en}:Props & Required
   return <SessionProvider session={reference}>{renderChat()}</SessionProvider>
 }
 
-function GlobalConversation(props:Props & HostChat & {anchor?:string;close?:()=>void;inline?:boolean;settings?:()=>void;visible?:boolean}){
+function GlobalConversation(props:Props & HostChat & {anchor?:string;latestOnOpen?:boolean;close?:()=>void;inline?:boolean;settings?:()=>void;visible?:boolean}){
   const en=props.t('language.code')==='en'
   const [log,setLog]=useState<Transcript>(),[draft,setDraft]=useState(''),[error,setError]=useState(''),[sending,setSending]=useState(false)
   const [readError,setReadError]=useState('')
@@ -48,6 +48,7 @@ function GlobalConversation(props:Props & HostChat & {anchor?:string;close?:()=>
   const native=!archive&&!!props.renderChat&&!!props.SessionProvider
   const feed=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null)
   const stick=useRef(!props.anchor),anchored=useRef(false)
+  const openedAtLatest=useRef(false)
   useEffect(()=>{
     const open=()=>{if(archive){setLog(undefined);setArchive('')}setConfirm(false);stick.current=true}
     window.addEventListener(openCurrentChat,open)
@@ -78,6 +79,27 @@ function GlobalConversation(props:Props & HostChat & {anchor?:string;close?:()=>
     void refresh()
     return ()=>{controller.abort();clearTimeout(timer);before?.focus()}
   },[archive,generation,props.visible,native])
+  useEffect(()=>{
+    const root=feed.current
+    if(!props.latestOnOpen||!native||!log?.sessionId||!root||openedAtLatest.current)return
+    let frame=0
+    const stop=()=>{
+      observer.disconnect();cancelAnimationFrame(frame)
+      root.removeEventListener('wheel',interrupt,true);root.removeEventListener('pointerdown',interrupt,true)
+      root.removeEventListener('keydown',interrupt,true)
+    }
+    const interrupt=()=>{openedAtLatest.current=true;stop()}
+    const land=()=>{
+      const scroller=root.querySelector<HTMLElement>('[data-conversation-scroll]')
+      if(!scroller?.querySelector('[data-chat-flow-key]')||frame)return
+      frame=requestAnimationFrame(()=>{scroller.scrollTop=scroller.scrollHeight;openedAtLatest.current=true;stop()})
+    }
+    const observer=new MutationObserver(land)
+    observer.observe(root,{childList:true,subtree:true})
+    root.addEventListener('wheel',interrupt,{capture:true,passive:true});root.addEventListener('pointerdown',interrupt,true)
+    root.addEventListener('keydown',interrupt,true)
+    land();return stop
+  },[log?.sessionId,native,props.latestOnOpen])
   useEffect(()=>{
     if(!feed.current)return
     if(props.anchor&&!anchored.current){
@@ -244,9 +266,9 @@ export function SuperAgentOverlay(props:Props & HostChat) {
     window.addEventListener(captainOpened,leave)
     return ()=>{window.removeEventListener('teamflow:global-chat',open);window.removeEventListener(captainOpened,leave)}
   },[])
-  function openNotice(){
+  function openNotice(locate:boolean){
     if(!notice)return
-    setChat({key:JSON.stringify([notice.workspaceId,notice.row.teamId,notice.progress?'progress':notice.item.id])})
+    setChat(locate?{key:JSON.stringify([notice.workspaceId,notice.row.teamId,notice.progress?'progress':notice.item.id])}:{})
     setNotice(undefined)
   }
   useEffect(()=>{
@@ -285,12 +307,13 @@ export function SuperAgentOverlay(props:Props & HostChat) {
     window.addEventListener(attentionEvent,onAttention)
     return ()=>{window.removeEventListener(superAgentEntry,open);window.removeEventListener(attentionEvent,onAttention)}
   },[])
-  if(chat)return createPortal(<GlobalConversation {...props} anchor={chat.key} close={()=>setChat(undefined)}/>,document.body)
+  if(chat)return createPortal(<GlobalConversation {...props} anchor={chat.key} latestOnOpen={!chat.key} close={()=>setChat(undefined)}/>,document.body)
   if(!visit){
     if(!notice)return null
     const en=props.t('language.code')==='en'
     return createPortal(<aside className={css.notice} role="status"><b>Super Agent</b><span>{notice.row.name} › {notice.progress?progressText(notice.progress,en):notice.item.title}{notice.count>1?' +'+(notice.count-1):''}</span>
-      <button onClick={openNotice}>{en?'Open conversation card':'查看对话卡片'}</button>
+      <div className={css.noticeActions}><button onClick={()=>openNotice(false)}>{en?'Open latest chat':'打开最新对话'}</button>
+        <button onClick={()=>openNotice(true)}>{en?'Locate card':'定位此卡'}</button></div>
       <button aria-label={en?'Dismiss reminder':'收起提醒'} onClick={()=>setNotice(undefined)}>×</button></aside>,document.body)
   }
   const back=()=>{setVisit(undefined);visit.returnToWorkflow()}
