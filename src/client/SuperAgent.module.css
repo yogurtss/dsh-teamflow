@@ -71,10 +71,12 @@
 .chatCard h3,.chatCard p {margin:4px 0}.chatCard blockquote{white-space:pre-wrap;margin:10px 0;padding-inline-start:12px;border-inline-start:2px solid var(--dsw-alias-border-l2,GrayText)}.chatCard button,.chatCard input{font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:7px;padding:6px 10px;margin:6px 6px 0 0}
 .dialogShade{position:fixed;inset:0;z-index:999;background:#16203955;display:grid;place-items:center;padding:12px}
 .globalChat{box-sizing:border-box;width:min(780px,100%);height:min(780px,90dvh);display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);box-shadow:0 16px 54px #0003;font:14px/1.6 "Segoe UI",sans-serif}
-.globalChat header,.globalChat form{display:flex;align-items:center;gap:12px;padding:12px 20px}.globalChat header{border-bottom:1px solid var(--dsw-alias-border-l2,GrayText)}.globalChat h2{font-size:18px;flex:1;margin:0}.globalChat button,.globalChat textarea{font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:7px;padding:6px 10px}.globalChat textarea{flex:1;min-width:0;resize:vertical}.chatHistory{overflow:auto;flex:1;min-height:0;padding:8px 20px}.chatLine{white-space:pre-wrap;overflow-wrap:anywhere}.chatLine b{display:block}
+.globalChat>header,.globalChat>form{display:flex;align-items:center;gap:12px;padding:12px 20px}.globalChat>header{border-bottom:1px solid var(--dsw-alias-border-l2,GrayText)}.globalChat>header h2{font-size:18px;flex:1;margin:0}.globalChat>header button,.globalChat>.resetPrompt button,.globalChat>form button,.globalChat>form textarea{font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:7px;padding:6px 10px}.globalChat>form textarea{flex:1;min-width:0;resize:vertical}.chatHistory{overflow:auto;flex:1;min-height:0;padding:8px 20px}.chatLine{white-space:pre-wrap;overflow-wrap:anywhere}.chatLine b{display:block}
 .chatPage {height:100%;min-height:0}
 .chatPage .globalChat{height:100%;width:min(100%,1000px);margin:auto;box-shadow:none;border-radius:0}
-.globalChat header{flex-wrap:wrap}.resetPrompt{padding:8px 20px}
+.globalChat>header{flex-wrap:wrap}.resetPrompt{padding:8px 20px}
 .chatLine{margin:16px 0}.chatLine>b{font-size:12px;color:var(--dsw-alias-label-secondary,GrayText)}
 .chatLine[data-role="assistant"]{white-space:normal}
 .chatLine[data-role="user"]{width:fit-content;max-width:85%;margin-left:auto;padding:8px 14px;border-radius:12px;background:light-dark(#f1edfc,#353047)}
+
+.nativeChat{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;overflow:hidden}

@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { WorkflowLauncher } from './WorkflowLauncher.tsx'
 import { supervisorDefinition } from './supervisor-card-definition.ts'
 import { SupervisorMessage } from './SupervisorCard.tsx'
-import { SuperAgentPanel, SuperAgentOverlay, SuperAgentIcon } from './SuperAgent.tsx'
+import { SuperAgentPanel, SuperAgentOverlay, SuperAgentIcon, NativeChatBody } from './SuperAgent.tsx'
 import { enableSupervisorVisits } from './super-agent-navigation.ts'
 import { BrandIcon } from './BrandIcon.tsx'
 import { ActivitySurface, WorkspaceActivity, createWorkspaceBridge, TEAM_TAB_ID, TEAM_TAB_KIND } from './WorkspaceActivity.tsx'
@@ -41,6 +41,10 @@ import {
 import { openAgentTeamMember, type AgentTeamsLayoutNavigator, type AgentTeamsWorkspaceNavigator } from './session-navigation.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'teamflow.super-agent.panel.chat':{kind:'single';scope:'session'}
+    'teamflow.super-agent.overlay.chat':{kind:'single';scope:'session'}
+  }
   interface LocaleNamespaceMap {
     /** AgentTeams conversation card and activity monitor copy. */
     agentTeams: AgentTeamsLocaleKey
@@ -119,9 +123,14 @@ export function apply(ctx: ClientContext): void {
     const services=()=>({sessions:native.sessions,workspaces:native.workspaces,uiWorkspace:native.uiWorkspace,modelDirectories:native.modelDirectories,openMember})
     native.uiConversation.events.register(supervisorDefinition)
     native.slots.inject('conversation.chat.node',()=>native.slots.register({name:'conversation.chat.node',key:'teamflow-supervisor',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SupervisorMessage))
-    native.slots.inject('main',()=>native.slots.register({name:'main',key:'dsh-teamflow-super-agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentPanel))
+    const sessionSlot={kind:'single',scope:'session'} as const
+    native.slots.inject('main',()=>native.slots.register({name:'main',key:'dsh-teamflow-super-agent',children:{'teamflow.super-agent.panel.chat':sessionSlot},locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},
+      props=><SuperAgentPanel {...props} renderChat={typeof props.renderFactorySlot==='function'?()=>props.renderSlot('teamflow.super-agent.panel.chat',{}):undefined}/>))
     native.slots.inject('sidebar.panellist',()=>native.slots.register({name:'sidebar.panellist',id:'dsh-teamflow-super-agent',order:31,label:'Super Agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentIcon))
-    native.slots.inject('shell.overlay',()=>native.slots.register({name:'shell.overlay',id:'teamflow-super-agent-visit',order:81,locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentOverlay))
+    native.slots.inject('shell.overlay',()=>native.slots.register({name:'shell.overlay',id:'teamflow-super-agent-visit',order:81,children:{'teamflow.super-agent.overlay.chat':sessionSlot},locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},
+      props=><SuperAgentOverlay {...props} renderChat={typeof props.renderFactorySlot==='function'?()=>props.renderSlot('teamflow.super-agent.overlay.chat',{}):undefined}/>))
+    native.slots.inject('teamflow.super-agent.panel.chat',()=>native.slots.register({name:'teamflow.super-agent.panel.chat'},NativeChatBody))
+    native.slots.inject('teamflow.super-agent.overlay.chat',()=>native.slots.register({name:'teamflow.super-agent.overlay.chat'},NativeChatBody))
     native.effect(enableSupervisorVisits)
   })
   // A conversation entry does not depend on the optional right sidebar.

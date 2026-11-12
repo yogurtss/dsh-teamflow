@@ -267,12 +267,12 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
           reply(200,{ok:true});return
         }
         const cards=new Map<string,{seq:number;card:SupervisorCard}>()
-        if(body['action']==='history')for(const event of sessionOwnEvents(agent.session)){
+        if(body['action']==='history'&&body['summaryOnly']!==true)for(const event of sessionOwnEvents(agent.session)){
           const r=readCard(event)
           if(r)cards.set(r.card.key,{seq:cards.get(r.card.key)?.seq??event.seq,card:r.card})
         }
         reply(200,{sessionId:agent.id,cards:typeof sessionHost.appendPluginRecord==='function',
-          ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()],messages:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
+          ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()],messages:body['summaryOnly']===true?[]:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
       }
       const spaces=registry.list()
       const titles=ctx.get('sessionTitle') as {get(session:import('@deepseek-ai/dsh-session').Session):{title:string}|undefined}|undefined
@@ -289,19 +289,22 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
         reply(200,{rows:groups.flat()});return
       }
       const workspace=spaces.find(w=>w.id===body['workspaceId'])
-      if(!workspace){reply(404,{error:'Workspace unavailable'});return}
+      if(body['action']==='ask'){
+        const agent=body['sessionId']===globalId?await ensureChat():workspace&&ctx.agents.get(coordinatorId(workspace.path))
+        if(!agent||agent.id!==body['sessionId'])throw new Error('Open the workspace Super Agent conversation first')
+        const question=body['question']
+        if(typeof question!=='string'||!question.trim()||question.length>4000)throw new Error('Invalid question')
+        const card=sessionOwnEvents(agent.session).map(readCard).reverse().find(r=>r?.card.key===body['key'])?.card
+        if(!card)throw new Error('Card unavailable')
+        agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:question+'\n\n[Workflow card]\n'+JSON.stringify(card)}]}))
+        reply(200,{ok:true});return
+      }
+      if(!workspace){
+        if(body['action']==='catalog'||body['action']==='overview'){reply(200,{rows:[],missingWorkspace:true});return}
+        reply(404,{error:'The project is no longer available. Select a project in Watch settings.'});return
+      }
       const root=join(workspace.path,stateDir)
       switch(body['action']){
-        case 'ask':{
-          const agent=body['sessionId']===globalId?await ensureChat():ctx.agents.get(coordinatorId(workspace.path))
-          if(!agent||agent.id!==body['sessionId'])throw new Error('Open the workspace Super Agent conversation first')
-          const question=body['question']
-          if(typeof question!=='string'||!question.trim()||question.length>4000)throw new Error('Invalid question')
-          const card=sessionOwnEvents(agent.session).map(readCard).reverse().find(r=>r?.card.key===body['key'])?.card
-          if(!card)throw new Error('Card unavailable')
-          agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:question+'\n\n[Workflow card]\n'+JSON.stringify(card)}]}))
-          reply(200,{ok:true});return
-        }
         case 'catalog':case 'overview':{
           const rows=await listWatchRows(root,body['action']==='catalog')
           for(const row of rows)row.conversationTitle=conversationTitle(row)

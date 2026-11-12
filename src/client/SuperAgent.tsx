@@ -6,6 +6,10 @@ import { WorkflowLocale } from './workflow-i18n.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionProviderComponent, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ReactNode } from 'react'
+import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkflowLauncherProps } from './WorkflowLauncher.tsx'
 import { selectedWorkflowWorkspace } from './workflow-launcher.ts'
 import { WorkflowWorkbench } from './WorkflowWorkbench.tsx'
@@ -14,21 +18,43 @@ import { defaultWatchKinds, watchKinds, type NodeChange, type WatchRow, type Wat
 import css from './SuperAgent.module.css'
 
 type Props = WorkflowLauncherProps
+type HostChat = {SessionProvider?:SessionProviderComponent;renderChat?:()=>ReactNode}
 const unreadChanged='teamflow:unread-changed'
 const openCurrentChat='teamflow:open-current-chat'
 type Transcript={latest:number;archives:{id:string;at:number}[];sessionId:string;busy:boolean;records:{seq:number;card:SupervisorCard}[];messages:{id:string;role:string;text:string}[]}
 
-function GlobalConversation(props:Props & {anchor?:string;close?:()=>void;inline?:boolean;settings?:()=>void;visible?:boolean}){
+function ChatView({renderSlot}:ConversationViewsProps){return <>{renderSlot('conversation.session',{view:'chat'})}</>}
+export function NativeChatBody({renderFactorySlot,useSession,useConversation}:PropsRenderFactories & PropsRuntime<'teamflow.super-agent.panel.chat'>){
+  const blank=useSession(s=>s.blank&&!s.running)
+  const hasContent=useConversation(s=>s.activeTargets.size>0)
+  // The global Session owns its cwd. DSH's project-creation hero would require a workspace selection.
+  return <>{renderFactorySlot('conversation.content',{variant:'embedded',phase:blank&&!hasContent?'hero':'active',hero:false},{slots:{views:ChatView}})}</>
+}
+function NativeChat({id,sessions,SessionProvider,renderChat,en}:Props & Required<HostChat> & {id:string;en:boolean}){
+  const [reference,setReference]=useState<SessionReference>(),[error,setError]=useState('')
+  useEffect(()=>{
+    const controller=new AbortController()
+    const ref=sessions.retain(id as SessionId,{source:'teamflowLauncher',signal:controller.signal})
+    void ref.ready.then(()=>{if(!controller.signal.aborted)setReference(ref)},e=>{if(!controller.signal.aborted)setError(String(e))})
+    return ()=>{controller.abort();ref.release()}
+  },[sessions,id])
+  if(!reference)return <p role={error?'alert':'status'}>{error||(en?'Opening conversation…':'正在打开对话…')}</p>
+  return <SessionProvider session={reference}>{renderChat()}</SessionProvider>
+}
+
+function GlobalConversation(props:Props & HostChat & {anchor?:string;close?:()=>void;inline?:boolean;settings?:()=>void;visible?:boolean}){
   const en=props.t('language.code')==='en'
   const [log,setLog]=useState<Transcript>(),[draft,setDraft]=useState(''),[error,setError]=useState(''),[sending,setSending]=useState(false)
+  const [readError,setReadError]=useState('')
   const [archive,setArchive]=useState(''),[confirm,setConfirm]=useState(false),[generation,reload]=useState(0)
+  const native=!archive&&!!props.renderChat&&!!props.SessionProvider
   const feed=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null)
   const stick=useRef(!props.anchor),anchored=useRef(false)
   useEffect(()=>{
-    const open=()=>{setArchive('');setConfirm(false);stick.current=true}
+    const open=()=>{if(archive){setLog(undefined);setArchive('')}setConfirm(false);stick.current=true}
     window.addEventListener(openCurrentChat,open)
     return ()=>window.removeEventListener(openCurrentChat,open)
-  },[])
+  },[archive])
   useEffect(()=>{
     const before=document.activeElement as HTMLElement|null
     if(props.visible===false)return
@@ -37,51 +63,54 @@ function GlobalConversation(props:Props & {anchor?:string;close?:()=>void;inline
     let timer:ReturnType<typeof setTimeout>
     let acknowledged=-1,seenSession=''
     async function refresh(){
-      try{const next=await request<Transcript>('','history',{archive:archive||undefined},controller.signal)
+      try{const next=await request<Transcript>('','history',{archive:archive||undefined,summaryOnly:native},controller.signal)
         if(!controller.signal.aborted){
           setLog(next)
-          if(!archive && !document.hidden && feed.current?.getClientRects().length && (seenSession!==next.sessionId || next.latest>acknowledged)){
+          const displayedId=feed.current?.querySelector<HTMLElement>('[data-conversation-session]')?.dataset.conversationSession
+          if(!archive && !document.hidden && feed.current?.getClientRects().length && (!native||displayedId===next.sessionId) && (seenSession!==next.sessionId || next.latest>acknowledged)){
             const result=await request<{count:number}>('','seen',{sessionId:next.sessionId,through:next.latest},controller.signal)
             seenSession=next.sessionId;acknowledged=next.latest
             window.dispatchEvent(new CustomEvent(unreadChanged,{detail:result.count}))
           }
+          setReadError('')
         }
-      }catch(e){if(!controller.signal.aborted)setError(String(e))}
+      }catch(e){if(!controller.signal.aborted)setReadError(String(e))}
       finally{if(!controller.signal.aborted)timer=setTimeout(refresh,1200)}
     }
     void refresh()
     return ()=>{controller.abort();clearTimeout(timer);before?.focus()}
-  },[archive,generation,props.visible])
+  },[archive,generation,props.visible,native])
   useEffect(()=>{
     if(!feed.current)return
     if(props.anchor&&!anchored.current){
       const card=Array.from(feed.current.querySelectorAll<HTMLElement>('[data-supervisor-card]')).find(el=>el.dataset.supervisorCard===props.anchor)
       if(card){card.scrollIntoView({block:'center'});anchored.current=true}
-    }else if(stick.current)feed.current.scrollTop=feed.current.scrollHeight
-  },[log,props.anchor])
+    }else if(!native&&stick.current)feed.current.scrollTop=feed.current.scrollHeight
+  },[log,props.anchor,native])
   async function send(){
     if(sending||!draft.trim())return
     setSending(true);setError('')
     try{await request('','send',{question:draft,sessionId:log?.sessionId});setDraft('');stick.current=true}
     catch(e){setError(String(e))}finally{setSending(false)}
   }
-  const entries=log?[...log.messages.map(m=>({seq:Number(m.id),view:<div className={css.chatLine} data-role={m.role}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.role==='user'?m.text:<AssistantReply text={m.text} streaming={false}/>}</div>})),
+  const entries=!native&&log?[...log.messages.map(m=>({seq:Number(m.id),view:<div className={css.chatLine} data-role={m.role}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.role==='user'?m.text:<AssistantReply text={m.text} streaming={false}/>}</div>})),
     ...log.records.map(r=>({seq:r.seq,view:<ConversationCard {...props} archived={!!archive} sessionId={log.sessionId} card={r.card}/>}))].sort((a,b)=>a.seq-b.seq):[]
   return <div className={props.inline?css.chatPage:css.dialogShade}><section className={css.globalChat} role={props.inline?'region':'dialog'} aria-modal={props.inline?undefined:true} aria-label={en?'Global conversation':'全局对话'}>
     <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2>{props.settings&&<button onClick={props.settings}>{en?'Watch settings':'监听设置'}</button>}
       {!!log?.archives.length&&<select aria-label={en?'Conversation history':'对话历史'} value={archive} onChange={e=>{setArchive(e.target.value);setLog(undefined)}}><option value="">{en?'Current conversation':'当前对话'}</option>{log.archives.map((a,i)=><option key={a.id} value={a.id}>{en?'History':'历史对话'} {i+1}</option>)}</select>}
       {!archive&&<button disabled={!log} onClick={()=>setConfirm(true)}>{en?'Clear context':'清除上下文'}</button>}
+      {!archive&&!native&&log&&<button onClick={async()=>{const id=log.sessionId as SessionId;try{props.close?.();await props.openMember(id,id)}catch(e){setError(String(e))}}}>{en?'Open in DSH chat':'在 DSH 对话中打开'}</button>}
       {props.close&&<button onClick={props.close}>{en?'Close':'关闭'}</button>}</header>
     {confirm&&<div className={css.resetPrompt}><p>{en?'Start a fresh conversation? History, subscriptions and running workflows are retained.':'开始一段新对话？旧聊天可在历史中查看，订阅和运行中的流程会保留。'}</p>
       <button onClick={()=>setConfirm(false)}>{en?'Cancel':'取消'}</button>
       <button onClick={async()=>{try{await request('','reset',{sessionId:log?.sessionId});setLog(undefined);setDraft('');setConfirm(false);reload(n=>n+1)}catch(e){setError(String(e))}}}>{en?'Start fresh':'确认清除'}</button></div>}
-    <div className={css.chatHistory} ref={feed} onScroll={e=>{const el=e.currentTarget;stick.current=el.scrollHeight-el.scrollTop-el.clientHeight<80}}>
+    {native?<div className={css.nativeChat} ref={feed}>{log&&props.visible!==false&&<NativeChat key={log.sessionId} {...props} SessionProvider={props.SessionProvider!} renderChat={props.renderChat!} id={log.sessionId} en={en}/>}</div>:<div className={css.chatHistory} ref={feed} onScroll={e=>{const el=e.currentTarget;stick.current=el.scrollHeight-el.scrollTop-el.clientHeight<80}}>
       {!entries.length&&<p>{!log?(en?'Loading…':'正在读取…'):(en?'Ask about watched workflows across your projects.':'可以在这里询问各项目中已监听的流程。')}</p>}
       <WorkflowLocale t={props.t}>{entries.map(e=><div key={e.seq}>{e.view}</div>)}</WorkflowLocale>
       {log?.busy&&<small role="status">{en?'Super Agent is responding…':'Super Agent 正在回复…'}</small>}
-    </div>
-    {error&&<p role="alert">{error}</p>}
-    {!archive&&<form onSubmit={e=>{e.preventDefault();void send()}}><textarea ref={input} aria-label={en?'Message':'消息'} placeholder={en?'Message Super Agent':'给 Super Agent 发消息'} value={draft} maxLength={4000} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/><button disabled={!log||sending||!draft.trim()}>{en?'Send':'发送'}</button></form>}
+    </div>}
+    {(error||readError)&&<p role="alert">{error||readError}</p>}
+    {!archive&&!native&&<form onSubmit={e=>{e.preventDefault();void send()}}><textarea ref={input} aria-label={en?'Message':'消息'} placeholder={en?'Message Super Agent':'给 Super Agent 发消息'} value={draft} maxLength={4000} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/><button disabled={!log||sending||!draft.trim()}>{en?'Send':'发送'}</button></form>}
   </section></div>
 }
 const changed = 'teamflow:watch-settings-changed'
@@ -117,7 +146,7 @@ function useWorkspace(props:Props, owner?:string) {
   return {workspaces,selected,choose,sessionRows:list.byId}
 }
 
-type WatchView<T> = {rows:T[]; error?:string}
+type WatchView<T> = {rows:T[]; error?:string;missingWorkspace?:boolean}
 type Feed<T> = {subscribe:(fn:()=>void)=>()=>void; read:()=>WatchView<T>|undefined}
 const feeds=new Map<string,Feed<WatchRow>>()
 const emptyFeed:Feed<WatchRow>={subscribe:()=>()=>{},read:()=>undefined}
@@ -205,7 +234,7 @@ export function SuperAgentIcon(props:Props & {size:number}) {
     {count>0&&<b>{count>99?'99+':count}</b>}</span>
 }
 
-export function SuperAgentOverlay(props:Props) {
+export function SuperAgentOverlay(props:Props & HostChat) {
   const [visit,setVisit]=useState<SupervisorVisit>()
   const [notice,setNotice]=useState<{workspaceId:string;row:WatchRow;item:WatchItem;count:number;progress?:NodeChange}>()
   const seen=useRef(new Map<string,Set<string>>())
@@ -296,7 +325,7 @@ function WatchedWorkflows({en,sessions,onEdit}:{en:boolean;sessions:SessionRows;
   </section>
 }
 
-export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>void}) {
+export function SuperAgentPanel(props:Props & HostChat & {visit?:SupervisorVisit;back?:()=>void}) {
   const [settings,setSettings]=useState(false)
   const [editing,setEditing]=useState(true)
   const [selection,setSelection]=useState({workspaceId:props.visit?.workspaceId,teamId:props.visit?.teamId??''})
@@ -378,7 +407,7 @@ function WorkspacePanel({workspaceId,project,sessionRows,en,settings,setSettings
   function close(){setTarget(undefined);handle.current?.release();handle.current=undefined;window.dispatchEvent(new Event(changed));requestAnimationFrame(()=>focus.current?.focus())}
   return <section aria-busy={busy}>
     {(error||result?.error)&&<p role="alert">{error||result?.error} <button onClick={()=>window.dispatchEvent(new Event(changed))}>{label('刷新','Refresh')}</button></p>}
-    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:settings?<div className={css.settings}><h2>{label('配置流程','Configure workflow')}</h2>
+    {!result?<p role="status">{label('正在读取…','Loading…')}</p>:result.missingWorkspace?<p>{label('此项目已不在工作区列表中，请选择其他项目。','This project is no longer in the workspace list. Choose another project.')}</p>:settings?<div className={css.settings}><h2>{label('配置流程','Configure workflow')}</h2>
       {row?<><label>{label('选择流程','Workflow')} <select value={row.teamId} disabled={busy} onChange={e=>select(e.target.value)}>{rows.map(r=><option value={r.teamId} key={r.teamId}>{identity(r)}{rows.some(other=>other.teamId!==r.teamId&&identity(other)===identity(r))?' · '+r.teamId:''}</option>)}</select></label>
         <div className={css.row}><span>{row.watch?label('正在监听','Watching'):label('未监听','Not watched')}{row.complete?' · '+label('已完成','Completed'):''}</span>
           <button disabled={busy} onClick={()=>save(row.watch?null:{kinds:[...defaultWatchKinds],keep:row.complete})}>{row.watch?label('取消监听','Unsubscribe'):row.complete?label('监听后续重开','Watch future reopens'):label('监听此流程','Watch workflow')}</button></div>

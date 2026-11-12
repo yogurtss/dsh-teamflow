@@ -85,7 +85,7 @@ Use **Save as template** to have AI extract reusable requirements, review the dr
 
 ### Super Agent (development branch)
 
-On hosts with native plugin records, watched reviews, proposals and blockers are delivered proactively to the global conversation. The reminder opens the card. Open its evidence or ask a question in context. Review decisions update the original card, and ordinary progress shares one card per workflow.
+Hosts with the embedded conversation component use the native DSH transcript and composer for Super Agent. Select the model name in the composer to change the model and its available reasoning level. The global chat opens without a project selection. On hosts with native plugin records, watched reviews, proposals and blockers are delivered proactively to the global conversation. The reminder opens the card. Open its evidence or ask a question in context. Review decisions update the original card, and ordinary progress shares one card per workflow.
 
 Watch settings opens with all watched workflows across projects. Each row shows the project, captain conversation, workflow name and notification types. Select a row to edit its subscription. Enable **Node progress** to see starts, completions, failures and cancellations during the subscription. A start names its completed direct dependencies. Activity links open the node and progress is counted separately from pending human decisions.
 

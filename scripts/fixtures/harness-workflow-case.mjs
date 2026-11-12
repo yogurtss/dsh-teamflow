@@ -96,6 +96,9 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   await supervisor('set',{teamId:activeTeam,previous:null,watch:subscription});
   assert.deepEqual((await supervisor('overview')).rows[0].items.map(i=>i.taskId),['g1']);
   const master=await supervisor('chat');
+  assert.deepEqual(await supervisor('chat',{workspaceId:''}),master);
+  assert.deepEqual(await supervisor('catalog',{workspaceId:'missing-workspace'}),{rows:[],missingWorkspace:true});
+  assert.equal((await supervisor('history',{workspaceId:'',summaryOnly:true})).sessionId,master.sessionId);
   const otherPath=mkdirSync('global-chat-other-project',{recursive:true})??'global-chat-other-project';
   const other=await ctx.workspaceRegistry.create(otherPath,'Second project');
   assert.deepEqual(await supervisor('chat',{workspaceId:other.id}),master);
