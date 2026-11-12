@@ -1,7 +1,7 @@
 import { parseGalleryAccess, type GalleryAccess } from "./gallery-access.ts"
 /** Runtime-independent template format. Only explicitly portable fields are exported. */
 import type { TeamState } from './types.ts'
-import type { WorkflowOperation } from './workflow-types.ts'
+import { parseMemberExecutionPrompt, type WorkflowOperation } from './workflow-types.ts'
 import { emptyBrief, parseBrief, type TaskBrief } from './template-brief.ts'
 
 export interface TemplateMember extends GalleryAccess { name: string; summary: string; role: string; executionPrompt: string }
@@ -58,7 +58,7 @@ export function parseTemplate(value: unknown): TemplateDefinition {
   if (v['loops'] !== undefined && (!Array.isArray(v['loops']) || v['loops'].length > 0)) throw new Error('Loop templates require the dev build; main will not remove their control flow.')
   const members = array(v['members'], 32).map(raw => {
     const m = object(raw)
-    return {name:text(m['name'],true,80), summary:text(m['summary']), role:text(m['role']), executionPrompt:text(m['executionPrompt']), ...parseGalleryAccess(m)}
+    return {name:text(m['name'],true,80), summary:text(m['summary']), role:text(m['role']), executionPrompt:parseMemberExecutionPrompt(m['executionPrompt']), ...parseGalleryAccess(m)}
   })
   if (members.some(m => !/^[\p{L}\p{N}_-]+$/u.test(m.name) || m.name.toLowerCase() === 'captain') || new Set(members.map(m=>m.name.toLowerCase())).size !== members.length) throw new Error('模板成员名称重复或无效')
   const tasks = array(v['tasks'], 32).map(raw => {

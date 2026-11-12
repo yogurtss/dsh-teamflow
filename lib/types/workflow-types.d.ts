@@ -1,4 +1,6 @@
 import type { GalleryAccess } from "./gallery-access.ts";
+export declare const MAX_MEMBER_PE_LENGTH = 64000;
+export declare function parseMemberExecutionPrompt(value: unknown): string;
 /** Persistent human-controlled workflow and isolated discussion contracts. */
 export type WorkflowOperation = (GalleryAccess & {
     action: 'add_member';

@@ -49,7 +49,7 @@ TeamFlow first proposes roles, dependencies, and reusable task requirements, the
 
 ### 2. Review the plan
 
-Open the canvas and select tasks to check their **requirements, deliverables, and acceptance criteria**. Check each member's role, instructions, model, and thinking level. A member can own more than one task.
+Open the canvas and select tasks to check their **requirements, deliverables, and acceptance criteria**. Check each member's role, instructions, model, and thinking level. Each member’s execution instructions (PE) can contain up to 64,000 characters in the workbench and reusable templates. A member can own more than one task.
 
 Tasks distinguish **general requirements** (the reusable process) from **current requirements** (the complete task for this run). Execution agents receive the current task text, so it must include all applicable constraints—not just additions to the template. Resolve any adaptation issues before starting.
 

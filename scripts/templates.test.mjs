@@ -25,6 +25,26 @@ const template=()=>({...definition(),id:'11111111-1111-4111-8111-111111111111',v
 const team=()=>instantiateTemplate(template(),'new-team','captain','算子 B','实现算子 B')
 const adaptation=t=>t.tasks.map(task=>({action:'update_task',id:task.id,description:`本次处理算子 B：${task.subject}。交付 B 的实现，验收 B 的正确性。`,adaptationIssue:'',confirmConfiguration:true}))
 
+test('member PE survives workflow edits, template reuse and persona generation at the character limit', () => {
+  const prompt = '指'.repeat(63_999) + '末'
+  const add = { action: 'add_member', name: 'writer', summary: 'Write', executionPrompt: prompt }
+  const update = { action: 'update_member', name: 'worker', executionPrompt: prompt }
+  const edited = applyWorkflowOperations(team(), parseWorkflowOperations([add, update]))
+  const saved = templateSeed(edited)
+  const reused = instantiateTemplate({ ...template(), ...saved }, 'reused', 'captain', 'Reuse', 'Write')
+  for (const member of reused.members) {
+    assert.equal(member.executionPrompt, prompt)
+    assert.ok(memberPersona(reused, member, '.team').includes(prompt))
+  }
+
+  for (const op of [add, update]) {
+    assert.throws(() => parseWorkflowOperations([{ ...op, executionPrompt: prompt + '字' }]), /64000/)
+  }
+  saved.members[0].executionPrompt += '字'
+  assert.throws(() => parseTemplate(saved), /64000/)
+  assert.throws(() => parseWorkflowOperations([{ ...update, specificPrompt: '字'.repeat(16_001) }]))
+})
+
 test('export and instantiation keep structure but never reuse execution/session/route data',()=>{
   const source=team();Object.assign(source.tasks[0],{output:'A secret result',attempt:5,status:'completed',attemptId:'old',changedPaths:['A.cpp']});Object.assign(source.members[0],{id:'old-session',provider:'old-provider',specificPrompt:'A ONLY'});source.workflow.discussions={};
   source.workflow.positions['task:deleted']={x:12,y:12};source.members[0].status='removed';

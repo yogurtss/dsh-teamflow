@@ -687,6 +687,7 @@ Object.assign(workflowEnglish, {
   "团队不存在": "Team not found",
   "请打开原队长会话后继续": "Open the original captain session to continue",
   "操作必须是对象": "Each operation must be an object",
+  "成员执行指令最多允许 {0} 个字符": "Member execution instructions can contain up to {0} characters",
   "{0} 必须是有效文本": "{0} must be valid text",
   "{0} 必须是字符串列表": "{0} must be a list of strings",
   "每次提案需要 1–50 个修改": "Each proposal requires 1–50 changes",
