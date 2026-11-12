@@ -1517,16 +1517,31 @@ test('confirmed force end drains work, records the matching captain report, then
   assert.equal((await f.call('restore_archive')).team.closeout, undefined)
 })
 
-test('an unresponsive captain does not hold the workflow open', async t => {
+test('force end waits for a slow captain and archives the eventual report', async t => {
   const source = withGate()
-  const realTimeout = globalThis.setTimeout
-  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) =>
-    realTimeout(callback, delay === 90000 ? 1 : delay, ...args))
-  const f = await lifecycleFixture(t, source, {captain:{cancel(){}, followup(){}, whenIdle:()=>new Promise(()=>{})}})
-  const result = await f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'timed-out'})
+  const started = Promise.withResolvers()
+  const finished = Promise.withResolvers()
+  const f = await lifecycleFixture(t, source, {captain:{
+    cancel(){},
+    followup(message) {
+      this.session.ownEvents = () => [
+        {type:'user/message',data:message},
+        {type:'assistant/message',data:{message:{content:[{type:'text',text:'Final handover'}]}}},
+      ]
+    },
+    whenIdle(){ started.resolve(); return finished.promise },
+  }})
+  t.mock.timers.enable({apis:['setTimeout']})
+  const ending = f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'slow-captain'})
+  await started.promise
+  t.mock.timers.tick(300000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok((await f.read())?.halted)
+  finished.resolve()
+  const result = await ending
   assert.equal(result.code, 200, result.error)
-  assert.equal(result.team.closeout.source, 'snapshot')
-  assert.equal(await f.read(), undefined)
+  assert.equal(result.team.closeout.source, 'captain')
+  assert.equal(result.team.closeout.report, 'Final handover')
 })
 
 test('force end archives a clearly attributed task record if captain reporting fails', async t => {

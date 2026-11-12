@@ -1,6 +1,6 @@
-/** Bounded requests. Never replay a mutation when its server-side outcome is unknown. */
-async function transport<T>(payload: Record<string,unknown>, fetcher: typeof fetch, timeoutMs: number, signal?:AbortSignal): Promise<T> {
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs)
+/** Never replay a mutation when its server-side outcome is unknown. */
+async function transport<T>(payload: Record<string,unknown>, fetcher: typeof fetch, timeoutMs: number | null, signal?:AbortSignal): Promise<T> {
+  const controller=new AbortController(),timer=timeoutMs === null ? undefined : setTimeout(()=>controller.abort(),timeoutMs)
   const cancel=()=>controller.abort(signal?.reason)
   signal?.addEventListener('abort',cancel,{once:true})
   if(signal?.aborted)cancel()
@@ -21,7 +21,7 @@ const reads = new Set(['state','archive_state','conversation_state','template_li
 type Pending = { controller: AbortController; promise: Promise<unknown>; consumers: number }
 const requests = new WeakMap<typeof fetch, Map<string, Pending>>()
 let generation = 0
-export function workflowRequest<T>(payload: Record<string,unknown>, fetcher: typeof fetch = fetch, timeoutMs = reads.has(String(payload['action'])) ? 12000 : payload['action'] === 'force_end' ? 150000 : 45000, signal?: AbortSignal): Promise<T> {
+export function workflowRequest<T>(payload: Record<string,unknown>, fetcher: typeof fetch = fetch, timeoutMs: number | null = reads.has(String(payload['action'])) ? 12000 : payload['action'] === 'force_end' ? null : 45000, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException('Aborted','AbortError'))
   if (!reads.has(String(payload['action']))) {
     generation++

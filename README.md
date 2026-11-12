@@ -79,7 +79,7 @@ The compact status capsule shows completed-node progress and an attention count.
 
 For a finished, failed, or cancelled task, review the previous result, fill in the required rerun instructions, and choose **Save and rerun task**. Review the affected downstream nodes: they reset and pause for individual confirmation, including renewed human reviews. Earlier results remain in execution history. Stop active affected tasks before rerunning.
 
-If a workflow cannot continue, choose **Force end** in the upper-right corner of the canvas and confirm. Unfinished nodes are cancelled. The captain has up to 90 seconds to provide a handover report. The archived canvas shows the report or, if unavailable, a summary of recorded task results.
+If a workflow cannot continue, choose **Force end** in the upper-right corner of the canvas and confirm. Unfinished nodes are cancelled. Archiving waits for the captain to finish the handover report. The archived canvas shows the report or, if unavailable, a summary of recorded task results.
 
 Completed workflows remain readable and editable. Archive only when work is complete; **Restore and edit workflow** reopens an archive for review with fresh member sessions and unfinished tasks paused. It does not overwrite an existing live team.
 

@@ -28,22 +28,19 @@ async function requestReport(captain: Agent, summary: string, english: boolean):
     content: [{type:'text', text:task + '\n\n' + summary.slice(0, 28000)}],
   })
   captain.followup(prompt)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([captain.whenIdle(), new Promise<void>(resolve => { timer = setTimeout(resolve, 90000) })])
-    let matching = false
-    let report: string | undefined
-    for (const event of sessionOwnEvents(captain.session)) {
-      if (event.type === 'user/message' && event.data.id === prompt.id) matching = true
-      else if (matching && (event.type === 'turn/start' || event.type === 'turn/end')) break
-      else if (matching && event.type === 'assistant/message' && !event.data.interrupted &&
-        !event.data.message.content.some(block => block.type === 'tool-call')) {
-        const text = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
-        if (text) report = text
-      }
+  await captain.whenIdle()
+  let matching = false
+  let report: string | undefined
+  for (const event of sessionOwnEvents(captain.session)) {
+    if (event.type === 'user/message' && event.data.id === prompt.id) matching = true
+    else if (matching && (event.type === 'turn/start' || event.type === 'turn/end')) break
+    else if (matching && event.type === 'assistant/message' && !event.data.interrupted &&
+      !event.data.message.content.some(block => block.type === 'tool-call')) {
+      const text = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
+      if (text) report = text
     }
-    return report
-  } finally { clearTimeout(timer) }
+  }
+  return report
 }
 
 export async function forceEndWorkflow(ctx: Context, root: string, teamId: string, captain: Agent, createdAt: number, requestId: string, english: boolean): Promise<TeamState> {
