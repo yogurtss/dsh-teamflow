@@ -1695,6 +1695,7 @@ export function canDeclareDelivery(team: TeamState, audit: DeliveryAudit = {}): 
 }
 
 export function resumeTeamState(team: TeamState, reason: string): ResumeTeamResult {
+  if (team.closeout) throw new Error('流程正在强制结束，无法恢复执行')
   if (!nonemptyString(reason)) {
     return { ok: false, status: 'rejected', error: 'resume requires a non-empty reason' }
   }

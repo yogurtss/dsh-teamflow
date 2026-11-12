@@ -15,6 +15,7 @@ export function assertWorkflowArchivable(team: TeamState): void {
 export function prepareArchivedWorkflow(archived: TeamState): TeamState {
   if(!archived.workflow && !archived.tasks.some(task=>task.checkpoint)) throw new Error('此历史记录不包含可恢复的 TeamFlow 流程')
   const team=structuredClone(archived), now=Date.now()
+  delete team.closeout
   team.phase='staged';team.planReviewState='awaiting_review';team.halted=false;delete team.haltedAt
   team.workflow??={positions:{},discussions:{},history:[]}
   if (team.workflow.loops?.length) {

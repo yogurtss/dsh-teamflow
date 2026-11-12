@@ -29,6 +29,7 @@ import { flowControlVersion } from './client/task-control.ts'
 import { assembleTeamSnapshot } from './snapshot.ts'
 import { leadIdentityOfAsync, sessionLeadsTeamAsync } from './lineage.ts'
 import { resolveMemberLlmSelection, memberActivity } from './members.ts'
+import { forceEndWorkflow } from './workflow-closeout.ts'
 import { drainMemberChildren } from './harness-compat.ts'
 import { excerpt, resultDigest, reviewResult } from './review-results.ts'
 import { createWorkspaceAuditor } from './workspace-audit-async.ts'
@@ -183,6 +184,12 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       }
       if (!teamId || sanitizeKey(teamId) !== teamId) throw new Error('无效团队 ID')
       const lock = `team:${root}:${teamId}`
+      if (action === 'force_end') {
+        if (address || body['confirmed'] !== true || typeof body['createdAt'] !== 'number') throw new Error('请在流程画布中确认强制结束')
+        const ended = await forceEndWorkflow(ctx, root, teamId, captain, body['createdAt'], string(body['requestId'], 'requestId', 80), body['language'] === 'en')
+        reply(200, {team: ended, base: workflowFingerprint(ended), ready: [], busy: []})
+        return
+      }
       if (action === 'loop_history') {
         const archived = body['archived'] === true
         const source = archived ? await readArchivedTeam(root, teamId) : await readTeam(root, teamId)
@@ -230,6 +237,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
       const load = async (): Promise<TeamState> => {
         const team = await readTeam(root, teamId)
         if (!team || (address && !boundDiscussion(team, caller)) || !(await sessionLeadsTeamAsync(ctx, team, captain.id))) throw new Error('当前会话不能管理此团队')
+        if (team.closeout && action !== 'state' && action !== 'conversation_state') throw new Error('流程正在强制结束')
         if (team.workflow?.templateSource) nameTemplateCaptain(ctx, captain, team.name)
         return team
       }
@@ -246,7 +254,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           executionRounds: loop.executionRounds, tasks: results(team.tasks), previous: previous && { round: previous.round, tasks: results(previous.tasks) } })
         return
       }
-      if (action === 'state') await withTeamLock(lock, async () => { const team = await load(); if (reconcileLoops(team)) await writeTeam(root, team) })
+      if (action === 'state') await withTeamLock(lock, async () => { const team = await load(); if (!team.closeout && reconcileLoops(team)) await writeTeam(root, team) })
       if (['start_path','resume_rerun_path','resume_task','continue_task','reopen_review'].includes(action)) {
         if (loopForTask(await load(), String(body['taskId']))) throw new Error('请通过循环面板启动或继续，避免跳过门控和轮次上限')
       }
