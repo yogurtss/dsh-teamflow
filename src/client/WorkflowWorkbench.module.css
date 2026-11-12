@@ -70,6 +70,8 @@
 .columns[data-inspector-hidden='true'] { grid-template-columns: 224px minmax(0,1fr); }
 .columns[data-inspector-hidden='true']>.inspector, .columns[data-inspector-hidden='true']>.resizeHandle { display: none; }
 .inspector { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--wb-bg); overflow: hidden; }
+.taskDiscussionAction { flex:none; display:grid; gap:5px; padding:8px 12px; border-bottom:1px solid var(--wb-border); }
+.taskDiscussionAction button { display:flex; align-items:center; justify-content:center; gap:6px; }
 .inspectorHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--wb-border); flex: none; }
 .inspector>.editor, .inspector>.discussion { flex: 1; min-height: 0; border: 0; width: 100%; }
 .resizeHandle { cursor: col-resize; touch-action: none; background: var(--wb-border); }

@@ -32,6 +32,14 @@ try {
   assert.match(await inspector.innerText(),/Agent · worker/)
   await taskButton.click()
   assert.match(await inspector.innerText(),/任务 · 方案/)
+  const discussion=page.getByRole('button',{name:'与 AI 讨论任务',exact:true})
+  assert.equal(await discussion.count(),1)
+  assert.ok(await discussion.evaluate(button=>{
+    const panel=button.closest('section')
+    const field=panel.querySelector('[data-field="subject"]')
+    return panel.querySelector('header').nextElementSibling.contains(button)
+      && button.getBoundingClientRect().bottom <= field.getBoundingClientRect().top
+  }))
   for(const region of [memberButton.locator('img'),memberButton.locator('b'),taskButton,card.locator('[data-card-tone] > span:last-child')]){
     const before=await card.evaluate(node=>[node.offsetLeft,node.offsetTop])
     const bounds=await region.boundingBox()
