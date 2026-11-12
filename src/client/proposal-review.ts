@@ -5,7 +5,7 @@ import type { WorkflowOperation } from '../workflow-types.ts'
 
 const memberFields = ['summary', 'role', 'executionPrompt', 'specificPrompt', 'provider', 'model', 'reasoningEffort', 'gallerySkill', 'galleryMcp'] as const
 const taskFields = ['subject', 'description', 'assignee', 'dependencies'] as const
-const labels: Record<string, string> = { name: '成员名称', id: '任务 ID', summary: 'Summary · 功能概述', role: '长期职责', executionPrompt: '执行指令 / PE', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', gallerySkill: '允许使用 Gallery Skill', galleryMcp: '允许使用 Gallery MCP', subject: '任务名称', description: '任务要求 / 验收要求', assignee: '负责人', dependencies: '上游任务 ID', taskIds: '返工任务 ID', instructions: '本次要求' }
+const labels: Record<string, string> = { name: '成员名称', id: '任务 ID', summary: 'Summary · 功能概述', role: '角色职责', executionPrompt: '执行指令 / PE', provider: '模型提供方', model: '模型', reasoningEffort: 'Thinking', gallerySkill: '允许使用 Gallery Skill', galleryMcp: '允许使用 Gallery MCP', subject: '任务名称', description: '任务要求 / 验收要求', assignee: '负责人', dependencies: '上游任务 ID', taskIds: '返工任务 ID', instructions: '本次要求' }
 export type ReviewField = { key: string; label: string; before: string; after: string; array: boolean; editable: boolean }
 const show = (value: unknown): string => Array.isArray(value) ? value.join('\n') : typeof value === 'string' || typeof value === 'boolean' ? String(value) : ''
 export function reviewFields(team: TeamState, operation: WorkflowOperation, l: WorkflowText = sourceText): { title: string; fields: ReviewField[] } {
