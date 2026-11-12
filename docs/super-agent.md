@@ -13,6 +13,8 @@ Subscriptions default to off. Completing a workflow expires an ordinary subscrip
 
 ## Asynchronous coordination design
 
+The sidebar opens the current global conversation. A per-conversation read cursor survives host restarts. Opening the current chat acknowledges incoming entries through the sequence fetched for that view. Settings and archived chats leave the cursor alone. Revisions of a card share one unread slot. Clearing context creates a new native session and keeps previous transcripts available for review.
+
 The global conversation currently receives attention cards and reads subscribed workflow summaries. Its only model tool is `teamflow_watched_workflows`. Workflow state determines when cards open and close. A user's new instruction in the global conversation currently has no delivery path to a Captain.
 
 The design article assigns cross-task decisions to a persistent Router and allows an entire agent team to serve as a Worker. A TeamFlow run already has an appropriate execution owner in its Captain. The public prototype narrows the article's design to a repository and routes assessed work through a domain engine. [Design article, sections 2–4](https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg) · [Prototype scope](https://github.com/deepseek-ai/dsh-superagent-prototype)

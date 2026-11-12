@@ -9,7 +9,7 @@ import css from './SuperAgent.module.css'
 export function SupervisorMessage({node,sessionId,t,sessions,modelDirectories,openMember}:PropsRuntime<'conversation.chat.node','teamflow-supervisor'>&PropsLocale<'agentTeams'>&WorkflowLauncherProps){
   return <ConversationCard card={node.data} {...{sessionId,t,sessions,modelDirectories,openMember}} />
 }
-export function ConversationCard({card,sessionId,t,sessions,modelDirectories,openMember}:Pick<WorkflowLauncherProps,'t'|'sessions'|'modelDirectories'|'openMember'>&{card:import('../super-agent-card.ts').SupervisorCard;sessionId:string}){
+export function ConversationCard({card,archived,sessionId,t,sessions,modelDirectories,openMember}:Pick<WorkflowLauncherProps,'t'|'sessions'|'modelDirectories'|'openMember'>&{archived?:boolean;card:import('../super-agent-card.ts').SupervisorCard;sessionId:string}){
   const en=t('language.code')==='en'
   const [open,setOpen]=useState(false),[error,setError]=useState(''),[asking,setAsking]=useState(false),[question,setQuestion]=useState(''),[busy,setBusy]=useState(false)
   const token=useRef<AbortController>()
@@ -33,7 +33,7 @@ export function ConversationCard({card,sessionId,t,sessions,modelDirectories,ope
     <small>Super Agent · {caption}</small><h3>{card.item.title}</h3><p>{card.project} / {card.workflow}{card.item.round?' · '+(en?'Round ':'第 ')+card.item.round+(en?'':' 轮'):''}</p>
     {card.summary&&<blockquote>{card.summary}</blockquote>}
     <button onClick={locate}>{card.item.kind==='review'?(en?'View round evidence':'查看本轮证据'):(en?'Open Workflow':'查看 Workflow')} ↗</button>
-    <button onClick={()=>setAsking(!asking)}>{en?'Ask about this':'询问此事项'}</button>
+    {!archived&&<button onClick={()=>setAsking(!asking)}>{en?'Ask about this':'询问此事项'}</button>}
     {asking&&<form onSubmit={e=>{e.preventDefault();void ask()}}><input autoFocus aria-label={en?'Question':'问题'} value={question} maxLength={4000} onChange={e=>setQuestion(e.target.value)}/><button disabled={busy||!question.trim()}>{en?'Send':'发送'}</button></form>}
     {error&&<p role="alert">{error}</p>}
     {open&&<WorkflowWorkbench initiallyOpen sessionId={card.captain} teamId={card.teamId} t={t} supervisorTarget={card.item} modelDirectory={modelDirectories.directoryFor(card.captain as SessionId)} openExecution={(id,parent)=>openMember((parent??card.captain) as SessionId,id as SessionId)} onClose={()=>{setOpen(false);token.current?.abort()}}/>}

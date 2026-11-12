@@ -13,7 +13,7 @@ import { remainingMessage } from './workbench-drafts.ts'
 
 type Chat = { revision?:string; messages: { id: string; role: string; text: string; streaming?:boolean }[]; busy: boolean }
 const discussionCache=createWorkflowCache<Chat>(4,2*1024*1024)
-const AssistantReply = memo(function AssistantReply({ text, streaming }: { text: string; streaming: boolean }) {
+export const AssistantReply = memo(function AssistantReply({ text, streaming }: { text: string; streaming: boolean }) {
   const l = useWorkflowText()
   const labels = useMemo(() => ({
     code: {

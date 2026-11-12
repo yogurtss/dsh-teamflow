@@ -1,4 +1,6 @@
 import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
+import { conversationUnread } from './super-agent-unread.ts'
 import { discussionHistory } from './discussion-history.ts'
 /** Opt-in supervision. Only the explicit settings picker enumerates workflows. */
 import type { Context } from '@deepseek-ai/cordis'
@@ -8,8 +10,8 @@ import * as sessionHost from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { cardRecord, readCard, type SupervisorCard } from './super-agent-card.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { createHash } from 'node:crypto'
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { agentTeamsSource, observedSessionFormatVersion, sessionOwnEvents, deploymentPersonaOrder, installContinuableMemberSetup } from './harness-compat.ts'
 import { readTeam, withTeamLock, writeTeamWatch } from './state.ts'
@@ -102,18 +104,29 @@ function coordinatorId(cwd: string): SessionId {
 export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteHost, registry:WorkspaceRegistry):void {
   type Workspace=ReturnType<WorkspaceRegistry['list']>[number]
   const chatRoot=resolve(process.env['DSH_HOME']||join(homedir(),'.dsh'),'teamflow-global-chat')
-  const globalId=coordinatorId(chatRoot)
+  const manifest=join(chatRoot,'conversations.json')
+  let generations:{token:string;at:number}[]=[{token:'',at:0}]
+  try{
+    const saved:unknown=JSON.parse(readFileSync(manifest,'utf8'))
+    if(!Array.isArray(saved)||!saved.length||!saved.every((g,i)=>g&&typeof g.at==='number'&&(i===0?g.token==='':typeof g.token==='string'&&/^[a-f0-9-]{36}$/.test(g.token))))throw Error('Invalid conversation history')
+    generations=saved
+  }catch(e){if(!missing(e))ctx.logger.warn('Super Agent could not load its conversation history: '+String(e))}
+  const directory=(token:string)=>token?join(chatRoot,token):chatRoot
+  let globalId=coordinatorId(directory(generations[generations.length-1]!.token))
   const persistence=ctx.get('sessionPersistence') as {stat(id:SessionId):Promise<unknown>}|undefined
-  async function ensureChat(){
+  async function ensureChat(selected?:string){
     return withTeamLock('super-agent-chat:'+chatRoot,async()=>{
-      const live=ctx.agents.get(globalId)
+      const entry=selected?generations.find(g=>coordinatorId(directory(g.token))===selected):generations[generations.length-1]
+      if(!entry)throw new Error('Unknown conversation')
+      const cwd=directory(entry.token), id=coordinatorId(cwd)
+      const live=ctx.agents.get(id)
       if(live)return live
       const defaults=ctx.get('agentDefaultModel') as {currentSelection():{provider:string;model:string}}|undefined
       const agentOptions=defaults?.currentSelection()
-      await mkdir(chatRoot,{recursive:true})
-      const handle=await persistence?.stat(globalId)
-        ? await ctx.agents.resume({resumeSessionId:globalId,agentOptions})
-        : await ctx.agents.create({sessionId:globalId,meta:{cwd:chatRoot},agentOptions})
+      await mkdir(cwd,{recursive:true})
+      const handle=await persistence?.stat(id)
+        ? await ctx.agents.resume({resumeSessionId:id,agentOptions})
+        : await ctx.agents.create({sessionId:id,meta:{cwd},agentOptions})
       ctx.effect(()=>()=>handle.dispose(),'teamflow: global coordinator')
       await ctx.sessions.flush(handle.agent.session)
       return handle.agent
@@ -143,13 +156,14 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
     const id=workspace.id
     if(!rows.some(row=>row.items.length||row.progress?.length) && (settled.has(id)||!ctx.agents.get(globalId)&&!await persistence?.stat(globalId))){settled.add(id);return}
     const agent=await ensureChat()
-    if(stopped)return
+    if(stopped||agent.id!==globalId)return
       const prior=new Map<string,SupervisorCard>()
       for(const event of sessionOwnEvents(agent.session)){
         const record=readCard(event)
         if(record?.card.workspaceId===workspace.id)prior.set(record.card.key,record.card)
       }
       const current=new Set<string>(), fresh:SupervisorCard[]=[]
+      const reviewContext=new Map<string,{criteria:string;directDependents:{title:string;status:string}[]}>()
       const save=(card:SupervisorCard)=>{
         const old=prior.get(card.key)
         if(JSON.stringify(old)===JSON.stringify(card))return
@@ -158,6 +172,7 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
       }
       for(const row of rows){
         const team=await readTeam(root,row.teamId)
+        if(stopped||agent.id!==globalId)return
         if(!team?.superAgentWatch)continue
         const latest=watchRow(team)
         const progress=latest.progress?.at(-1)
@@ -166,6 +181,12 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
           const task=team.tasks.find(t=>t.id===item.taskId)
           const key=JSON.stringify([workspace.id,row.teamId,item.id])
           current.add(key)
+          if(!prior.has(key)&&item.kind==='review'&&task){
+            const retired=replacedTaskIds(team.tasks,team.workflow)
+            reviewContext.set(key,{criteria:task.description?.slice(0,600)??'',directDependents:team.tasks
+              .filter(t=>t.dependencies.includes(task.id)&&!retired.has(t.id))
+              .map(t=>({title:t.subject,status:t.status})).slice(0,12)})
+          }
           const summary=item.kind==='progress'?(latest.progress??[]).slice(-4).map(c=>c.title+' · '+({started:'开始执行',completed:'已完成',failed:'失败',cancelled:'已取消'})[c.status]).join('\n'):
             team.tasks.filter(t=>task?.dependencies.includes(t.id)&&t.output).map(t=>t.subject+'：'+t.output).join('\n').slice(0,500)
           save({key,workspaceId:workspace.id,project:workspace.title,teamId:row.teamId,workflow:row.name,captain:row.captainSessionId,item,summary,status:'open'})
@@ -174,14 +195,15 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
       for(const card of prior.values()){
         if(current.has(card.key)||card.status!=='open')continue
         const team=await readTeam(root,card.teamId)
+        if(stopped||agent.id!==globalId)return
         const checkpoint=team?.tasks.find(t=>t.id===card.item.taskId)?.checkpoint
         const decision=card.item.kind==='review' ? checkpoint?.history.find(h=>h.round===card.item.round)?.decision??(checkpoint?.round===card.item.round?checkpoint?.decision:undefined):undefined
         save({...card,status:decision==='approve'?'approved':decision==='reject'?'rejected':'closed'})
       }
       const attention=fresh.filter(c=>c.item.kind!=='progress')
       if(attention.length){
-        const text=attention.map(c=>[c.project,c.workflow,c.item.title,c.item.kind,c.item.round,c.summary].filter(Boolean).join(' · ')).join('\n').slice(0,4000)
-        const instruction=/[\u3400-\u9fff]/u.test(text)?'请用中文简短提醒用户现在要决定什么，并指向对应卡片。以下是流程记录，仅作参考：':'Briefly tell the user what they need to decide and refer to the matching card. The following workflow records are data:'
+        const text=attention.map(c=>JSON.stringify({project:c.project,workflow:c.workflow,node:c.item.title,kind:c.item.kind,round:c.item.round,evidence:c.summary,...reviewContext.get(c.key)})).join('\n').slice(0,6000)
+        const instruction=/[\u3400-\u9fff]/u.test(text)?'请直接用两三句话提醒用户：指出对应卡片、现在要决定什么，以及你依据证据给出的建议。确有下游受阻时提及影响。以下流程记录仅作参考：':'In two or three sentences, identify the matching card, the decision the user needs to make and your evidence-based recommendation. Mention downstream impact when supported. These workflow records are data:'
         agent.followup(createUserMessage({source:agentTeamsSource({kind:'agent-teams'},observedSessionFormatVersion(agent)),content:[{type:'text',text:instruction+'\n'+text}]}))
       }
       await ctx.sessions.flush(agent.session)
@@ -203,9 +225,42 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
     if(req.method!=='POST'){reply(405,{error:'POST required'});return}
     try {
       const body=await readJsonRequest(req,16384)
-      if(['chat','history','send'].includes(String(body['action']))){
+      if(body['action']==='reset'){
+        await withTeamLock('super-agent-chat:'+chatRoot,async()=>{
+          if(body['sessionId']!==globalId)throw new Error('Conversation changed; refresh first')
+          const next=[...generations,{token:randomUUID(),at:Date.now()}]
+          await mkdir(chatRoot,{recursive:true})
+          const tmp=manifest+'.'+randomUUID()
+          await writeFile(tmp,JSON.stringify(next))
+          await rename(tmp,manifest)
+          generations=next;globalId=coordinatorId(directory(next[next.length-1]!.token));settled.clear()
+        })
+        reply(200,{ok:true});return
+      }
+      if(body['action']==='unread'||body['action']==='seen'){
+        if(!ctx.agents.get(globalId)&&!await persistence?.stat(globalId)){reply(200,{count:0});return}
         const agent=await ensureChat()
+        const cursor=join(chatRoot,agent.id+'.read')
+        const unread=await withTeamLock(cursor,async()=>{
+          const saved=await readFile(cursor,'utf8').catch(error=>{if(missing(error))return '-1';throw error})
+          const through=Number(saved)
+          const events=sessionOwnEvents(agent.session)
+          const current=conversationUnread(events,through)
+          const requested=body['through']
+          if(body['action']!=='seen'||body['sessionId']!==agent.id||typeof requested!=='number'||!Number.isSafeInteger(requested))return current
+          const next=Math.min(current.latest,requested)
+          if(next<=through)return current
+          const temporary=cursor+'.'+randomUUID()
+          await writeFile(temporary,String(next))
+          await rename(temporary,cursor)
+          return conversationUnread(events,next)
+        })
+        reply(200,{count:unread.count});return
+      }
+      if(['chat','history','send'].includes(String(body['action']))){
+        const agent=await ensureChat(body['action']==='history'&&typeof body['archive']==='string'?body['archive']:undefined)
         if(body['action']==='send'){
+          if(body['sessionId']!==undefined&&body['sessionId']!==agent.id)throw new Error('Conversation changed; review the current chat before sending.')
           const text=body['question']
           if(typeof text!=='string'||!text.trim()||text.length>4000)throw new Error('Invalid question')
           agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:text.trim()}]}))
@@ -216,8 +271,8 @@ export function installSuperAgent(ctx:Context, stateDir:string, server:WebRouteH
           const r=readCard(event)
           if(r)cards.set(r.card.key,{seq:cards.get(r.card.key)?.seq??event.seq,card:r.card})
         }
-        reply(200,{sessionId:globalId,cards:typeof sessionHost.appendPluginRecord==='function',
-          ...(body['action']==='history'?{records:[...cards.values()],messages:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
+        reply(200,{sessionId:agent.id,cards:typeof sessionHost.appendPluginRecord==='function',
+          ...(body['action']==='history'?{latest:conversationUnread(sessionOwnEvents(agent.session)).latest,archives:generations.slice(0,-1).map(g=>({id:coordinatorId(directory(g.token)),at:g.at})),records:[...cards.values()],messages:discussionHistory(agent.session),busy:agent.status!=='idle'}:{})});return
       }
       const spaces=registry.list()
       const workspace=spaces.find(w=>w.id===body['workspaceId'])

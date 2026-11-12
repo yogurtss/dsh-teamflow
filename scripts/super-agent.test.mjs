@@ -106,3 +106,20 @@ test('native card replay folds status updates into the original review round',as
   assert.deepEqual(fold.match(end),{id:card.key,role:'update'})
   assert.equal(fold.update({}, {event:end}).status,'approved')
 })
+
+import { conversationUnread } from '../lib/super-agent-unread.js'
+
+test('only incoming visible entries are unread, and one card retains its identity across revisions', () => {
+  const card = {key:'review',captain:'a',workspaceId:'project',item:{title:'Review'}}
+  const record = (seq, revision) => ({seq,type:'plugin:teamflow/super-agent-card',data:{revision,card}})
+  const events = [
+    {seq:0,type:'user/message',data:{content:[{type:'text',text:'question'}]}},
+    record(1,'start'), record(2,'update'),
+    {seq:3,type:'assistant/message',data:{message:{content:[{type:'toolCall'}]}}},
+    {seq:4,type:'assistant/message',data:{message:{content:[{type:'text',text:'answer'}]}}},
+  ]
+  assert.deepEqual(conversationUnread(events), {latest:4,count:2})
+  assert.deepEqual(conversationUnread(events,2), {latest:4,count:1})
+  assert.deepEqual(conversationUnread(events,4), {latest:4,count:0})
+  assert.deepEqual(conversationUnread([...events,record(5,'update')],4), {latest:5,count:1})
+})

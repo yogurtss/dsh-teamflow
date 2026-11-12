@@ -1,6 +1,8 @@
 import { ConversationCard } from './SupervisorCard.tsx'
 import type { SupervisorCard } from '../super-agent-card.ts'
 import { BrandIcon } from './BrandIcon.tsx'
+import { AssistantReply } from './EmbeddedDiscussion.tsx'
+import { WorkflowLocale } from './workflow-i18n.tsx'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -12,27 +14,44 @@ import { defaultWatchKinds, watchKinds, type NodeChange, type WatchRow, type Wat
 import css from './SuperAgent.module.css'
 
 type Props = WorkflowLauncherProps
-type Transcript={sessionId:string;busy:boolean;records:{seq:number;card:SupervisorCard}[];messages:{id:string;role:string;text:string}[]}
+const unreadChanged='teamflow:unread-changed'
+const openCurrentChat='teamflow:open-current-chat'
+type Transcript={latest:number;archives:{id:string;at:number}[];sessionId:string;busy:boolean;records:{seq:number;card:SupervisorCard}[];messages:{id:string;role:string;text:string}[]}
 
-function GlobalConversation(props:Props & {anchor?:string;close:()=>void}){
+function GlobalConversation(props:Props & {anchor?:string;close?:()=>void;inline?:boolean;settings?:()=>void;visible?:boolean}){
   const en=props.t('language.code')==='en'
   const [log,setLog]=useState<Transcript>(),[draft,setDraft]=useState(''),[error,setError]=useState(''),[sending,setSending]=useState(false)
+  const [archive,setArchive]=useState(''),[confirm,setConfirm]=useState(false),[generation,reload]=useState(0)
   const feed=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null)
   const stick=useRef(!props.anchor),anchored=useRef(false)
   useEffect(()=>{
+    const open=()=>{setArchive('');setConfirm(false);stick.current=true}
+    window.addEventListener(openCurrentChat,open)
+    return ()=>window.removeEventListener(openCurrentChat,open)
+  },[])
+  useEffect(()=>{
     const before=document.activeElement as HTMLElement|null
+    if(props.visible===false)return
     input.current?.focus()
     const controller=new AbortController()
     let timer:ReturnType<typeof setTimeout>
+    let acknowledged=-1,seenSession=''
     async function refresh(){
-      try{const next=await request<Transcript>('','history',{},controller.signal)
-        if(!controller.signal.aborted)setLog(next)
+      try{const next=await request<Transcript>('','history',{archive:archive||undefined},controller.signal)
+        if(!controller.signal.aborted){
+          setLog(next)
+          if(!archive && !document.hidden && feed.current?.getClientRects().length && (seenSession!==next.sessionId || next.latest>acknowledged)){
+            const result=await request<{count:number}>('','seen',{sessionId:next.sessionId,through:next.latest},controller.signal)
+            seenSession=next.sessionId;acknowledged=next.latest
+            window.dispatchEvent(new CustomEvent(unreadChanged,{detail:result.count}))
+          }
+        }
       }catch(e){if(!controller.signal.aborted)setError(String(e))}
       finally{if(!controller.signal.aborted)timer=setTimeout(refresh,1200)}
     }
     void refresh()
     return ()=>{controller.abort();clearTimeout(timer);before?.focus()}
-  },[])
+  },[archive,generation,props.visible])
   useEffect(()=>{
     if(!feed.current)return
     if(props.anchor&&!anchored.current){
@@ -43,20 +62,26 @@ function GlobalConversation(props:Props & {anchor?:string;close:()=>void}){
   async function send(){
     if(sending||!draft.trim())return
     setSending(true);setError('')
-    try{await request('','send',{question:draft});setDraft('');stick.current=true}
+    try{await request('','send',{question:draft,sessionId:log?.sessionId});setDraft('');stick.current=true}
     catch(e){setError(String(e))}finally{setSending(false)}
   }
-  const entries=log?[...log.messages.map(m=>({seq:Number(m.id),view:<p className={css.chatLine}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.text}</p>})),
-    ...log.records.map(r=>({seq:r.seq,view:<ConversationCard {...props} sessionId={log.sessionId} card={r.card}/>}))].sort((a,b)=>a.seq-b.seq):[]
-  return <div className={css.dialogShade}><section className={css.globalChat} role="dialog" aria-modal="true" aria-label={en?'Global conversation':'全局对话'}>
-    <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2><button onClick={props.close}>{en?'Close':'关闭'}</button></header>
+  const entries=log?[...log.messages.map(m=>({seq:Number(m.id),view:<div className={css.chatLine} data-role={m.role}><b>{m.role==='user'?(en?'You':'你'):'Super Agent'}</b>{m.role==='user'?m.text:<AssistantReply text={m.text} streaming={false}/>}</div>})),
+    ...log.records.map(r=>({seq:r.seq,view:<ConversationCard {...props} archived={!!archive} sessionId={log.sessionId} card={r.card}/>}))].sort((a,b)=>a.seq-b.seq):[]
+  return <div className={props.inline?css.chatPage:css.dialogShade}><section className={css.globalChat} role={props.inline?'region':'dialog'} aria-modal={props.inline?undefined:true} aria-label={en?'Global conversation':'全局对话'}>
+    <header><BrandIcon/><h2>Super Agent · {en?'Global conversation':'全局对话'}</h2>{props.settings&&<button onClick={props.settings}>{en?'Watch settings':'监听设置'}</button>}
+      {!!log?.archives.length&&<select aria-label={en?'Conversation history':'对话历史'} value={archive} onChange={e=>{setArchive(e.target.value);setLog(undefined)}}><option value="">{en?'Current conversation':'当前对话'}</option>{log.archives.map((a,i)=><option key={a.id} value={a.id}>{en?'History':'历史对话'} {i+1}</option>)}</select>}
+      {!archive&&<button disabled={!log} onClick={()=>setConfirm(true)}>{en?'Clear context':'清除上下文'}</button>}
+      {props.close&&<button onClick={props.close}>{en?'Close':'关闭'}</button>}</header>
+    {confirm&&<div className={css.resetPrompt}><p>{en?'Start a fresh conversation? History, subscriptions and running workflows are retained.':'开始一段新对话？旧聊天可在历史中查看，订阅和运行中的流程会保留。'}</p>
+      <button onClick={()=>setConfirm(false)}>{en?'Cancel':'取消'}</button>
+      <button onClick={async()=>{try{await request('','reset',{sessionId:log?.sessionId});setLog(undefined);setDraft('');setConfirm(false);reload(n=>n+1)}catch(e){setError(String(e))}}}>{en?'Start fresh':'确认清除'}</button></div>}
     <div className={css.chatHistory} ref={feed} onScroll={e=>{const el=e.currentTarget;stick.current=el.scrollHeight-el.scrollTop-el.clientHeight<80}}>
       {!entries.length&&<p>{!log?(en?'Loading…':'正在读取…'):(en?'Ask about watched workflows across your projects.':'可以在这里询问各项目中已监听的流程。')}</p>}
-      {entries.map(e=><div key={e.seq}>{e.view}</div>)}
+      <WorkflowLocale t={props.t}>{entries.map(e=><div key={e.seq}>{e.view}</div>)}</WorkflowLocale>
       {log?.busy&&<small role="status">{en?'Super Agent is responding…':'Super Agent 正在回复…'}</small>}
     </div>
     {error&&<p role="alert">{error}</p>}
-    <form onSubmit={e=>{e.preventDefault();void send()}}><textarea ref={input} aria-label={en?'Message':'消息'} placeholder={en?'Message Super Agent':'给 Super Agent 发消息'} value={draft} maxLength={4000} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/><button disabled={!log||sending||!draft.trim()}>{en?'Send':'发送'}</button></form>
+    {!archive&&<form onSubmit={e=>{e.preventDefault();void send()}}><textarea ref={input} aria-label={en?'Message':'消息'} placeholder={en?'Message Super Agent':'给 Super Agent 发消息'} value={draft} maxLength={4000} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/><button disabled={!log||sending||!draft.trim()}>{en?'Send':'发送'}</button></form>}
   </section></div>
 }
 const changed = 'teamflow:watch-settings-changed'
@@ -145,15 +170,32 @@ function useRows(workspaceId:string|undefined,catalog:boolean) {
 }
 
 export function SuperAgentIcon(props:Props & {size:number}) {
+  const icon=useRef<HTMLSpanElement>(null)
   const {selected}=useWorkspace(props)
   const status=useRows(selected?.workspaceId,false)
-  const count=status?.rows.reduce((n,row)=>n+row.items.length,0)??0
+  const [count,setCount]=useState(0)
+  useEffect(()=>{
+    const controller=new AbortController()
+    const entry=icon.current?.closest('button,[role="button"],a')
+    const open=()=>window.dispatchEvent(new Event(openCurrentChat))
+    entry?.addEventListener('click',open)
+    let timer:ReturnType<typeof setTimeout>,version=0
+    async function refresh(){
+      const at=version
+      try{const value=await request<{count:number}>('','unread',{},controller.signal);if(!controller.signal.aborted&&at===version)setCount(value.count)}
+      catch{/* Keep last known count while reconnecting. */}
+      finally{if(!controller.signal.aborted)timer=setTimeout(refresh,2000)}
+    }
+    const seen=(e:Event)=>{version++;setCount((e as CustomEvent<number>).detail)}
+    window.addEventListener(unreadChanged,seen);void refresh()
+    return ()=>{controller.abort();clearTimeout(timer);entry?.removeEventListener('click',open);window.removeEventListener(unreadChanged,seen)}
+  },[])
   useEffect(()=>{
     if(selected && status && !status.error)window.dispatchEvent(new CustomEvent<Attention>(attentionEvent,{detail:{workspaceId:selected.workspaceId,rows:status.rows}}))
   },[selected?.workspaceId,status])
-  return <span className={css.icon} role="status" aria-label={`Super Agent · ${count}`}>
+  return <span ref={icon} className={css.icon} role="status" aria-label={'Super Agent · '+count+(props.t('language.code')==='en'?' unread':' 条未读')}>
     <svg width={props.size} height={props.size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-35 12 12)"/><circle cx="12" cy="12" r="3"/><circle cx="18" cy="5" r="1.5" fill="currentColor"/></svg>
-    {count>0&&<b>{count}</b>}</span>
+    {count>0&&<b>{count>99?'99+':count}</b>}</span>
 }
 
 export function SuperAgentOverlay(props:Props) {
@@ -220,24 +262,30 @@ export function SuperAgentOverlay(props:Props) {
 }
 
 export function SuperAgentPanel(props:Props & {visit?:SupervisorVisit;back?:()=>void}) {
+  const [settings,setSettings]=useState(false)
+  useEffect(()=>{
+    const open=()=>setSettings(false)
+    window.addEventListener(openCurrentChat,open)
+    return ()=>window.removeEventListener(openCurrentChat,open)
+  },[])
   const picker=useWorkspace(props,props.visit?.sessionId)
   const {workspaces,choose}=picker
   const selected=props.visit?.workspaceId?workspaces.find(w=>w.workspaceId===props.visit!.workspaceId):picker.selected
   const en=props.t('language.code')==='en'
-  return <main className={css.panel}>
+  return <><div hidden={settings} className={css.chatPage}><GlobalConversation {...props} inline visible={!settings} settings={()=>setSettings(true)} close={props.back}/></div>{settings&&<main className={css.panel}>
     <header className={css.hero}><div className={css.identity}><span className={css.mark}><BrandIcon size={36}/></span><div><small>{en?'Workspace coordinator':'工作区协调'}</small><h1>Super Agent</h1></div></div>
       {props.visit&&selected?<span>{selected.title}</span>:<select aria-label={en?'Workspace':'工作区'} value={selected?.workspaceId??''} onChange={e=>choose(e.target.value)}>
         <option value="" disabled>{en?'Choose a workspace':'选择工作区'}</option>
         {workspaces.map(w=><option key={w.workspaceId} value={w.workspaceId}>{w.title}</option>)}</select>}
-      <button onClick={()=>window.dispatchEvent(new Event('teamflow:global-chat'))}>{en?'Global conversation':'全局对话'}</button>
+      <button onClick={()=>setSettings(false)}>{en?'Back to chat':'返回对话'}</button>
       {props.back&&<button onClick={props.back}>{props.visit?.workspaceId?(en?'Close':'关闭'):(en?'Back to Workflow':'返回原工作台')}</button>}
     </header>
     {selected?<WorkspacePanel key={selected.workspaceId} {...props} workspaceId={selected.workspaceId} project={selected.title} sessionRows={picker.sessionRows} en={en}/>:<p>{en?'Select a workspace to view subscriptions.':'请选择工作区查看监听设置。'}</p>}
-  </main>
+  </main>}</>
 }
 
 function WorkspacePanel({workspaceId,project,sessionRows,en,visit,back,sessions,modelDirectories,t,openMember}:Props & {workspaceId:string;project:string;sessionRows:ReturnType<typeof useWorkspace>['sessionRows'];en:boolean;visit?:SupervisorVisit;back?:()=>void}) {
-  const [settings,setSettings]=useState(false),[selection,select]=useState(visit?.teamId??'')
+  const [settings,setSettings]=useState(true),[selection,select]=useState(visit?.teamId??'')
   const result=useRows(workspaceId,settings)
   const [busy,setBusy]=useState(false),[error,setError]=useState('')
   const [target,setTarget]=useState<{row:WatchRow;item:WatchItem}>()
