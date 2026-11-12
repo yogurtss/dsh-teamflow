@@ -118,6 +118,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   const [showLoopSteps, setShowLoopSteps] = useState(true)
   const [returnDraft, setReturnDraft] = useState<{gate:string;entry:string}>()
   const [editing, setEditing] = useState(false)
+  const [ending, setEnding] = useState(false)
   const [archiveView, setArchiveView] = useState(archived)
   const [cached]=useState(()=>teamId?viewCache.get(workflowCacheKey(sessionId,teamId,archived)):undefined)
   const [data, setData] = useState<Response | undefined>(cached)
@@ -355,10 +356,11 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       const result = await request({ sessionId, teamId: activeId, discussion, action, ...fields })
       if (!result) { if (saving) setSaveState('error'); return }
       if (saving) setSaveState('saved')
+      if(action==='force_end') {setArchiveView(true);setEditing(false);viewCache.remove(workflowCacheKey(sessionId,result.team.id,false))}
       if(action==='restore_archive') {setArchiveView(false);setEditing(false);setFeedback(l("已恢复为待确认流程。已完成成果保留；确认成员配置并启动后，可修改和重跑。"))}
       if (result.skipped?.length) setError(result.skipped.join('\n'))
       if(result.activity) publishWorkflowActivity(result.activity)
-      if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='restore_archive'?false:archiveView),result);setData(result); setActiveId(result.team.id) }
+      if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='force_end'||(action!=='restore_archive'&&archiveView)),result);setData(result); setActiveId(result.team.id) }
       return result
     } catch (err) { if (mounted.current && token === generation.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
     finally { mutationInFlight.current=false;if (mounted.current) { setWorking(false) } }
@@ -761,6 +763,12 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
             <button disabled={working || unsaved.length > 0 || !flow?.canStart} onClick={() => void perform('set_flow_enabled',{enabled:true,version:flowControlVersion(team)})}>{l("开始全部")}</button>
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
+          {team && !galleryMode && !showOutcomes && !archiveView && !data?.currentDiscussion && <button type="button" className={css.forceEnd} disabled={mutating || revalidating || !!connectionError} onClick={async () => {
+            if (!window.confirm(l('强制结束「{0}」？将停止执行并请 Captain 总结当前进展，然后把所有任务标记为完成并归档。', team.name))) return
+            setEnding(true)
+            try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: crypto.randomUUID(), language: l.language }) }
+            finally { setEnding(false) }
+          }}>{ending ? l('正在收尾…') : l('强制结束')}</button>}
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>
           {supervisorTarget ? <button onClick={closeWorkbench}>{l.language==='en'?'← Back to reminder':'← 返回提醒'}</button> : supervisorAvailable && team && <button onClick={event=>{
             const trigger=event.currentTarget
@@ -784,6 +792,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
         <button data-guide="agent" title={l('添加可分配任务的团队成员。')} disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
         <span className={css.commandSpacer} /><button data-guide={inspectorHidden ? "inspector" : undefined} aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? l("显示右侧面板") : l("收起右侧面板")}</button>
       </nav>}
+      {archiveView && team?.closeout?.report && <details open className={css.closeoutReport}><summary>{team.closeout.source === 'captain' ? l('Captain 收尾报告') : l('收尾记录（Captain 未返回报告）')}</summary><pre>{team.closeout.report}</pre></details>}
       {!guideDismissed && <div className={css.guideNotice}><details className={css.quickGuide}>
         <summary>{l('第一次用？查看工作台指南')}</summary>
         <ol>
@@ -808,7 +817,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           {attention.slice(1).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
         </select>}
       </nav>}
-      {!galleryMode&&!showOutcomes&&team?.halted&&!archiveView&&<section className={css.readiness}><strong>{l('团队已停止')}</strong><p>{l('恢复后可继续待执行工作；已取消或失败的任务需单独重跑。')}</p><button disabled={working} onClick={()=>void perform('resume_team',{base:data?.base,reason:'用户恢复流程'})}>{l('恢复团队')}</button></section>}
+      {!galleryMode&&!showOutcomes&&team?.halted&&!team.closeout&&!archiveView&&<section className={css.readiness}><strong>{l('团队已停止')}</strong><p>{l('恢复后可继续待执行工作；已取消或失败的任务需单独重跑。')}</p><button disabled={working} onClick={()=>void perform('resume_team',{base:data?.base,reason:'用户恢复流程'})}>{l('恢复团队')}</button></section>}
       {!galleryMode&&!showOutcomes&&!!blockers.length&&<details className={css.blockers}><summary>{l('阻塞与恢复')} · {blockers.length}</summary><div>{blockers.map(({task,state})=><section key={task.id}><button onClick={()=>{setEditing(false);locateTask(task.id)}}>{task.subject}</button><strong>{state.label}</strong><p>{state.detail}</p></section>)}</div></details>}
       {connectionError&&<div className={css.error} role="alert"><strong>{l('连接需要恢复')}</strong><p>{workflowMessage(connectionError,l)}</p><button type="button" disabled={working} onClick={()=>void refresh()}>{l('重新连接并读取状态')}</button></div>}
       {error && <div className={css.error} role="alert">{workflowMessage(error, l)}</div>}

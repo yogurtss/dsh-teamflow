@@ -538,3 +538,7 @@ label.galleryPermission input[type="checkbox"] { width: auto; }
 
 .loopPlayback { position:absolute; display:flex; gap:6px; z-index:1; }
 .workbench .loopPlayback button { height:24px; padding:1px 8px; font-size:12px; }
+
+.header .forceEnd { color: var(--dsw-alias-state-error-primary); }
+.closeoutReport { padding: 12px 16px; }
+.closeoutReport pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35vh; overflow: auto; font: inherit; }

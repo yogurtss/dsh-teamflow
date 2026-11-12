@@ -67,6 +67,7 @@ export interface ActivityTeam {
   readonly workflow?: { loops: Pick<import('../workflow-loop-types.ts').WorkflowLoop, 'gateId'|'bodyIds'|'status'|'mode'|'round'|'maxRounds'|'queued'|'failedExecutionTaskId'|'reason'|'lastDecision'>[] }
   readonly planReviewState?: 'awaiting_review' | 'awaiting_feedback'
   readonly halted?: boolean
+  readonly forceCompleted?: boolean
   readonly members: readonly ActivityMember[]
   readonly tasks: readonly ActivityTask[]
   readonly messageCount: number

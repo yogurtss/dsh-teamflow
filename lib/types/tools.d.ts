@@ -96,6 +96,10 @@ export declare function haltTeamWork(input: {
     teamId: string;
     captain: Agent;
     signal?: AbortSignal;
+    closeout?: {
+        requestId: string;
+        createdAt: number;
+    };
 }): Promise<{
     teamName: string;
     captainSessionId: string;
