@@ -45,6 +45,18 @@ class WebApprovalAdapter extends LlmAdapter {
     async *stream(options) {
         const system = options.system ?? options.messages.filter(message => message.role === 'system').flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n');
         if (options.purpose) { yield* textChunks('Web approval lab'); return; }
+        if(system.includes('You are the read-only Super Agent')){
+            assert.ok(options.tools.some(t=>t.name==='teamflow_watched_workflows'));
+            assert.ok(!options.tools.some(t=>t.name==='agent_teams_create'));
+            const turn=options.messages.slice(options.messages.findLastIndex(m=>m.role==='user'));
+            const reply=turn.find(m=>m.role==='tool');
+            if(!reply){
+                yield* call('teamflow_watched_workflows',{}); return;
+            }
+            if(JSON.stringify(turn[0]).includes('after restart'))assert.equal(reply.content[0].text,'[]');
+            else assert.ok(JSON.stringify(reply).includes('g1'));
+            yield* textChunks('SUPERVISOR_READ_OK');return;
+        }
         if (system.includes('LOOP_WORKER') || system.includes('LOOP_REVIEWER')) {
             const assignment = options.messages.findLastIndex(m => m.role === 'user' && m.content?.some(b => b.type === 'text' && (b.text.includes('AgentTeams automatic task assignment') || b.text.includes('You are the designated loop reviewer'))));
             if (assignment < 0) { yield* textChunks('LOOP_READY'); return; }
@@ -198,6 +210,12 @@ export function apply(ctx) {
     void (async () => {
         await ctx.get('loader').await();
         if (process.env.LAB_WORKFLOW_COLD === '1') {
+            const master=JSON.parse(readFileSync('super-agent-session.json','utf8'));
+            const coordinator=await ctx.agents.resume({resumeSessionId:master.sessionId,agentOptions:{provider:'runtime-lab',model:'fixture-model'}});
+            ctx.effect(()=>()=>coordinator.dispose());
+            coordinator.agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'Check watched workflows after restart'}]}));
+            await coordinator.agent.whenIdle();
+            assert.equal(ownSessionEvents(coordinator.agent.session).filter(e=>e.type==='assistant/message'&&e.data.message.content.some(b=>b.text==='SUPERVISOR_READ_OK')).length,2);
             const templateOwner=JSON.parse(readFileSync('template-captain-resume.json','utf8'));
             const templateMain=await ctx.agents.resume({resumeSessionId:templateOwner.sessionId,agentOptions:{provider:'runtime-lab',model:'manual-fixture'}});
             ctx.effect(()=>()=>templateMain.dispose());await templateMain.agent.whenIdle();

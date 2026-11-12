@@ -23,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { WorkflowLauncher } from './WorkflowLauncher.tsx'
+import { SuperAgentPanel, SuperAgentOverlay, SuperAgentIcon } from './SuperAgent.tsx'
+import { enableSupervisorVisits } from './super-agent-navigation.ts'
 import { BrandIcon } from './BrandIcon.tsx'
 import { ActivitySurface, WorkspaceActivity, createWorkspaceBridge, TEAM_TAB_ID, TEAM_TAB_KIND } from './WorkspaceActivity.tsx'
 import { BlankSessionTeamflowEntry } from './BlankSessionTeamflowEntry.tsx'
@@ -112,6 +114,11 @@ export function apply(ctx: ClientContext): void {
     native.slots.inject('sidebar.panellist', () => native.slots.register({
       name:'sidebar.panellist',id:'dsh-teamflow-workflow',order:30,label:'Workflow',
     }, ({size}) => <BrandIcon size={size}/>))
+    const services=()=>({sessions:native.sessions,workspaces:native.workspaces,uiWorkspace:native.uiWorkspace,modelDirectories:native.modelDirectories,openMember})
+    native.slots.inject('main',()=>native.slots.register({name:'main',key:'dsh-teamflow-super-agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentPanel))
+    native.slots.inject('sidebar.panellist',()=>native.slots.register({name:'sidebar.panellist',id:'dsh-teamflow-super-agent',order:31,label:'Super Agent',locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentIcon))
+    native.slots.inject('shell.overlay',()=>native.slots.register({name:'shell.overlay',id:'teamflow-super-agent-visit',order:81,locale:AGENT_TEAMS_LOCALE_NAMESPACE,inject:services},SuperAgentOverlay))
+    native.effect(enableSupervisorVisits)
   })
   // A conversation entry does not depend on the optional right sidebar.
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({

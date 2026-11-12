@@ -47,6 +47,7 @@ import { agentTeamsSource, observedSessionFormatVersion } from './harness-compat
 import { TEAM_TOOL_NAMES } from './tool-names.ts'
 import { installWorkflowWorkbench, workflowMaterials } from './workflow-runtime.ts'
 import { installWorkflowConversations } from './workflow-native.ts'
+import { installSuperAgent } from './super-agent.ts'
 
 import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, type BrowserRequestGate, type WebRouteHost } from './web-routes.ts'
 
@@ -265,6 +266,7 @@ export function apply(ctx: Context, config: Config): void {
     if (rawWebServer === undefined || workspaceRegistry === undefined) return
     const webServer = authenticatedWebRoutes(rawWebServer, () => ctx.get('connection') as BrowserRequestGate | undefined)
     installWorkflowWorkbench(ctx, resolved, agentTeamsRuntime, webServer, workflowConversations)
+    installSuperAgent(ctx, resolved.stateDir, webServer, workspaceRegistry)
     webRegistered = true
 
     // Activity panel data route: the browser floater polls this for team

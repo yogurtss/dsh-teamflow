@@ -14,6 +14,7 @@
  */
 import { type TaskStatus, type TeamMessage, type TeamState, type TeamTask } from './types.ts';
 import { type LeadIdentity } from './lineage.ts';
+import { type WorkflowWatch } from './super-agent-watch.ts';
 export { amendTaskContract, buildCoverageMatrix, canDeclareDelivery, classifyChangedPath, collectChangedPaths, defaultQualityDeliveryGraph, describeQualityLoop, evaluateQualityCompletion, hasValidQualityTaskFields, isQualityKind, isTaskRevision, isValidFindingLine, normalizeBlankOptionalTaskFields, normalizeSentinelNumericTaskFields, pathMatchesScope, planQualityFollowUp, qualityPlanningPrompt, resumeTeamState, sanitizeReviewAcceptance, sanitizeReviewObjective, taskKindOf, validateCreateTask, } from './quality-gates.ts';
 export type { ContractAmendmentInput } from './quality-gates.ts';
 /** Mailbox key of the captain. */
@@ -108,6 +109,8 @@ export declare function readTeamSync(stateRoot: string, teamId: string): TeamSta
  * @param state - the record to persist.
  */
 export declare function writeTeam(stateRoot: string, state: TeamState): Promise<void>;
+/** Change notification preferences under the caller's team lock without advancing the workflow. */
+export declare function writeTeamWatch(stateRoot: string, state: TeamState, watch: WorkflowWatch | null): Promise<void>;
 /** Synchronous role hydration before the host's first prompt assembly. */
 export declare function readRetiredMemberIdsSync(stateRoot: string): Set<string>;
 export declare function readRetiredMemberIds(stateRoot: string): Promise<Set<string>>;

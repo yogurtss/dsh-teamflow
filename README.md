@@ -83,6 +83,12 @@ Completed workflows remain readable and editable. Archive only when work is comp
 
 Use **Save as template** to have AI extract reusable requirements, review the draft, and save it to your personal library. Templates retain roles, tasks, dependencies, and checkpoints, but exclude execution sessions, model routes, outputs, and approvals. Saved versions and applied workflows remain independent.
 
+### Super Agent (development branch)
+
+Open **Super Agent** in the Harness Web sidebar, choose a workspace, then select individual workflows in **Watch settings**. Subscriptions start empty. Each workflow can notify you about human reviews, pending proposals and blockers requiring human action. New items appear in the Web UI and its sidebar count. Open an item to see its original node or proposal, then return to the overview. The workbench header also opens Super Agent while you edit.
+
+Finishing an entire workflow ends its subscription unless you select **Keep watching after workflow completion**. You can unsubscribe at any time. The workspace conversation uses the host model to read current items from watched workflows. Review decisions and edits take place in the existing workbench.
+
 ## Try it yourself on the development branch
 
 Use the `dev` build and an empty workspace for either example. The first needs a GPU. The second only needs Python 3.

@@ -17,15 +17,16 @@ hook.deregister()
 const task = { id: 'review', subject: 'Review export', description: 'Inspect all evidence before approving.', acceptance: ['Encoding'], dependencies: ['work'], status: 'pending', checkpoint: { round: 2, history: [] } }
 const raw = JSON.stringify({ check: { id: 'review', subject: task.subject, description: task.description, round: 2 }, results: [{ id: 'work', subject: 'Implementation', output: '<script>unsafe()</script>', acceptanceResults: [{ criterion: 'Encoding', status: 'passed', evidence: 'Round-trip test' }, { criterion: 'Encoding performance', status: 'failed' }], commandsRun: [{ command: 'npm test', status: 'passed', evidence: '3 tests', exitCode: 0 }] }], files: { artifacts: [{ path: 'out.csv', present: true, sha256: 'abc' }], gaps: [{ pattern: 'private', reason: 'Excluded' }] } })
 const material = parseReviewMaterial(raw)
-test('acceptance has no loop settings while an incomplete gate requires a return edge and offers both reviewers', () => {
+test('acceptance has no loop settings while an incomplete gate requires a return edge and renders the workbench reviewer picker', () => {
   const render = kind => renderToStaticMarkup(React.createElement(WorkflowLocale, {t:key=>en[key]??key}, React.createElement(LoopPanel, {
     team:{id:'team',members:[],tasks:[{...task,checkpoint:{kind,round:1,history:[]}}]}, task:{...task,checkpoint:{kind,round:1,history:[]}},
     sessionId:'captain',base:'base',busy:false,archived:false,perform:async()=>{},
+    modeSelect:React.createElement('select',{'aria-label':'Workbench reviewer picker'}),
   })))
   assert.equal(render('acceptance'), '')
   const gate=render('gate')
   assert.match(gate,/Return target \(required\)/)
-  assert.match(gate,/Human review/);assert.match(gate,/Automatic AI review/)
+  assert.match(gate,/<label>Review mode<select aria-label="Workbench reviewer picker">/)
   assert.match(gate,/<button disabled="">Connect return edge and create loop/)
   assert.doesNotMatch(gate,/Approve review|Reject and create a new path/)
 })

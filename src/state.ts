@@ -27,6 +27,7 @@ import { isTaskLayers, flattenLegacyTask } from './legacy-task-description.ts'
 import { parseTemplate } from './templates.ts'
 import { loopRetryInstructions, loopsOf, reconcileLoops, validateLoopGraph } from './workflow-loops.ts'
 import { writeLoopTeam } from './workflow-loop-history.ts'
+import { workflowComplete, type WorkflowWatch } from './super-agent-watch.ts'
 
 export {
   amendTaskContract,
@@ -310,12 +311,24 @@ export function readTeamSync(stateRoot: string, teamId: string): TeamState | und
  * @param state - the record to persist.
  */
 export async function writeTeam(stateRoot: string, state: TeamState): Promise<void> {
-  if (loopsOf(state).length || state.workflow?.loopRevision !== undefined) {
+  const revisioned = loopsOf(state).length > 0 || state.workflow?.loopRevision !== undefined
+  if (revisioned) {
     validateLoopGraph(state)
     reconcileLoops(state)
-    await writeLoopTeam(stateRoot, state)
-    return
   }
+  if (state.superAgentWatch && !state.superAgentWatch.keep && workflowComplete(state)) delete state.superAgentWatch
+  await persistTeam(stateRoot, state, revisioned)
+}
+
+/** Change notification preferences under the caller's team lock without advancing the workflow. */
+export async function writeTeamWatch(stateRoot: string, state: TeamState, watch: WorkflowWatch | null): Promise<void> {
+  if (watch) state.superAgentWatch = watch
+  else delete state.superAgentWatch
+  await persistTeam(stateRoot, state, loopsOf(state).length > 0 || state.workflow?.loopRevision !== undefined)
+}
+
+async function persistTeam(stateRoot: string, state: TeamState, revisioned: boolean): Promise<void> {
+  if (revisioned) return writeLoopTeam(stateRoot, state)
   await atomicWriteText(join(stateRoot, state.id, 'team.json'), JSON.stringify(state, null, 2))
 }
 

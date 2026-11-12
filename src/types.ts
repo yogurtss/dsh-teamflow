@@ -392,6 +392,8 @@ export interface TeamProfileSnapshot {
 
 /** The full durable team record. */
 export interface TeamState {
+  /** Explicit workspace supervisor subscription; absent by default. */
+  superAgentWatch?: import('./super-agent-watch.ts').WorkflowWatch
   workflow?: import('./workflow-types.ts').WorkflowState
   /** Original team name. */
   name: string

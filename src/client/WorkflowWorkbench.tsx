@@ -45,6 +45,8 @@ import { BrandIcon } from './BrandIcon.tsx'
 import { TemplateGallery } from './TemplateGallery.tsx'
 import { OutcomeShowcase } from './OutcomeShowcase.tsx'
 import { ReviewWorkbench } from './ReviewWorkbench.tsx'
+import { supervisorAvailable, visitSuperAgent } from './super-agent-navigation.ts'
+import type { WatchItem } from '../super-agent-watch.ts'
 
 interface Response { revision?:string; execution?:Record<string,ExecutionState>; team: TeamState; base: string; ready: string[]; busy: string[]; openedSessionId?: string; currentDiscussion?: string; activity?:ActivityTeam }
 const viewCache=createWorkflowCache<Response>()
@@ -78,7 +80,8 @@ function ReviewMaterials({ text }: { text: string }) {
   } catch { return <pre>{text}</pre> }
 }
 
-function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, initiallyOpen = false, onShowActivity, onClose }: {
+function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, openExecution, nativeOnly = false, reviewEntryOnly = false, embeddedContext = false, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen = false, onShowActivity, onClose }: {
+  supervisorTarget?: WatchItem
   entryDiscussion?: string
   initiallyOpen?: boolean
   onShowActivity?: () => void
@@ -106,6 +109,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
   }
 
   const [opened, setOpened] = useState(initiallyOpen || !!entryTarget)
+  const [visitingSupervisor,setVisitingSupervisor]=useState(false)
   const [connectionError,setConnectionError]=useState('')
   const refreshInFlight=useRef(false), mutationInFlight=useRef(false)
   const [showOutcomes, setShowOutcomes] = useState(false)
@@ -246,6 +250,29 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
     setPane(graphTarget && !window.matchMedia('(max-width: 900px)').matches ? 'flow' : 'discussion')
   }
   const selectDiscussion = (key: string) => choose({ type:'discussion', key })
+  useEffect(()=>{
+    if(!supervisorTarget || entryOpened.current || !team || revalidating)return
+    entryOpened.current=true
+    const {discussion,proposalId,taskId,kind,round}=supervisorTarget
+    if(discussion && proposalId){
+      const proposal=team.workflow?.discussions['discussion:'+discussion]?.proposal
+      if(proposal?.id===proposalId && proposal.status==='pending')openProposal(discussion)
+      else setError(l.language==='en'?'This proposal was replaced or resolved.':'该提案已被替换或处理。')
+      return
+    }
+    const task=team.tasks.find(item=>item.id===taskId)
+    if(!task){setError(l.language==='en'?'This node no longer exists.':'该节点已不存在。');return}
+    if(kind==='review'){
+      const loop=team.workflow?.loops?.find(item=>item.gateId===task.id)
+      const current=JSON.stringify(['review',task.id,loop?.runId,loop?.round??task.checkpoint?.round])
+      if(current!==supervisorTarget.id){
+        const historic=loop?undefined:task.checkpoint?.history.find(item=>item.round===round)
+        setFeedback([l.language==='en'?'This reminder refers to an earlier round.':'该提醒属于历史轮次。',historic?.materials??historic?.note].filter(Boolean).join('\n'))
+        return
+      }
+      void openReview(task.id)
+    }else locateTask(task.id)
+  },[team,revalidating,supervisorTarget])
   function focusAttention(selector: string): void { setAttentionFocus({selector,revision:viewRef.current.revision}) }
   useLayoutEffect(() => {
     if (!attentionFocus || attentionFocus.revision !== viewRef.current.revision) return
@@ -716,7 +743,7 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
       <WorkflowContext team={team} discussion={discussion} onSelect={selectDiscussion} openExecution={openExecution} />
     </section>}
     </>}
-    {opened && createPortal(<section ref={dialog} className={css.workbench} style={{'--wb-node-width':`${CARD_WIDTH}px`,'--wb-port-y':`${CARD_PORT_Y}px`,'--wb-gate-port-y':`${WORKFLOW_GATE_PORT_Y}px`} as CSSProperties} data-live={!archiveView} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label={l("TeamFlow 编排工作台")} onKeyDown={event => {
+    {opened && createPortal(<section ref={dialog} className={css.workbench} style={{...(visitingSupervisor ? {display:'none'} : {}),'--wb-node-width':`${CARD_WIDTH}px`,'--wb-port-y':`${CARD_PORT_Y}px`,'--wb-gate-port-y':`${WORKFLOW_GATE_PORT_Y}px`} as CSSProperties} data-live={!archiveView} data-maximized={maximized} data-editing={!!editor || !!selectedEdge || !!activeTask} role="dialog" aria-modal="true" aria-label={l("TeamFlow 编排工作台")} onKeyDown={event => {
       if (!galleryMode && !showOutcomes && !archiveView && editing && (event.key === 'Delete' || event.key === 'Backspace') && (selectedEdge || selectedTask) && !(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) { event.preventDefault(); if (selectedEdge) void deleteEdge(); else if (selectedTask) void deleteNode(selectedTask); return }
       if (event.key === 'Escape') { if (cancelLink.current) { cancelLink.current(); return }; if (editor) { setEditing(false); setFeedback(l("已退出编辑，未保存的草稿已保留。")) } else closeWorkbench() }
       if (event.key === 'Tab') {
@@ -736,6 +763,10 @@ function Workbench({ sessionId, teamId, archived = false, waitingCount = 0, open
           </span>}
           {onShowActivity && <button onClick={onShowActivity}>{l("团队活动与历史")}</button>}
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>
+          {supervisorTarget ? <button onClick={closeWorkbench}>{l.language==='en'?'← Back to reminder':'← 返回提醒'}</button> : supervisorAvailable && team && <button onClick={event=>{
+            const trigger=event.currentTarget
+            if(visitSuperAgent({sessionId:team.captainSessionId,teamId:team.id,returnToWorkflow:()=>{setVisitingSupervisor(false);requestAnimationFrame(()=>trigger.focus())}}))setVisitingSupervisor(true)
+          }}>Super Agent ↗</button>}
           <button onClick={closeWorkbench} aria-label={l("关闭编排工作台")}>{l("关闭")}</button></div></header>
       <nav className={css.pageTabs} aria-label={l("Teamflow 页面")}><button data-guide="flow" aria-pressed={!galleryMode && !showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(false)}}><BrandIcon/>{team?l("当前流程"):l("从零创建")}</button><button data-guide="outcomes" hidden={!team} aria-pressed={showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(true)}}><WorkflowIcon name="task"/>{l("交付内容")}</button><button data-guide="gallery" aria-pressed={galleryMode==='browse'} className={css.galleryEntry} onClick={()=>{setShowOutcomes(false);setGalleryMode('browse')}}><BrandIcon name="gallery"/>{l("流程模板库 ")}</button>{team&&<button disabled={working||!!unsaved.length||!team.tasks.length} title={unsaved.length?l("请先保存属性草稿"):undefined} onClick={()=>{setShowOutcomes(false);setGalleryMode('save')}}><BrandIcon name="save"/>{l("保存为模板")}</button>}{team?.workflow?.templateSource&&<small>{l("来自 ")}{team.workflow.templateSource.name} · v{team.workflow.templateSource.version}</small>}<WorkbenchGuide /></nav>
       {!archiveView && team?.workflow?.templateSource && (team.phase === 'staged' || !!adaptationDiscussion) && <AdaptationProgress phase={adaptationStatus} disabled={mutating && !adaptationOpening && !adaptationDiscussion?.native} onOpen={() => void startEmbedded('adapt')} />}

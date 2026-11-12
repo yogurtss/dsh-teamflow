@@ -1,0 +1,11 @@
+.panel{color:var(--dsw-alias-label-primary,CanvasText);background:var(--dsw-alias-bg-base,Canvas);height:100%;overflow:auto;font:inherit}
+.panel header,.actions,.row,.panel fieldset{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.panel header{padding:18px 26px;border-bottom:1px solid var(--dsw-alias-border-l2,GrayText)}.panel header>div,.row>div{flex:1}
+.panel h1,.panel h2{margin:0}.panel h1{font-size:22px}.panel h2{margin-top:22px;font-size:17px}
+.panel small{display:block;color:var(--dsw-alias-label-secondary,GrayText)}.panel h2 small{display:inline}
+.content{max-width:850px;margin:auto;padding:20px}.row{padding:12px 0;border-bottom:1px solid var(--dsw-alias-border-l2,GrayText);overflow-wrap:anywhere}.row span{flex:1}
+.panel button,.panel select{font:inherit;color:inherit;background:var(--dsw-alias-bg-layer-1,Canvas);border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:7px;padding:6px 10px;max-width:100%}.panel button{cursor:pointer}.panel button:disabled{opacity:.6}
+.panel fieldset{margin:15px 0;border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:8px}.panel label{display:inline-flex;align-items:center;gap:6px;margin:8px 0}.panel [role=alert]{color:var(--dsw-alias-state-error-primary,Crimson)}
+.overlay{position:fixed;inset:24px;z-index:999;border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:14px;overflow:hidden;box-shadow:0 10px 50px #0003}
+.icon{position:relative;display:inline-flex}.icon b{position:absolute;top:-6px;right:-9px;line-height:15px;min-width:15px;border-radius:9px;background:var(--dsw-alias-state-business-primary,#305dc2);color:white;font-size:10px}
+.notice{position:fixed;right:16px;bottom:16px;z-index:990;max-width:min(420px,calc(100vw - 32px));display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:10px;box-shadow:0 3px 16px #0002;overflow-wrap:anywhere}.notice button{font:inherit;color:inherit;cursor:pointer}

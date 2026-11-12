@@ -86,6 +86,22 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   await post('resume_task',{taskId:'g1'});
   result=await post('resume_task',{taskId:'g2'});
   assert.deepEqual(result.ready, ['g1']);
+  const workspaceId=ctx.workspaceRegistry.list().find(w=>w.path===process.cwd()).id;
+  const supervisor=async(action,fields={})=>{
+    const response=await fetch(baseUrl+'/plugins/dsh-agent-teams/super-agent',{method:'POST',headers:{'content-type':'application/json',origin:baseUrl,cookie},body:JSON.stringify({workspaceId,action,...fields})});
+    const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));return value;
+  };
+  assert.deepEqual((await supervisor('overview')).rows,[]);
+  const subscription={kinds:['review','block'],keep:false};
+  await supervisor('set',{teamId:activeTeam,previous:null,watch:subscription});
+  assert.deepEqual((await supervisor('overview')).rows[0].items.map(i=>i.taskId),['g1']);
+  const master=await supervisor('chat');
+  writeFileSync('super-agent-session.json',JSON.stringify(master));
+  assert.deepEqual(await supervisor('chat'),master);
+  const coordinator=ctx.agents.get(master.sessionId);
+  coordinator.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'Which watched workflow needs me?'}]}));
+  await coordinator.whenIdle();
+  assert.ok(ownSessionEvents(coordinator.session).some(e=>e.type==='assistant/message' && e.data.message.content.some(b=>b.type==='text' && b.text==='SUPERVISOR_READ_OK')));
   await post('preview', { title: '模型不得批准', operations: [{ action: 'approve', id: 'g1' }] }, 409);
   await post('review', { taskId: 'g1', decision: 'approve', evidence: 'unseen' }, 409);
   result = await nativeDiscussion('check:g1');
@@ -95,6 +111,7 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   assert.equal(result.team.tasks.find(t => t.id === 'g1').status, 'pending');
   result = await post('review', { taskId: 'g1', decision: 'approve', evidence: discussion.evidence, note: '已核对' });
   assert.deepEqual(result.ready, ['g2']);
+  assert.deepEqual((await supervisor('overview')).rows[0].items.map(i=>i.taskId),['g2']);
   await post('review', { taskId: 'g1', decision: 'approve', evidence: discussion.evidence }, 409);
   result = await nativeDiscussion('check:g2');
   result = await post('review', { taskId: 'g2', decision: 'reject', evidence: result.team.workflow.discussions['discussion:check:g2'].evidence, note: '需要更多证据' });
@@ -107,6 +124,8 @@ export async function exerciseWorkflow({ baseUrl, cookie, captain, readTeam, rec
   assert.deepEqual(result.team.tasks.find(t=>t.id==='g2').checkpoint.history.at(-1),rejection);
   result=await post('review',{taskId:'g2',decision:'approve',evidence:result.team.workflow.discussions['discussion:check:g2'].evidence,note:'重新核对通过'});
   assert.equal(result.team.tasks.find(t=>t.id==='g2').status,'completed');
+  assert.deepEqual((await supervisor('overview')).rows,[]);
+  record({event:'super-agent-watch-passed',defaultOff:true,roundRouting:true,autoUnsubscribed:true,readOnlyChat:true});
   record({event:'returned-review-reopened',historyRetained:true,humanApproval:true});
   result=await post('edit',{base:result.base,title:'Branch review and archive',operations:[
     {action:'add_task',id:'branch-review',subject:'Review for improvements',description:'Check implementation evidence',checkpoint:true,dependencies:['t1']},

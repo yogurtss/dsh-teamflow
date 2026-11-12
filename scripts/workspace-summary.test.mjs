@@ -8,6 +8,7 @@ import { en, zh } from '../lib/client/locales.js'
 // Render the production component; only unrelated host UI and CSS imports are stubbed.
 const hook = registerHooks({ resolve(specifier, context, next) {
   let source
+  if (context.parentURL?.endsWith('/client/EmbeddedDiscussion.js') && specifier === '@deepseek-ai/dsh-client-ui-primitives') source = 'export const MarkdownText = undefined'
   if (specifier.endsWith('.module.css')) source = 'export default new Proxy({}, {get: (_, key) => key})'
   if (context.parentURL?.endsWith('/client/WorkflowWorkbench.js') && specifier === './StagingPlanEditor.js') source = 'export const StagedModelPicker = () => null'
   if (context.parentURL?.endsWith('/client/ActivityPanel.js')) {

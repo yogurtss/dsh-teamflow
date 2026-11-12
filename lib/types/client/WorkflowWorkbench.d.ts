@@ -1,6 +1,8 @@
 import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { AgentTeamsTranslate } from './locales.ts';
-declare function Workbench({ sessionId, teamId, archived, waitingCount, openExecution, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, initiallyOpen, onShowActivity, onClose }: {
+import type { WatchItem } from '../super-agent-watch.ts';
+declare function Workbench({ sessionId, teamId, archived, waitingCount, openExecution, nativeOnly, reviewEntryOnly, embeddedContext, onNativeContext, openContext, modelDirectory, t, entryTarget, entryDiscussion, supervisorTarget, initiallyOpen, onShowActivity, onClose }: {
+    supervisorTarget?: WatchItem;
     entryDiscussion?: string;
     initiallyOpen?: boolean;
     onShowActivity?: () => void;
