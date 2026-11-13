@@ -581,6 +581,13 @@ export async function haltTeamWork(input: {
       if (fresh.createdAt !== input.closeout.createdAt) throw new Error('流程已变化，请重新确认')
       fresh.closeout ??= { requestId: input.closeout.requestId }
       fresh.closeout.originalStatuses ??= Object.fromEntries(fresh.tasks.map(task => [task.id, task.status]))
+      const finishedAt = Date.now()
+      for (const task of fresh.tasks) {
+        if (task.status === 'completed') continue
+        cancelUnfinishedTask(task)
+        task.status = 'completed'
+        task.updatedAt = finishedAt
+      }
     }
     if (fresh.halted === true) {
       if (input.closeout) await writeTeam(input.stateRoot, fresh)

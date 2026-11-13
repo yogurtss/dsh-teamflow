@@ -102,7 +102,7 @@ export declare function getActivitySnapshotsSnapshot(): ActivitySnapshots;
 /** Publish one or both successful state-route responses. */
 export declare function updateActivitySnapshots(update: Partial<ActivitySnapshots>): void;
 /** A confirmed workflow mutation updates the main activity view immediately. */
-export declare function publishWorkflowActivity(team: ActivityTeam): void;
+export declare function publishWorkflowActivity(team: ActivityTeam, archived?: boolean): void;
 /** Poll cadence for the live host snapshot route. */
 export declare const ACTIVITY_POLL_MS = 1000;
 /**

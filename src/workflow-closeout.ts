@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -45,6 +46,19 @@ async function requestReport(captain: Agent, summary: string, english: boolean):
   return report
 }
 
+async function saveCaptainReport(root: string, archived: TeamState, captain: Agent, english: boolean): Promise<void> {
+  const closeout = archived.closeout!
+  const report = await requestReport(captain, closeout.report!, english)
+  if (!report) return
+  await withTeamLock(`team:${root}:${archived.id}`, async () => {
+    const current = await readArchivedTeam(root, archived.id)
+    if (!current?.closeout || current.createdAt !== archived.createdAt || current.closeout.requestId !== closeout.requestId) return
+    current.closeout.report = report
+    current.closeout.source = 'captain'
+    await writeTeam(join(root, 'archive'), current)
+  })
+}
+
 export async function forceEndWorkflow(ctx: Context, root: string, teamId: string, captain: Agent, createdAt: number, requestId: string, english: boolean): Promise<TeamState> {
   // Serialize duplicate confirmations without holding the scheduler's team lock during a model turn.
   return withTeamLock(`closeout:${root}:${teamId}`, async () => {
@@ -53,28 +67,11 @@ export async function forceEndWorkflow(ctx: Context, root: string, teamId: strin
     if (archived?.closeout?.requestId === requestId && archived.createdAt === createdAt && await sessionLeadsTeamAsync(ctx, archived, captain.id)) return archived
     if (!live || live.createdAt !== createdAt || !(await sessionLeadsTeamAsync(ctx, live, captain.id))) throw new Error('当前流程已变化，请重新打开画布')
     await haltTeamWork({ctx, stateRoot:root, teamId, captain, closeout:{requestId, createdAt}})
-    const stopped = await readTeam(root, teamId)
-    if (!stopped?.halted || !stopped.closeout) throw new Error('流程状态已变化，请刷新')
-    const summary = taskSummary(stopped, english)
-    let report = stopped.closeout.report
-    let source = stopped.closeout.source
-    if (!report) {
-      try { report = await requestReport(captain, summary, english) }
-      catch (error) { ctx.logger.warn(`agent-teams: closeout report unavailable for ${teamId}: ${String(error)}`) }
-      source = report ? 'captain' : 'snapshot'
-      report ||= summary
-    }
-    return withTeamLock(`team:${root}:${teamId}`, async () => {
+    const ended = await withTeamLock(`team:${root}:${teamId}`, async () => {
       const fresh = await readTeam(root, teamId)
-      if (!fresh?.halted || !fresh.closeout || fresh.closeout.requestId !== stopped.closeout!.requestId) throw new Error('流程状态已变化，请刷新')
-      fresh.closeout.report = report
-      fresh.closeout.source = source
-      const finishedAt = Date.now()
-      for (const task of fresh.tasks) {
-        if (task.status === 'completed') continue
-        task.status = 'completed'
-        task.updatedAt = finishedAt
-      }
+      if (!fresh?.halted || !fresh.closeout) throw new Error('流程状态已变化，请刷新')
+      fresh.closeout.report ??= taskSummary(fresh, english)
+      fresh.closeout.source ??= 'snapshot'
       for (const member of fresh.members) {
         member.restoreOnUnarchive ??= member.status !== 'removed'
         member.status = 'removed'
@@ -85,5 +82,9 @@ export async function forceEndWorkflow(ctx: Context, root: string, teamId: strin
       await archiveTeamDir(root, teamId)
       return fresh
     })
+    void saveCaptainReport(root, ended, captain, english).catch(error => {
+      ctx.logger.warn(`agent-teams: closeout report unavailable for ${teamId}: ${String(error)}`)
+    })
+    return ended
   })
 }

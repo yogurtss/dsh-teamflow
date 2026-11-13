@@ -202,10 +202,13 @@ export function updateActivitySnapshots(update: Partial<ActivitySnapshots>): voi
 }
 
 /** A confirmed workflow mutation updates the main activity view immediately. */
-export function publishWorkflowActivity(team: ActivityTeam): void {
+export function publishWorkflowActivity(team: ActivityTeam, archived = false): void {
   const same=(item:ActivityTeam)=>item.teamId===team.teamId&&item.captainSessionId===team.captainSessionId
   const previous=activitySnapshots.teams.find(same)??activitySnapshots.archivedTeams.find(same)
-  updateActivitySnapshots({teams:[...activitySnapshots.teams.filter(item=>!same(item)),{...team,workspace:previous?.workspace??team.workspace}]})
+  const snapshot = {...team, workspace:previous?.workspace ?? team.workspace}
+  const live = activitySnapshots.teams.filter(item => !same(item))
+  const history = activitySnapshots.archivedTeams.filter(item => !same(item))
+  updateActivitySnapshots(archived ? {teams:live, archivedTeams:[snapshot,...history]} : {teams:[...live,snapshot]})
 }
 
 /** Poll cadence for the live host snapshot route. */
