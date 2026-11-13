@@ -9,6 +9,7 @@ import { workflowMaterials, installWorkflowWorkbench } from '../lib/workflow-run
 import { Readable } from 'node:stream'
 import { installTeamScheduler } from '../lib/scheduler.js'
 import { archiveTeamDir, cancelUnfinishedTask, createTeamDir, readArchivedTeam, readTeam, writeTeam } from '../lib/state.js'
+import { configureLoop, startLoop, reconcileLoops, validateLoopGraph } from '../lib/workflow-loops.js'
 import { assertWorkflowArchivable, prepareArchivedWorkflow } from '../lib/workflow-lifecycle.js'
 import { registerAgentTeamsTools } from '../lib/tools.js'
 import { installWorkflowConversations, workflowDiscussion } from '../lib/workflow-native.js'
@@ -1473,6 +1474,37 @@ test('conditional discussion history retains streaming and busy changes without 
  assert.equal(f.dispatched.length,0);assert.equal((await f.read()).tasks[0].status,'pending')
 })
 
+for (const mode of ['human','ai']) for (const phase of ['ready','reviewing']) test(`force end a configured loop without approving its gate (${mode}, ${phase})`, async t => {
+  const source = withGate()
+  const gate = source.tasks[1]
+  gate.checkpoint.kind = 'gate'
+  for (const task of source.tasks) task.description = 'Document and verify the result'
+  source.members.push({...member,name:'reviewer'})
+  const loop = configureLoop(source,{gateId:'gate',entryId:'t1',mode,reviewer:mode==='ai'?'reviewer':undefined,maxRounds:2,timeoutMinutes:30})
+  if (phase === 'reviewing') {
+    startLoop(source,loop.id)
+    source.tasks[0].status = 'completed'
+    reconcileLoops(source)
+  }
+  assert.equal(loop.status,phase)
+  const invalid = structuredClone(source)
+  invalid.tasks[1].status = 'completed'
+  assert.throws(()=>validateLoopGraph(invalid),/正式审核放行/)
+  const f = await lifecycleFixture(t,source,{captain:{cancel(){},followup(){throw Error('offline')}}})
+  const result = await f.call('force_end',{confirmed:true,createdAt:source.createdAt,requestId:'force-loop'})
+  assert.equal(result.code,200,result.error)
+  assert.equal(await f.read(),undefined)
+  const archive = (await f.call('archive_state')).team
+  assert.ok(archive.tasks.every(task=>task.status==='completed'))
+  assert.equal(archive.workflow.loops[0].status,'cancelled')
+  assert.equal(archive.tasks[1].checkpoint.decision,undefined)
+  const restored = await f.call('restore_archive')
+  assert.equal(restored.code,200,restored.error)
+  assert.equal(restored.team.tasks[1].status,'pending')
+  assert.equal(restored.team.tasks[2].status,'pending')
+  assert.equal(restored.team.workflow.loops[0].status,'paused')
+})
+
 async function readCaptainReport(f) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const archived = await f.call('archive_state')
@@ -1546,6 +1578,7 @@ test('confirmed force end drains work, records the matching captain report, then
     assert.equal(result.team.tasks[0].output, 'Verified design')
   }
   assert.equal(prompts.length, 1)
+  assert.match(prompts[0].content[0].text, /总结本次流程的得失/)
   assert.match(prompts[0].content[0].text, /Verified design/)
   assert.match(prompts[0].content[0].text, /\[等待中\] gate/)
   assert.match(prompts[0].content[0].text, /\[失败\] after/)

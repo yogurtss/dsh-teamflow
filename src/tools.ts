@@ -581,6 +581,11 @@ export async function haltTeamWork(input: {
       if (fresh.createdAt !== input.closeout.createdAt) throw new Error('流程已变化，请重新确认')
       fresh.closeout ??= { requestId: input.closeout.requestId }
       fresh.closeout.originalStatuses ??= Object.fromEntries(fresh.tasks.map(task => [task.id, task.status]))
+      for (const loop of fresh.workflow?.loops ?? []) {
+        if (loop.status === 'passed') continue
+        loop.status = 'cancelled'
+        delete loop.queued
+      }
       const finishedAt = Date.now()
       for (const task of fresh.tasks) {
         if (task.status === 'completed') continue

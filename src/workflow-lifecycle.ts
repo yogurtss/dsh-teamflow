@@ -30,6 +30,9 @@ export function prepareArchivedWorkflow(archived: TeamState): TeamState {
     delete member.activeProvider;delete member.activeModel;delete member.fallbackActive
   }
   for(const task of team.tasks) {
+    // Remove administrative completion when restoring an executable copy.
+    const original = archived.closeout?.originalStatuses
+    if (original && Object.hasOwn(original, task.id)) task.status = original[task.id]!
     if(TERMINAL_TASK_STATUSES.includes(task.status)) continue
     if(task.output || task.attemptId) {task.stoppedAttempts??=[];task.stoppedAttempts.push({attemptId:task.attemptId,output:task.output,at:now})}
     resetTaskForRerun(task,!task.checkpoint,now)
