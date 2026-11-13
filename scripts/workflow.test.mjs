@@ -1473,6 +1473,15 @@ test('conditional discussion history retains streaming and busy changes without 
  assert.equal(f.dispatched.length,0);assert.equal((await f.read()).tasks[0].status,'pending')
 })
 
+async function readCaptainReport(f) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const archived = await f.call('archive_state')
+    if (archived.team?.closeout?.source === 'captain') return archived.team.closeout.report
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  assert.fail('Captain report did not reach the archive')
+}
+
 for (const key of ['check:gate', 'task:after']) test('force end from a bound human review or edit: ' + key, async t => {
   const source = withGate()
   source.tasks[0].status = 'completed'
@@ -1491,7 +1500,7 @@ for (const key of ['check:gate', 'task:after']) test('force end from a bound hum
   assert.equal((await f.read()).halted,undefined)
   const result = await f.call('force_end',fields)
   assert.equal(result.code,200,result.error)
-  assert.equal(result.team.closeout.source,'captain')
+  assert.equal(await readCaptainReport(f),'Review and edits remain unfinished.')
   assert.ok(result.team.tasks.every(task=>task.status==='completed'))
   assert.equal(result.team.tasks[1].checkpoint.decision,undefined)
   assert.equal(await f.read(),undefined)
@@ -1518,9 +1527,7 @@ test('confirmed force end drains work, records the matching captain report, then
         ]
       },
       async whenIdle() {
-        const pending = await f.read()
-        assert.ok(pending.halted)
-        assert.ok(pending.closeout)
+        assert.equal(await f.read(), undefined)
         assert.deepEqual(drained, ['worker-session'])
       },
     },
@@ -1533,8 +1540,7 @@ test('confirmed force end drains work, records the matching captain report, then
   const results = await Promise.all([f.call('force_end', fields), f.call('force_end', fields)])
   for (const result of results) {
     assert.equal(result.code, 200, result.error)
-    assert.equal(result.team.closeout.source, 'captain')
-    assert.equal(result.team.closeout.report, 'Design verified. Review remains unfinished.')
+    assert.ok(result.activity.forceCompleted)
     assert.deepEqual(result.team.tasks.map(task=>task.status), ['completed','completed','completed'])
     assert.equal(result.team.tasks[1].checkpoint.decision, undefined)
     assert.equal(result.team.tasks[0].output, 'Verified design')
@@ -1544,11 +1550,11 @@ test('confirmed force end drains work, records the matching captain report, then
   assert.match(prompts[0].content[0].text, /\[等待中\] gate/)
   assert.match(prompts[0].content[0].text, /\[失败\] after/)
   assert.equal(await f.read(), undefined)
-  assert.equal((await f.call('archive_state')).team.closeout.source, 'captain')
+  assert.equal(await readCaptainReport(f), 'Design verified. Review remains unfinished.')
   assert.equal((await f.call('restore_archive')).team.closeout, undefined)
 })
 
-test('force end waits for a slow captain and archives the eventual report', async t => {
+test('force end persists before a slow captain finishes and reopening reads the completed archive', async t => {
   const source = withGate()
   const started = Promise.withResolvers()
   const finished = Promise.withResolvers()
@@ -1562,17 +1568,16 @@ test('force end waits for a slow captain and archives the eventual report', asyn
     },
     whenIdle(){ started.resolve(); return finished.promise },
   }})
-  t.mock.timers.enable({apis:['setTimeout']})
-  const ending = f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'slow-captain'})
+  const result = await f.call('force_end', {confirmed:true,createdAt:source.createdAt,requestId:'slow-captain'})
   await started.promise
-  t.mock.timers.tick(300000)
-  await new Promise(resolve => setImmediate(resolve))
-  assert.ok((await f.read())?.halted)
-  finished.resolve()
-  const result = await ending
   assert.equal(result.code, 200, result.error)
-  assert.equal(result.team.closeout.source, 'captain')
-  assert.equal(result.team.closeout.report, 'Final handover')
+  assert.equal(await f.read(), undefined)
+  const reopened = await f.call('archive_state')
+  assert.ok(reopened.team.tasks.every(task => task.status === 'completed'))
+  assert.equal(reopened.team.closeout.source, 'snapshot')
+  assert.equal(result.activity.forceCompleted, true)
+  finished.resolve()
+  assert.equal(await readCaptainReport(f), 'Final handover')
 })
 
 test('force end archives a clearly attributed task record if captain reporting fails', async t => {

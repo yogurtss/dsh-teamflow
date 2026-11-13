@@ -331,13 +331,17 @@ function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitin
     setError(''); setFeedback(''); const token = ++generation.current
     try {
       const result = await request({ sessionId, teamId: activeId, discussion, action, ...fields })
+      if (closing && result?.activity) {
+        viewCache.remove(workflowCacheKey(sessionId,result.team.id,false))
+        publishWorkflowActivity(result.activity,true)
+      }
       if (!mounted.current || token !== generation.current) return
       if (!result) { if (saving) setSaveState('error'); return }
       if (saving) setSaveState('saved')
       if(closing) {if(data?.currentDiscussion)setCloseoutOwner(result.team.captainSessionId);setConnectionError('');setRevalidating(false);setArchiveView(true);setEditing(false);viewCache.remove(workflowCacheKey(sessionId,result.team.id,false))}
       if(action==='restore_archive') {setArchiveView(false);setEditing(false);setFeedback(l("已恢复为待确认流程。已完成成果保留；确认成员配置并启动后，可修改和重跑。"))}
       if (result.skipped?.length) setError(result.skipped.join('\n'))
-      if(result.activity) publishWorkflowActivity(result.activity)
+      if(!closing && result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='force_end'||(action!=='restore_archive'&&archiveView)),result);setData(result); setActiveId(result.team.id) }
       return result
     } catch (err) { if (mounted.current && token === generation.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
@@ -742,11 +746,11 @@ function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitin
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
           {team && !galleryMode && !showOutcomes && !archiveView && <button type="button" className={css.forceEnd} disabled={ending} onClick={async () => {
-            if (!window.confirm(l('强制结束「{0}」？将停止执行并请 Captain 总结当前进展，然后把所有任务标记为完成并归档。', team.name))) return
+            if (!window.confirm(l('强制结束「{0}」？所有任务将立即标记为完成并归档，Captain 随后在后台总结。', team.name))) return
             setEnding(true)
             try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2,'0')).join(''), language: l.language }) }
             finally { setEnding(false) }
-          }}>{ending ? l('正在收尾…') : l('强制结束')}</button>}
+          }}>{ending ? l('正在结束…') : l('强制结束')}</button>}
           <button aria-pressed={maximized} onClick={() => setMaximized(!maximized)}><WorkflowIcon name="expand" />{maximized ? l("退出全屏") : l("全屏")}</button>
           <button onClick={closeWorkbench} aria-label={l("关闭编排工作台")}>{l("关闭")}</button></div></header>
       <nav className={css.pageTabs} aria-label={l("Teamflow 页面")}><button data-guide="flow" aria-pressed={!galleryMode && !showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(false)}}><BrandIcon/>{team?l("当前流程"):l("从零创建")}</button><button data-guide="outcomes" hidden={!team} aria-pressed={showOutcomes} onClick={()=>{setGalleryMode(undefined);setShowOutcomes(true)}}><WorkflowIcon name="task"/>{l("交付内容")}</button><button data-guide="gallery" aria-pressed={galleryMode==='browse'} className={css.galleryEntry} onClick={()=>{setShowOutcomes(false);setGalleryMode('browse')}}><BrandIcon name="gallery"/>{l("流程模板库 ")}</button>{team&&<button disabled={working||!!unsaved.length||!team.tasks.length} title={unsaved.length?l("请先保存属性草稿"):undefined} onClick={()=>{setShowOutcomes(false);setGalleryMode('save')}}><BrandIcon name="save"/>{l("保存为模板")}</button>}{team?.workflow?.templateSource&&<small>{l("来自 ")}{team.workflow.templateSource.name} · v{team.workflow.templateSource.version}</small>}<WorkbenchGuide /></nav>
@@ -766,7 +770,7 @@ function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitin
         <button data-guide="agent" title={l('添加可分配任务的团队成员。')} disabled={working || archiveView} onClick={() => edit('member')}><WorkflowIcon name="agent" />Agent</button>
         <span className={css.commandSpacer} /><button data-guide={inspectorHidden ? "inspector" : undefined} aria-pressed={!inspectorHidden} onClick={() => { setPane(inspectorHidden ? 'discussion' : 'flow'); setInspectorHidden(!inspectorHidden) }}>{inspectorHidden ? l("显示右侧面板") : l("收起右侧面板")}</button>
       </nav>}
-      {archiveView && team?.closeout?.report && <details open className={css.closeoutReport}><summary>{team.closeout.source === 'captain' ? l('Captain 收尾报告') : l('收尾记录（Captain 未返回报告）')}</summary><pre>{team.closeout.report}</pre></details>}
+      {archiveView && team?.closeout?.report && <details open className={css.closeoutReport}><summary>{team.closeout.source === 'captain' ? l('Captain 收尾报告') : l('强制结束时的任务记录')}</summary><pre>{team.closeout.report}</pre></details>}
       {!guideDismissed && <div className={css.guideNotice}><details className={css.quickGuide}>
         <summary>{l('第一次用？查看工作台指南')}</summary>
         <ol>

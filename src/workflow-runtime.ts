@@ -191,7 +191,7 @@ export function installWorkflowWorkbench(ctx: Context, config: ToolsConfig, runt
           if (!owner || !boundDiscussion(owner, caller)) throw new Error('讨论会话已失效')
         }
         const ended = await forceEndWorkflow(ctx, root, teamId, captain, body['createdAt'], string(body['requestId'], 'requestId', 80), body['language'] === 'en')
-        reply(200, {team: ended, base: workflowFingerprint(ended), ready: [], busy: []})
+        reply(200, {team: ended, base: workflowFingerprint(ended), ready: [], busy: [], activity: await assembleTeamSnapshot(ctx, join(root, 'archive'), workspace, ended, {historic:true, includeRemoved:true})})
         return
       }
       if (action === 'loop_history') {
