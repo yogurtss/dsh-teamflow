@@ -2,7 +2,7 @@
 export const workflowEnglish: Record<string, string> = {
   "强制结束": "Force end",
   "正在结束…": "Wrapping up…",
-  "强制结束「{0}」？所有任务将立即标记为完成并归档，Captain 随后在后台总结。": "Force end “{0}”? All tasks will be marked complete and archived immediately. The captain will then summarize in the background.",
+  "强制结束「{0}」？将停止所有任务，标记为完成并归档，然后退出画布。Captain 会在对话中总结本次得失。": "Force end “{0}”? All tasks will stop and be marked complete. The workflow will be archived and the canvas will close. The captain will summarize what worked and what did not in the conversation.",
   "Captain 收尾报告": "Captain’s final report",
   "强制结束时的任务记录": "Task record at force end",
   "启动循环": "Start loop",

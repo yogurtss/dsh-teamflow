@@ -370,6 +370,7 @@ function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitin
       if (result.skipped?.length) setError(result.skipped.join('\n'))
       if(!closing && result.activity) publishWorkflowActivity(result.activity)
       if (mounted.current && token === generation.current) {viewCache.set(workflowCacheKey(sessionId,result.team.id,action==='force_end'||(action!=='restore_archive'&&archiveView)),result);setData(result); setActiveId(result.team.id) }
+      if (closing) closeWorkbench()
       return result
     } catch (err) { if (mounted.current && token === generation.current) { setError(err instanceof Error ? err.message : String(err));if(err instanceof Error&&err.message.startsWith('连接中断'))setConnectionError(err.message); if (saving) setSaveState('error') }; return undefined }
     finally { if (mutationInFlight.current === mutation) {mutationInFlight.current=undefined;if (mounted.current) setWorking(false)} }
@@ -773,7 +774,7 @@ function Workbench({ sessionId: entrySessionId, teamId, archived = false, waitin
             <button disabled={working || !flow?.canPause} onClick={() => void perform('set_flow_enabled',{enabled:false,version:flowControlVersion(team)})}>{l("暂停全部")}</button>
           </span>}
           {team && !galleryMode && !showOutcomes && !archiveView && <button type="button" className={css.forceEnd} disabled={ending} onClick={async () => {
-            if (!window.confirm(l('强制结束「{0}」？所有任务将立即标记为完成并归档，Captain 随后在后台总结。', team.name))) return
+            if (!window.confirm(l('强制结束「{0}」？将停止所有任务，标记为完成并归档，然后退出画布。Captain 会在对话中总结本次得失。', team.name))) return
             setEnding(true)
             try { await perform('force_end', { confirmed: true, createdAt: team.createdAt, requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2,'0')).join(''), language: l.language }) }
             finally { setEnding(false) }
